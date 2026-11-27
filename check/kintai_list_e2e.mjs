@@ -59,13 +59,19 @@ try {
     await page.click('[data-tab="list"]');
     await page.waitForSelector('#kl-q');
     await page.fill('#kl-q', first.nm.slice(-2));
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(500);   /* 探す欄は打ち終わりを少し待ってから描き直す（250ms） */
     const m = await page.locator('#g-main table.kl-t tbody tr').count();
     t('探す欄で絞れて、打っている間も欄から外れない', m >= 1 && m < n && (await page.evaluate(() => document.activeElement && document.activeElement.id)) === 'kl-q', { m, n });
     await page.fill('#kl-q', '');
     await page.click('#g-main table.kl-t tbody tr .kl-nm');
     await page.waitForTimeout(200);
     t('氏名を押すと個人の月を開く', (await page.getAttribute('.tabs button[data-tab="person"]', 'aria-selected')) === 'true');
+    /* 途中にカーソルを置いて1字足しても、カーソルの位置が戻る（反証レビュー 2026-11-28） */
+    await page.click('[data-tab="list"]'); await page.waitForSelector('#kl-q');
+    await page.fill('#kl-q', 'ab'); await page.waitForTimeout(500);
+    await page.focus('#kl-q'); await page.evaluate(() => document.getElementById('kl-q').setSelectionRange(1, 1)); await page.keyboard.type('x'); await page.waitForTimeout(500);
+    const caret = await page.evaluate(() => { const q = document.getElementById('kl-q'); return { v: q.value, s: q.selectionStart, f: document.activeElement === q }; });
+    t('探す欄: 途中に打った字が途中に入り、描き直した後もカーソルは打った所', caret.v === 'axb' && caret.s === 2 && caret.f, caret);
     t('画面のエラー 0', errs.length === 0, errs);
     await ctx.close();
   }

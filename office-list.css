@@ -81,6 +81,9 @@
   html:root[data-su-theme] #p-main .pl-hd + .su-steps li + li::after{content:none}
   html:root[data-su-theme] #p-main .pl-hd + .su-steps .su-st-s{display:inline}
 }
+@media screen and (min-width:900px) {
+  .pl-ph-only{display:none!important}
+}
 @media screen and (max-width:899px) {
   .pl-pc{display:none!important}
   button.pl-card,.pl-card>summary{flex-wrap:wrap;gap:4px 10px;padding:10px 12px}

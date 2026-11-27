@@ -87,12 +87,13 @@
   function shiftHtml(c) {
     var e = c.esc, fm = c.fm, all = people(c), pg = pageOf(all.length, st.size, st.page), ds = c.dateList(); st.page = pg.page;
     var cnt = {}; ds.forEach(function (d) { cnt[d] = 0; });
+    all.forEach(function (p) { var by = {}; p.days.forEach(function (d) { by[d.date] = d; }); ds.forEach(function (x) { if (shiftCell(by[x], c.hm).kind === 'work') cnt[x]++; }); });   /* 出勤者数は表示中のページでなく、絞った全員で数える（反証レビュー 2026-11-28） */
     var body = all.slice(pg.start, pg.end).map(function (p) {
       var by = {}, m = c.masterOf(p.staff) || {}, tot = 0, wdN = 0, offN = 0, paid = 0;
       p.days.forEach(function (d) { by[d.date] = d; });
       var cells = ds.map(function (x) {
         var sc = shiftCell(by[x], c.hm);
-        if (sc.kind === 'work') { tot += sc.min; wdN++; cnt[x]++; } else if (sc.kind === 'paid') paid++; else offN++;
+        if (sc.kind === 'work') { tot += sc.min; wdN++; } else if (sc.kind === 'paid') paid++; else offN++;
         return '<td class="kl-s ' + sc.kind + '">' + e(sc.text) + '</td>';
       }).join('');
       var lv = c.leaveRemain(p.staff);
@@ -135,12 +136,22 @@
       var a = b.getAttribute('data-act');
       if (a === 'kl-pv') st.page--; else if (a === 'kl-nx') st.page++; else if (a === 'kl-csv') { var c = getCtx(); if (c && c.month) csv(c); return; } else return;
       repaint();
+      var nb = document.querySelector('button[data-act="' + a + '"]:not([disabled])') || document.querySelector('button[data-act="kl-pv"],button[data-act="kl-nx"]');
+      if (nb) nb.focus();
     });
-    document.addEventListener('input', function (e) {
-      var el = e.target; if (!el || el.id !== 'kl-q') return;
-      st.q = String(el.value || '').slice(0, 40); st.page = 0; repaint();
-      var q = document.getElementById('kl-q'); if (q) { q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {} }
-    });
+    var tq = null;
+    function onQ(el) {
+      var v = String(el.value || '').slice(0, 40);
+      st.q = v; st.page = 0; clearTimeout(tq);
+      tq = setTimeout(function () {
+        var cur = document.getElementById('kl-q'); if (!cur || cur.value !== v) return;
+        var ss = cur.selectionStart, se = cur.selectionEnd;
+        repaint();
+        var q = document.getElementById('kl-q'); if (q) { q.focus(); try { q.setSelectionRange(ss, se); } catch (_) {} }
+      }, 250);
+    }
+    document.addEventListener('input', function (e) { var el = e.target; if (!el || el.id !== 'kl-q' || e.isComposing) return; onQ(el); });
+    document.addEventListener('compositionend', function (e) { var el = e.target; if (el && el.id === 'kl-q') onQ(el); });
     document.addEventListener('change', function (e) {
       var el = e.target; if (!el) return;
       if (el.id === 'kl-of') st.of = el.value; else if (el.id === 'kl-size') st.size = SIZES.indexOf(+el.value) >= 0 ? +el.value : 50; else return;

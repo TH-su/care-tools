@@ -10,7 +10,9 @@
   'use strict';
   var PAY_TYPE = { monthly: '月給', hourly: '時給', daily: '日給', board: '役員報酬' };
   var SIZES = [50, 100, 0];   /* 0 = 全件 */
-  var st = { q: '', f: false, pt: '', of: '', size: 50, page: 0, sum: false, rep: false, ym: null }, bq = '';
+  var st = { q: '', f: false, pt: '', of: '', size: 50, page: 0, sum: false, rep: false, ym: null, open: {} }, bq = '', bqKey = null;
+  /* 899px 以下（iPhone・iPad 縦）は今の並び: ページ送りをしない（全件） */
+  function narrow() { try { return !!(window.matchMedia && window.matchMedia('(max-width:899px)').matches); } catch (_) { return false; } }
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
@@ -80,7 +82,7 @@
     return t ? ' <span class="pl-d' + (d < 0 ? ' neg' : '') + '">(' + esc(t) + ')</span>' : '';
   }
   function headHtml(c) {
-    var pay = c.payDate(), per = c.period(), h = '<div class="pl-ttl pl-hd"><h2>' + esc(isDate(pay) ? (+pay.slice(5, 7)) + '月' + (+pay.slice(8)) + '日支払い分の給与明細' : c.periodText()) + '</h2>';
+    var pay = c.payDate(), per = c.period(), h = '<h2 class="pl-ph-only">' + esc(c.periodText()) + '</h2><div class="pl-ttl pl-hd pl-pc"><h2>' + esc(isDate(pay) ? (+pay.slice(5, 7)) + '月' + (+pay.slice(8)) + '日支払い分の給与明細' : c.periodText()) + '</h2>';
     h += '<p class="pl-meta"><span>' + esc(c.periodText()) + '</span>' + (per ? '<span><small>賃金計算期間</small> ' + esc(jd(per.from) + '〜' + jd(per.to)) + '</span>' : '') + '<span><small>計算開始</small> 手動</span></p></div>';
     return h;
   }
@@ -88,31 +90,31 @@
   function afterHtml(c) {
     if (!c.frozen) return '';
     var x = c.canExport, ts = taxSums(c.list), due = dueDate(c.payDate());
-    var h = '<div class="pl-info" role="note"><span class="pl-i" aria-hidden="true">i</span><span>賃金台帳（<button type="button" class="pl-lk" data-act="exp" data-k="ledger"' + (x ? '' : ' disabled') + '>CSV</button>）と給与明細一覧表（<button type="button" class="pl-lk" data-act="exp" data-k="list"' + (x ? '' : ' disabled') + '>CSV</button>）がダウンロードできます。全員分の明細の印刷は「<button type="button" class="pl-lk" data-tab="slip">給与明細</button>」からできます。</span></div>';
+    var h = '<div class="pl-pc"><div class="pl-info" role="note"><span class="pl-i" aria-hidden="true">i</span><span>賃金台帳（<button type="button" class="pl-lk" data-act="exp" data-k="ledger"' + (x ? '' : ' disabled') + '>CSV</button>）と給与明細一覧表（<button type="button" class="pl-lk" data-act="exp" data-k="list"' + (x ? '' : ' disabled') + '>CSV</button>）がダウンロードできます。全員分の明細の印刷は「<button type="button" class="pl-lk" data-tab="slip">給与明細</button>」からできます。</span></div>';
     h += '<h3 class="pl-sub">確定後の手続き</h3><div class="pl-proc">';
     h += '<button type="button" class="pl-card" data-tab="export"><span class="pl-ci" aria-hidden="true">🏛</span><b>給与の振込</b><span class="pl-cd">振込データ・総額の照合・仕訳の CSV を書き出します。</span><span class="pl-go" aria-hidden="true">›</span></button>';
-    h += '<details class="pl-card"><summary><span class="pl-ci" aria-hidden="true">▣</span><b>住民税の振込</b><span class="pl-cd">従業員から徴収した住民税額を確かめます。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
+    h += '<details class="pl-card" data-plo="res"' + (st.open.res ? ' open' : '') + '><summary><span class="pl-ci" aria-hidden="true">▣</span><b>住民税の振込</b><span class="pl-cd">従業員から徴収した住民税額を確かめます。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
       '<div class="pl-cb"><table><tbody><tr><th>住民税を引いた人</th><td class="num">' + esc(ts.residentN) + ' 人</td></tr><tr><th>住民税の合計</th><td class="num">' + esc(yen(ts.resident)) + ' 円</td></tr></tbody></table><p class="help">市町村ごとの内訳と振込の依頼のファイルは、この画面にはまだありません。</p></div></details>';
-    h += '<details class="pl-card"><summary><span class="pl-ci" aria-hidden="true">▤</span><b>所得税徴収高計算書</b><span class="pl-cd">従業員から徴収した所得税額を確かめて納付します。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
+    h += '<details class="pl-card" data-plo="tax"' + (st.open.tax ? ' open' : '') + '><summary><span class="pl-ci" aria-hidden="true">▤</span><b>所得税徴収高計算書</b><span class="pl-cd">従業員から徴収した所得税額を確かめて納付します。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
       '<div class="pl-cb"><table><tbody><tr><th>支給年月日</th><td>' + esc(jd(c.payDate())) + '</td></tr><tr><th>人員</th><td class="num">' + esc(ts.n) + ' 人</td></tr><tr><th>支給額（総支給の合計）</th><td class="num">' + esc(yen(ts.gross)) + ' 円</td></tr><tr><th>税額（所得税と精算）</th><td class="num">' + esc(yen(ts.income)) + ' 円</td></tr></tbody></table>' +
       '<p class="help">納付の期限は支給日の翌月10日で見ています（納期の特例の時は違います）。</p></div></details>';
-    return h + '</div>';
+    return h + '</div></div>';
   }
   function toolHtml(c, rows, pg) {
     var ofs = {}, pts = {};
     rows.forEach(function (r) { if (r.of) ofs[r.of] = r.ofName; if (r.pt) pts[r.pt] = r.ptName; });
     var opt = function (o, cur, all) { return '<option value="">' + all + '</option>' + Object.keys(o).sort().map(function (k) { return '<option value="' + esc(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(o[k]) + '</option>'; }).join(''); };
     var nf = (st.pt ? 1 : 0) + (st.of ? 1 : 0);
-    var h = '<div class="pl-tool"><button type="button" class="btn" data-act="pl-f" aria-expanded="' + (st.f ? 'true' : 'false') + '"><span aria-hidden="true">☰</span> フィルタ' + (nf ? '（' + nf + '）' : '') + '</button>' +
-      '<input type="search" id="pl-q" class="pl-q" placeholder="氏名など" aria-label="氏名・従業員番号で探す" value="' + esc(st.q) + '" autocomplete="off">' +
-      '<label class="pl-sz"><span class="sr-only">表示する件数</span><select id="pl-size">' + SIZES.map(function (s) { return '<option value="' + s + '"' + (s === st.size ? ' selected' : '') + '>' + (s ? s + '件' : '全件') + '</option>'; }).join('') + '</select></label>' +
-      '<span class="pl-cnt">' + esc(pg.label) + '</span>' + (pg.pages > 1 ? '<button type="button" class="btn sm" data-act="pl-pv"' + (pg.page ? '' : ' disabled') + ' aria-label="前のページ">‹</button><button type="button" class="btn sm" data-act="pl-nx"' + (pg.page < pg.pages - 1 ? '' : ' disabled') + ' aria-label="次のページ">›</button>' : '') +
+    var h = '<div class="pl-tool"><button type="button" class="btn pl-pc" data-act="pl-f" aria-expanded="' + (st.f ? 'true' : 'false') + '"><span aria-hidden="true">☰</span> フィルタ' + (nf ? '（' + nf + '）' : '') + '</button>' +
+      '<input type="search" id="pl-q" class="pl-q pl-pc" placeholder="氏名など" aria-label="氏名・従業員番号で探す" value="' + esc(st.q) + '" autocomplete="off">' +
+      '<label class="pl-sz pl-pc"><span class="sr-only">表示する件数</span><select id="pl-size">' + SIZES.map(function (s) { return '<option value="' + s + '"' + (s === st.size ? ' selected' : '') + '>' + (s ? s + '件' : '全件') + '</option>'; }).join('') + '</select></label>' +
+      '<span class="pl-cnt pl-pc">' + esc(pg.label) + '</span>' + (pg.pages > 1 ? '<button type="button" class="btn sm pl-pc" data-act="pl-pv"' + (pg.page ? '' : ' disabled') + ' aria-label="前のページ">‹</button><button type="button" class="btn sm pl-pc" data-act="pl-nx"' + (pg.page < pg.pages - 1 ? '' : ' disabled') + ' aria-label="次のページ">›</button>' : '') +
       c.warnFilterHtml +
-      '<span class="pl-sp"></span>' +
-      '<button type="button" class="btn pl-tx" data-act="pl-rep" aria-expanded="' + (st.rep ? 'true' : 'false') + '">前月比更新レポート ›</button>' +
-      '<button type="button" class="btn" data-act="exp" data-k="list"' + (c.frozen && c.canExport ? '' : ' disabled title="確定した月だけ書き出せます"') + '>給与明細一覧表の出力</button>' +
-      '<button type="button" class="btn" data-tab="slip"><span aria-hidden="true">🖨</span> 印刷用ダウンロード</button></div>';
-    if (st.f) h += '<div class="pl-fp"><label>給与形態 <select id="pl-pt">' + opt(pts, st.pt, 'すべて') + '</select></label><label>事業所 <select id="pl-of">' + opt(ofs, st.of, 'すべて') + '</select></label>' + (nf ? '<button type="button" class="btn sm" data-act="pl-fx">絞り込みを外す</button>' : '') + '</div>';
+      '<span class="pl-sp pl-pc"></span>' +
+      '<button type="button" class="btn pl-tx pl-pc" data-act="pl-rep" aria-expanded="' + (st.rep ? 'true' : 'false') + '">前月比更新レポート ›</button>' +
+      '<button type="button" class="btn pl-pc" data-act="exp" data-k="list"' + (c.frozen && c.canExport ? '' : ' disabled title="確定した月だけ書き出せます"') + '>給与明細一覧表の出力</button>' +
+      '<button type="button" class="btn pl-pc" data-tab="slip"><span aria-hidden="true">🖨</span> 印刷用ダウンロード</button></div>';
+    if (st.f) h += '<div class="pl-fp pl-pc"><label>給与形態 <select id="pl-pt">' + opt(pts, st.pt, 'すべて') + '</select></label><label>事業所 <select id="pl-of">' + opt(ofs, st.of, 'すべて') + '</select></label>' + (nf ? '<button type="button" class="btn sm" data-act="pl-fx">絞り込みを外す</button>' : '') + '</div>';
     return h;
   }
   function repHtml(rows) {
@@ -132,14 +134,14 @@
   }
   /* 一覧: payroll.js の details.it の形（開くと内訳と調整）を保ち、列を足す。足した列は PC だけ（899px 以下は今の並び） */
   function listHtml(c) {
-    if (st.ym !== c.ym) { st = { q: '', f: false, pt: '', of: '', size: 50, page: 0, sum: false, rep: false, ym: c.ym }; }
+    if (st.ym !== c.ym) { st = { q: '', f: false, pt: '', of: '', size: 50, page: 0, sum: false, rep: false, ym: c.ym, open: {} }; }
     var all = rowsOf(c);
-    var rows = filterRows(all, { q: st.q, pt: st.pt, of: st.of, warnOnly: c.warnOnly });
-    var pg = pageOf(rows.length, st.size, st.page); st.page = pg.page;
+    var ph = narrow(), rows = filterRows(all, ph ? { warnOnly: c.warnOnly } : { q: st.q, pt: st.pt, of: st.of, warnOnly: c.warnOnly });
+    var pg = pageOf(rows.length, ph ? 0 : st.size, st.page); st.page = pg.page;
     var calcAt = c.frozen ? c.at(c.run && c.run.confirmed_at) : (c.status === 'draft' && !c.dirty ? c.at(c.run && c.run.saved_at) : '');
-    var h = '<details class="pl-sum"' + (st.sum ? ' open' : '') + '><summary>合計金額</summary>' + c.sumHtml + '</details>';
-    h += '<div class="cd pl-list">' + toolHtml(c, all, pg) + (st.rep ? repHtml(all) : '');
-    h += '<div class="ihd pl-g" aria-hidden="true"><span>氏名</span><span class="pl-pc">従業員番号</span><span class="pl-pc">事業所</span><span class="pl-pc">給与形態</span><span>総支給額（前月比）</span><span>総控除額（前月比）</span><span>差引支給額（前月比）</span><span>前月差</span><span class="pl-pc">最終計算日時</span><span>ステータス</span></div>';
+    var h = '<details class="pl-sum pl-pc"' + (st.sum ? ' open' : '') + '><summary>合計金額</summary>' + c.sumHtml + '</details>';
+    h += '<div class="cd pl-list"><div class="pl-ph-only">' + c.sumHtml + '</div>' + toolHtml(c, all, pg) + (st.rep ? repHtml(all) : '');
+    h += '<div class="ihd pl-g" aria-hidden="true"><span>氏名</span><span class="pl-pc">従業員番号</span><span class="pl-pc">事業所</span><span class="pl-pc">給与形態</span><span><span class="pl-pc">総支給額（前月比）</span><span class="pl-ph-only">総支給</span></span><span><span class="pl-pc">総控除額（前月比）</span><span class="pl-ph-only">控除</span></span><span><span class="pl-pc">差引支給額（前月比）</span><span class="pl-ph-only">差引</span></span><span>前月差</span><span class="pl-pc">最終計算日時</span><span><span class="pl-pc">ステータス</span><span class="pl-ph-only">警告</span></span></div>';
     if (!rows.length) h += '<p class="empty">該当する職員はいません。</p>';
     rows.slice(pg.start, pg.end).forEach(function (r) {
       var it = r.it, w = r.warn;
@@ -173,15 +175,26 @@
       else if (a === 'pl-nx') st.page++;
       else return;
       repaint();
+      var nb = document.querySelector('button[data-act="' + a + '"]:not([disabled])') || document.querySelector('button[data-act="pl-pv"],button[data-act="pl-nx"]');
+      if (nb) nb.focus();
     });
     document.addEventListener('toggle', function (e) { var d = e.target; if (d && d.classList && d.classList.contains('pl-sum')) st.sum = !!d.open; }, true);
-    document.addEventListener('input', function (e) {
-      var el = e.target; if (!el || (el.id !== 'pl-q' && el.id !== 'pl-bq')) return;
+    /* 探す欄: かな漢字の変換の間は描き直さない・打つたびでなく少し待ってから描き直す・描き直した後もカーソルの位置を戻す（反証レビュー 2026-11-28） */
+    var tq = null;
+    function onQ(el) {
       var v = String(el.value || '').slice(0, 40), id = el.id;
       if (id === 'pl-bq') bq = v; else { st.q = v; st.page = 0; }
-      repaint();
-      var q = document.getElementById(id); if (q) { q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {} }
-    });
+      clearTimeout(tq);
+      tq = setTimeout(function () {
+        var cur = document.getElementById(id); if (!cur || cur.value !== v) return;
+        var ss = cur.selectionStart, se = cur.selectionEnd;
+        repaint();
+        var q = document.getElementById(id); if (q) { q.focus(); try { q.setSelectionRange(ss, se); } catch (_) {} }
+      }, 250);
+    }
+    document.addEventListener('input', function (e) { var el = e.target; if (!el || (el.id !== 'pl-q' && el.id !== 'pl-bq') || e.isComposing) return; onQ(el); });
+    document.addEventListener('compositionend', function (e) { var el = e.target; if (el && (el.id === 'pl-q' || el.id === 'pl-bq')) onQ(el); });
+    document.addEventListener('toggle', function (e) { var d = e.target; if (d && d.getAttribute && d.getAttribute('data-plo')) st.open[d.getAttribute('data-plo')] = !!d.open; }, true);
     document.addEventListener('change', function (e) {
       var el = e.target; if (!el || !el.id) return;
       if (el.id === 'pl-pt') st.pt = el.value;
@@ -193,10 +206,11 @@
   }
 
   /* 賞与の入れる表の上の段: 探す欄と件数（画面のメモリだけ） */
-  function bonusTool(all, shown) {
-    return '<div class="pl-tool"><input type="search" id="pl-bq" class="pl-q" placeholder="氏名など" aria-label="氏名・従業員番号で探す" value="' + esc(bq) + '" autocomplete="off"><span class="pl-cnt">' + esc((shown ? 1 : 0) + ' - ' + shown + ' / ' + all) + '</span></div>';
+  function bonusTool(all, shown, key) {
+    if (key !== bqKey) { bqKey = key; bq = ''; }
+    return '<div class="pl-tool"><input type="search" id="pl-bq" class="pl-q" placeholder="氏名など" aria-label="氏名・従業員番号で探す" value="' + esc(bq) + '" autocomplete="off"><span class="pl-cnt">' + esc((shown ? 1 : 0) + ' - ' + shown + ' / ' + all) + '</span></div>' + (all && !shown ? '<p class="empty">該当する職員はいません。</p>' : '');
   }
-  function bonusQuery() { return bq; }
+  function bonusQuery(key) { if (key !== bqKey) { bqKey = key; bq = ''; } return bq; }
 
   window.PayrollList = { bonusTool: bonusTool, bonusQuery: bonusQuery, listHtml: listHtml, headHtml: headHtml, afterHtml: afterHtml, bind: bind,
     filterRows: filterRows, pageOf: pageOf, dueDate: dueDate, diffText: diffText, taxSums: taxSums };
