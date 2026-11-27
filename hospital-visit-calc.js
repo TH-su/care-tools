@@ -14,7 +14,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-27';
+  var VERSION = '2026-11-28';
   var MAX = { letter_body: 8000, result_body: 8000, result_note: 4000, added_med_note: 200, hospital_name: 80, dept: 40, doctor: 60,
               visit_kind: 20, result1: 20, result2: 20, letter_title: 40, resident_name: 60 };
 
@@ -127,8 +127,19 @@
      無ければ今の定期薬を【現在の処方】として入れる */
   function letterStarter(prev, medsText) {
     var rb = trim(prev && prev.result_body);
-    if (rb && /【[^】]*受診[前後]】/.test(rb)) return rb.replace(/【受診前】/g, '【前回受診前】');
-    return medsBlock('現在の処方', medsText);
+    if (rb && /【[^】]*受診[前後]】/.test(rb)) return letterIndent(rb.replace(/【受診前】/g, '【前回受診前】'));
+    return letterIndent(medsBlock('現在の処方', medsText));
+  }
+  /* 手紙に入れる薬の塊の字下げ（代表者が渡した手紙の見本と同じ形: 【見出し】を1段、その下の薬の行を2段、タブで下げる）。
+     見出しの後から空行までを薬の行とみなす。すでに下げてある行・見出しの外の文はそのまま */
+  function letterIndent(text) {
+    var inBlock = false;
+    return str(text).split('\n').map(function (ln) {
+      var t = ln.replace(/^[\t \u3000]+/, '');
+      if (/^【[^】]*】\s*$/.test(t)) { inBlock = true; return '\t' + t; }
+      if (t === '') { inBlock = false; return ''; }
+      return inBlock && ln === t ? '\t\t' + t : ln;
+    }).join('\n');
   }
 
   /* 文の中の2つの薬の塊（受診前と受診後）を比べ、足された行・消えた行を返す（画面の印のため。判定はしない＝人が確かめる） */
@@ -244,6 +255,16 @@
       '</div>';
   }
 
+  /* メニューのタイルの札の中身（hv_menu_due・ほかの札と同じ形）。件数と数えた日だけ {"v":1,"at":"YYYY-MM-DD","hv":true,"wait":n}。
+     数えるのは一覧（取り消しを除く）のうち結果がまだの受診。氏名・利用者No・病院名は入れない。日付の形が違う・一覧が配列でない時は null（書かない） */
+  function menuDue(visits, today) {
+    if (!Array.isArray(visits) || !isIso(today)) return null;
+    var n = 0;
+    for (var i = 0; i < visits.length; i++) if (visits[i] && !hasResult(visits[i])) n++;
+    if (n > 9999) n = 9999;
+    return JSON.stringify({ v: 1, at: String(today), hv: true, wait: n });
+  }
+
   /* 画面の状態（端末に残すのは開いていたタブだけ）。決まった値だけを受ける */
   var LEFT_TABS = ['prev', 'meds'], RIGHT_TABS = ['letter', 'result', 'paper'];
   function pickTab(v, list, def) { return list.indexOf(v) >= 0 ? v : def; }
@@ -252,9 +273,9 @@
     VERSION: VERSION, DEFAULTS: DEFAULTS, MAX: MAX, LEFT_TABS: LEFT_TABS, RIGHT_TABS: RIGHT_TABS,
     esc: esc, trim: trim, normSettings: normSettings, linesToList: linesToList, isIso: isIso, jpDate: jpDate, mdw: mdw, md: md,
     todayJST: todayJST, hasResult: hasResult, sortVisits: sortVisits, prevVisitFor: prevVisitFor, medLines: medLines, medsBlock: medsBlock,
-    resultStarter: resultStarter, letterStarter: letterStarter, medDiff: medDiff, splitBeforeAfter: splitBeforeAfter,
+    resultStarter: resultStarter, letterStarter: letterStarter, letterIndent: letterIndent, medDiff: medDiff, splitBeforeAfter: splitBeforeAfter,
     searchResidents: searchResidents, hospitalChoices: hospitalChoices, checkVisit: checkVisit, toSave: toSave, sameDraft: sameDraft,
-    blankVisit: blankVisit, fromRow: fromRow, letterHtml: letterHtml, pickTab: pickTab
+    blankVisit: blankVisit, fromRow: fromRow, letterHtml: letterHtml, pickTab: pickTab, menuDue: menuDue, MENU_DUE_KEY: 'hv_menu_due'
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.HospitalVisitCalc = api;
