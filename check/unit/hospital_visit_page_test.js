@@ -95,6 +95,20 @@ function harness(opt) {
     const s = h.calls.filter((c) => c.rpc === 'hv_save_visit');
     t('番号を作れない端末では番号なしで今までどおり送る（落ちない）', s.length === 1 && !('id' in s[0].args.p_row) && s[0].args.p_rev === null, s);
   }
+  {
+    const h = harness({ rpc: (n, a) => Promise.resolve({ ok: true, existing: true, row: Object.assign({}, a.p_row, { letter_body: '架空の前の手紙', rev: 1 }) }) });
+    h.newVisit_(); h.draft.letter_body = '架空の手紙（書き足した）';
+    await h.save_();
+    t('前の保存が届いていた（existing）時は、書いた分を残して「まだ保存していません」と知らせる', h.draft.id && h.draft.letter_body === '架空の手紙（書き足した）'
+      && h.calls.some((c) => c.msg === 'h-dmsg' && /まだ保存していません/.test(c.txt || '')) && !h.calls.some((c) => c.toast === '保存しました'));
+  }
+  for (const err of ['idtaken', 'badid']) {
+    const h = harness({ rpc: () => Promise.resolve({ ok: false, error: err }) });
+    h.newVisit_(); const n0 = h.draft.nid; h.draft.letter_body = '架空の手紙';
+    await h.save_();
+    t(err + ' の時は番号を作り直す（次の保存で通る）', UUID_RE.test(h.draft.nid) && h.draft.nid !== n0 && h.draft.id == null);
+  }
+  t('0142 の断り（idtaken・badid）を職員の文で出す', /idtaken:'[^']+'/.test(H) && /badid:'[^']+'/.test(H));
   t('番号は SAVE_KEYS に入れない（保存していない変更の数えに入らない）', C.sameDraft({ resident_id: 'K001', nid: 'x' }, { resident_id: 'K001' }));
 
   group('2. 病院の台帳の「足す」');
@@ -112,6 +126,8 @@ function harness(opt) {
     h.hospSave_();
     t('答えの後はもう一度送れる', h.calls.filter((c) => c.rpc === 'hv_save_hospital').length === 2);
   }
+
+  t('送っている間に窓を描き直しても「足す」は止めたまま', /data-act="hosp-save"'\+\(hospSaving\?' disabled':''\)/.test(H));
 
   group('3. 戻るボタンで戻った時の端末の用途');
   t('pageshow の persisted で、現場なら読み込み直す', /addEventListener\('pageshow',function\(ev\)\{\s*if\(ev&&ev\.persisted&&isField\(\)&&view!=='field'\)\{\s*try\{\s*location\.reload\(\);/.test(H));
@@ -143,6 +159,14 @@ function harness(opt) {
     h.draft = draftOf({ letter_body: '架空の手紙', nid: 'c0000000-0000-4000-8000-000000000001' }); h.base = C.fromRow(draftOf()); h.base.id = null;
     h.print_(); for (let i = 0; i < 6; i++) await tick();
     t('「保存して刷る」で保存できたら刷る', h.calls.some((c) => c.rpc === 'hv_save_visit') && h.calls.some((c) => c.print));
+  }
+  {
+    /* 押し直しで共通 DB（0142）が前の行を返した時: ok:true でも返った本文は今の文面と違う */
+    const h = harness({ answers: [true], rpc: (n, a) => Promise.resolve({ ok: true, row: Object.assign({}, a.p_row, { letter_body: '架空の前の手紙', rev: 1 }) }) });
+    h.draft = draftOf({ letter_body: '架空の手紙（書き足した）', nid: 'c0000000-0000-4000-8000-000000000002' }); h.base = C.fromRow(draftOf()); h.base.id = null;
+    h.print_(); for (let i = 0; i < 6; i++) await tick();
+    t('「保存して刷る」で返った行が今の文面と違えば刷らず、知らせる', h.calls.some((c) => c.rpc === 'hv_save_visit') && !h.calls.some((c) => c.print)
+      && h.calls.some((c) => c.msg === 'h-dmsg' && /刷りませんでした/.test(c.txt || '')));
   }
   {
     const h = harness({ answers: [true] });

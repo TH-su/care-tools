@@ -7,7 +7,7 @@
  *   routes  … 切り替えスイッチ（su-backend.json）は master_live だけ入（入居者マスタは新しい保存先から読む道）。
  *             Supabase への通信を全部横取りし、ログインの確かめ・アプリの使える人・入居者マスタの読み取り（res_mode_get・res_roster・res_get）・
  *             受診連絡の RPC（hv_list・hv_save_visit・hv_cancel_visit・hv_save_hospital・hv_save_settings）に架空の応答を返す。
- *             hv_save_visit は新しい受診の p_row.id（画面が作った番号）に同じ番号の行があればその行を返す（統合 0142 の形）。保存は横取りの間だけメモリに覚える
+ *             hv_save_visit は新しい受診の p_row.id（画面が作った番号）に同じ番号の行があればその行を existing:true で返し、別の方の番号は idtaken・形が違えば badid・取り消し済みは cancelled（統合 0142 の形）。保存は横取りの間だけメモリに覚える
  *
  * ★架空データだけ（CLAUDE.md §2-1）。氏名は記号的な架空の名前、病院・薬は実在しない見本の語、電話は 000- の番号。施設情報は見本（facility-profile.sample.json）。
  * ★鍵・メールアドレスは架空（example.invalid）。本物の Supabase へは出ない（match に当たる要求は全部ここで答える）。
@@ -96,7 +96,13 @@ export function routesFor(opt = {}) {
     if (patch.hospital_id && !hosp.some((h) => h.id === patch.hospital_id)) return { ok: false, error: 'nohospital' };
     if (p.p_rev == null) {
       /* 0142 の形: 画面の番号に同じ行があればその行を返す（書かない） */
-      if (row.id) { const same = db.find((x) => x.id === row.id); if (same) return { ok: true, row: same }; }
+      if (row.id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(row.id))) return { ok: false, error: 'badid' };
+      if (row.id) {
+        const same = db.find((x) => x.id === row.id);
+        if (same && same.resident_id !== patch.resident_id) return { ok: false, error: 'idtaken' };
+        if (same && same.cancelled_at) return { ok: false, error: 'cancelled' };
+        if (same) return { ok: true, row: same, existing: true };
+      }
       if (!patch.resident_id) return { ok: false, error: 'noresident' };
       const next = Object.assign({ tenant_id: T, cancelled_at: null }, patch, { id: row.id || ('e0000000-0000-4000-8000-1' + String(++n).padStart(11, '0')), rev: 1, created_at: now(), updated_at: now() });
       db.push(next);
