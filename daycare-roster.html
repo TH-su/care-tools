@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4S/ciHz/NJ53+S8SvP55TjZc1QAlJHETAZfQeaWjLzU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TNl5qKWNn3g4ay6kSqSTiDQQzc/jdL5u8xwiErM9//c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -875,6 +875,13 @@ function syncTarget() {
    ★action で名前付き契約（kvGet / kvPut）へ振り分ける。逃げ道の kvRaw に主経路を通したままだと、
      rev 楽観ロックの契約がデータ層を一度も通らず、バックエンドを差し替える時に結局ここを
      もう一度書き直すことになる（＝Phase 0 の目的が果たせない）。 */
+var DCR_APP_VER = 2026112701;   /* 週間計画の画面の CS_APP_VER と同じ数 */
+function dcrStripAppVer_(j) {
+  try {
+    if (j && typeof j === 'object' && j.data && typeof j.data === 'object' && Object.prototype.hasOwnProperty.call(j.data, 'csAppVer')) { var d = Object.assign({}, j.data); delete d.csAppVer; return Object.assign({}, j, { data: d }); }
+  } catch (e) { try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('版の印を外す', e, 'daycare-roster'); } catch (x) { /* 記録できなくても続ける */ } }
+  return j;
+}
 async function gasCall(payload) {
   var p = payload || {};
   /* 統合 0005（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2）は su-kv.js が Supabase で読み書きする。
@@ -882,9 +889,17 @@ async function gasCall(payload) {
      （kvPut は force を運ばないため）。__raw は su-kv.js からの素通しの印 */
   if (p.__raw) delete p.__raw;
   else if (window.SUKv && SUKv.handles(p)) {
-    return SUKv.call(p, function (q) { if (q.force) return SU.data.kvRaw(q); q.__raw = true; return gasCall(q); });
+    /* 版の印（2026-11-27 週間計画の計画の版・データ保護の反証レビュー）: 週間計画を新しい保存先へ送る写しにだけ、最上位に csAppVer を足す。
+       共通 DB の門は、予約か世代1以上の利用者がいるデータで印の無い保存を断る（この画面は予定を id で混ぜず、取り直した全体に自分の印だけを足して送る）。
+       Google へ流れる時は下の入口で必ず外す。受け取ったデータに紛れていたら捨てる */
+    var pq = p;
+    if (p.action === 'put' && p.key === 'care_schedule_v2' && p.data && typeof p.data === 'object') pq = Object.assign({}, p, { data: Object.assign({}, p.data, { csAppVer: DCR_APP_VER }) });
+    return SUKv.call(pq, function (q) {
+      if (q && q.data && typeof q.data === 'object' && Object.prototype.hasOwnProperty.call(q.data, 'csAppVer')) { var d0 = Object.assign({}, q.data); delete d0.csAppVer; q = Object.assign({}, q, { data: d0 }); }
+      if (q.force) return SU.data.kvRaw(q); q.__raw = true; return gasCall(q);
+    }).then(dcrStripAppVer_);
   }
-  if (p.action === 'get') return SU.data.kvGet(p.key);
+  if (p.action === 'get') return dcrStripAppVer_(await SU.data.kvGet(p.key));
   if (p.action === 'put') return SU.data.kvPut(p.key, p.data, p.rev);
   return SU.data.kvRaw(p);          // それ以外は従来どおりそのまま通す
 }
@@ -1190,6 +1205,7 @@ function dcrSaveErrText_(raw) {
 function dcrSaveErrWords_(e) {
   var m = String((e && e.message) || (typeof e === 'string' ? e : '') || '');
   if (/badtoken/.test(m)) return '合言葉が合っていません。接続設定の「週間計画・ワースケ・シフト」を確かめてください';
+  if (/^oldapp$/.test(m)) return 'この画面は古い版です。読み込み直してください';   /* 共通 DB の版の印の門の断り（2026-11-27） */
   if (/[぀-ヿ一-鿿]/.test(m)) {
     var j = m.replace(/[（(][^（）()]*\.(?:m?js|gs|json|html)[）)]/g, '').trim();
     if (j) return j;
@@ -1208,7 +1224,7 @@ async function runSaver() {
   saverRunning = true;
   if (saverRetry_) { clearTimeout(saverRetry_); saverRetry_ = null; }
   setSyncState('保存中…');
-  let notFound = 0, lastLabel = '設定';
+  let notFound = 0, lastLabel = '設定', planStale = 0;
   try {
     // 取得(refresh)進行中はDB差し替えと競合するので終わるまで待つ（最大3秒）。
     let w = 0; while (busy && w++ < 300) await new Promise(r => setTimeout(r, 10));
@@ -1237,7 +1253,10 @@ async function runSaver() {
           cur.prev = sa.value;
           cur.logs = (cur.logs || []).filter(x => sa.ids.indexOf(x.id) < 0);
         });
-      } else if (res && res.conflict) {
+      } else if (res && (res.conflict || res.error === 'planstale')) {
+        /* planstale（2026-11-27）: 共通 DB が「切り替えた後の計画を前の計画で戻す保存」を断った。競合と同じく取り直して自分の印だけ足し直す。
+           繰り返し断られたら止めて知らせる（未確定の印はメモリに残る） */
+        if (res.error === 'planstale' && ++planStale > 2) throw new Error('ほかの端末で計画が切り替わっています。読み込み直してください');
         const f = await getRemoteWithRev();             // read-freshフォールバック（他端末の更新を取り込む）
         if (!f.data || !Array.isArray(f.data.residents) || !f.data.residents.length) throw new Error('クラウドが空');
         for (const p of pendingFlags.values()) applyPendingFlag_(f.data.residents, p);   // 他端末の記録は残し、自分の分だけ足す
