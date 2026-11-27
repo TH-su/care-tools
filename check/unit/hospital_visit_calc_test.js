@@ -48,12 +48,16 @@ t('1行1剤にする', C.medLines(meds).length === 2 && C.medLines(meds)[1] === 
 const rs = C.resultStarter(meds, '2026-10-21');
 t('結果の書き始めは【受診前】と【10/21 受診後】', rs.indexOf('【受診前】\n架空薬A') === 0 && rs.indexOf('\n\n【10/21 受診後】\n架空薬A') > 0);
 t('定期薬が空なら（定期薬の記載なし）', C.medsBlock('受診前', '') === '【受診前】\n（定期薬の記載なし）');
-t('手紙の書き始めは前回の結果を写し【前回受診前】に直す', C.letterStarter({ result_body: rs }, meds).indexOf('【前回受診前】\n架空薬A') === 0
+t('手紙の書き始めは前回の結果を写し【前回受診前】に直す', C.letterStarter({ result_body: rs }, meds).indexOf('\t【前回受診前】\n\t\t架空薬A') === 0
   && C.letterStarter({ result_body: rs }, meds).indexOf('【10/21 受診後】') > 0);
-t('前回の結果が無ければ【現在の処方】', C.letterStarter(null, meds).indexOf('【現在の処方】\n架空薬A') === 0);
+t('前回の結果が無ければ【現在の処方】', C.letterStarter(null, meds).indexOf('\t【現在の処方】\n\t\t架空薬A') === 0);
 const sp = C.splitBeforeAfter('【受診前】\n架空薬A\n\n【10/21 受診後】\n架空薬A\n架空薬C\n');
 const df = C.medDiff(sp.before, sp.after);
 t('受診前と受診後の違い（足された薬）', df.added.join() === '架空薬C' && df.removed.length === 0);
+
+t('手紙の薬の段は見本と同じく見出し1段・薬2段のタブで下げる', C.letterIndent('【前回受診前】\n架空薬A\n\n本文').split('\n').join('|') === '\t【前回受診前】|\t\t架空薬A||本文'
+  && C.letterStarter(null, meds).indexOf('\t【現在の処方】\n\t\t架空薬A') === 0 && C.letterStarter({ result_body: rs }, meds).indexOf('\t【前回受診前】\n\t\t架空薬A') === 0);
+t('字下げしても薬の比べ方は変わらない（行の頭のタブは落とす）', C.medLines(C.letterIndent(meds.replace(/^/, '【x】\n')))[1] === '架空薬A 5mg 1錠分1 朝食後');
 
 group('5. 入居者の検索・病院の候補');
 const roster = [{ id: 'T2', name: '架空 次郎', kana: 'かくう じろう', room: '205' }, { id: 'T1', name: '架空 花子', kana: 'カクウ ハナコ', room: '103' },
@@ -83,7 +87,12 @@ t('本文はエスケープ（画面に入る外の値）', h.indexOf('<script>'
 t('日付と署名（施設の呼び名と設定の名前）', h.indexOf('2026年11月17日') > 0 && h.indexOf('<p>架空ホーム</p>') > 0 && h.indexOf('施設長　架空') > 0);
 t('医師名が無い時は文を足さない', C.letterHtml({ resident_name: 'x' }, {}, '').indexOf('<span class="hl-doc">御机下</span>') > 0);
 
-group('8. 画面の状態');
+group('8. メニューの札');
+const md = JSON.parse(C.menuDue([{ id: 'a', has_result: false }, { id: 'b', has_result: true }, { id: 'c', result1: '' }, null], '2026-11-28'));
+t('結果まだの件数と数えた日だけ（氏名・番号・病院名を入れない）', md.v === 1 && md.at === '2026-11-28' && md.hv === true && md.wait === 2 && Object.keys(md).length === 4);
+t('日付の形が違う・一覧でない時は書かない', C.menuDue([], '2026/11/28') === null && C.menuDue(null, '2026-11-28') === null && C.MENU_DUE_KEY === 'hv_menu_due');
+
+group('9. 画面の状態');
 t('タブは決まった値だけ', C.pickTab('meds', C.LEFT_TABS, 'prev') === 'meds' && C.pickTab('x', C.LEFT_TABS, 'prev') === 'prev' && C.pickTab('paper', C.RIGHT_TABS, 'letter') === 'paper');
 
 say('\n合格 ' + pass + ' / 不合格 ' + fail);

@@ -66,6 +66,7 @@ export const EXTRA_PAGES = [
   { file: 'care-meeting.html', title: '担当者会議の記録', reads: true, shows: false, why: '事務所向けのアプリ。ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'equip-log.html', title: '設備・修繕の記録', reads: true, shows: false, why: '事務所向けのアプリ。事業所の呼び名（officeName）は一覧・絞り込みに、間取り（roomPlan）は図面に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'hospital-visit.html', title: '受診連絡', reads: true, shows: false, why: '事務所向けのアプリ。施設の呼び名（officeName）は手紙の署名の既定に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
+  { file: 'accident-report.html', title: '事故報告書', reads: true, shows: false, why: '事務所向けのアプリ。法人名・事業所の正式名・事業所番号・所在地・市区町村は報告書の紙と自動の入力に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'kintai.html', title: '勤怠管理', reads: true, shows: false, why: '事務所向けのアプリ。事業所の呼び名（officeName）は表と CSV に使うが、ログインしていない時は覆いの画面だけ（SUAppGate）' },
   { file: 'kintai-clock.html', title: '出勤・退勤の打刻', reads: false, shows: false, why: '施設情報を読まない（打刻の画面は名前と時刻だけ）' },
   { file: 'kintai-self.html', title: '自分の勤怠', reads: false, shows: false, why: '施設情報を読まない（2026-11-20 職員本人のスマホの画面・勤怠 v5 段5。出すのは自分の表示名と勤怠だけ）' },
