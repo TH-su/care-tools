@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-SkpXb61x36qj5/OTZudHJ7OitD5WxDRYGow3cXVdA1k='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-PN/UFbXKdEHExWtFEaiEe0eWfcvyKqDowccI6/2hDh8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -712,6 +712,15 @@ function save_(){
   if(!draft.id&&draft.nid&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draft.nid)) body.id=String(draft.nid);
   return rpc_('hv_save_visit',{p_row:body,p_rev:rev}).then(function(d){
     if(my!==gen) return false;
+    /* 押し直しで前の保存が届いていたが、その後に誰かが直していた（版が 1 より大きい）時は、保存できた扱いにせず競合と同じにする
+       （返った版で次に保存すると、その直しを知らせなしに上書きするため・反証レビュー 2026-11-28） */
+    if(d&&d.ok===true&&d.existing===true&&d.row&&Number(d.row.rev)>1){
+      setSync('');
+      if(draft!==sent) return false;
+      setMsg('h-dmsg','前の「保存」は届いていましたが、その後にほかの人（または別の画面）がこの受診を直しました。書いた内容は残っています。控えてから「読み直す」を押すと、今の内容を開きます。');
+      showConflict_(d.row);
+      return false;
+    }
     if(d&&d.ok===true&&d.row){
       var row=d.row, i=-1;
       visits.forEach(function(v,k){ if(String(v.id)===String(row.id)) i=k; });
@@ -736,6 +745,8 @@ function save_(){
     }
     /* 番号が使えない（統合 0142 の idtaken・badid）新しい受診は、番号を作り直す（次の「保存」で通る） */
     if(d&&(d.error==='idtaken'||d.error==='badid')&&draft===sent&&!draft.id) draft.nid=newId_();
+    /* まだ一度も保存していない受診の番号が、別の画面で取り消されていた（統合 0142 の cancelled）: 番号を作り直し、次の「保存」で新しい受診として残せるようにする（反証レビュー） */
+    if(d&&d.error==='cancelled'&&draft===sent&&!draft.id){ draft.nid=newId_(); setSync(''); setMsg('h-dmsg','前に「保存」した受診が、別の画面で取り消されていました。書いた内容は残っています。もう一度「保存」を押すと、新しい受診として残します。'); return false; }
     setSync(''); setMsg('h-dmsg',ngText_('保存',d)); return false;
   }).catch(function(e){
     if(my!==gen) return false;

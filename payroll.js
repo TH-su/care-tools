@@ -72,15 +72,13 @@
   function isField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (_) { return false; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
   /* ログインの印（supabase-js の sb-…-auth-token）の利用者 id。読むだけ（書かない・残さない）。読めない時は '' */
-  var SESS_RE = /^sb-[a-z0-9]+-auth-token$/, bootUid = null, leaving = false;
+  /* 給与が使う共通 DB（su-auth.js の接続先）のログインの印だけを見る。同じ公開元のほかのアプリ（厨房など）が別の Supabase に
+     ログインした印（sb-<別の番号>-auth-token）は拾わない（反証レビュー 2026-11-28） */
+  var SESS_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token', bootUid = null, leaving = false;
   function sessUid() {
     try {
-      for (var i = 0; i < localStorage.length; i++) {
-        var k = localStorage.key(i);
-        if (!SESS_RE.test(k || '')) continue;
-        var o = JSON.parse(localStorage.getItem(k) || 'null');
-        return o && o.user && o.user.id ? String(o.user.id) : '';
-      }
+      var o = JSON.parse(localStorage.getItem(SESS_KEY) || 'null');
+      return o && o.user && o.user.id ? String(o.user.id) : '';
     } catch (_) {}
     return '';
   }
@@ -2839,7 +2837,7 @@
        門番（su-app-gate.js）は開けるアカウントに戻ると覆いを外すため、前の人の金額が番号なしで見えた（反証レビュー）。
        同じ人のログインの印の更新（期限の延長）では何もしない。ほかの人に替わった時は読み込み直す */
     window.addEventListener('storage', function (e) {
-      if (!e || !(e.key === null || SESS_RE.test(e.key || ''))) return;
+      if (!e || !(e.key === null || e.key === SESS_KEY)) return;
       var u = sessUid();
       if (u && u === bootUid) return;
       if (view === 'app') { if (pinOn) pinLockNow('account'); else mask(); }

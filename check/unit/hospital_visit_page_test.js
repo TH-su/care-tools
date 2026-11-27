@@ -102,6 +102,20 @@ function harness(opt) {
     t('前の保存が届いていた（existing）時は、書いた分を残して「まだ保存していません」と知らせる', h.draft.id && h.draft.letter_body === '架空の手紙（書き足した）'
       && h.calls.some((c) => c.msg === 'h-dmsg' && /まだ保存していません/.test(c.txt || '')) && !h.calls.some((c) => c.toast === '保存しました'));
   }
+  {
+    const h = harness({ rpc: (n, a) => Promise.resolve({ ok: true, existing: true, row: Object.assign({}, a.p_row, { letter_body: '架空のほかの人の直し', rev: 2 }) }) });
+    h.newVisit_(); h.draft.letter_body = '架空の手紙（書き足した）';
+    await h.save_();
+    t('前の保存が届いていたが、その後に直されていた（existing で版が2以上）時は、保存できた扱いにせず競合と同じにする（返った版で上書きしない・反証レビュー）',
+      !h.draft.id && h.draft.letter_body === '架空の手紙（書き足した）' && h.calls.some((c) => c.msg === 'h-dmsg' && /その後にほかの人/.test(c.txt || '')) && !h.calls.some((c) => c.toast === '保存しました'));
+  }
+  {
+    const h = harness({ rpc: () => Promise.resolve({ ok: false, error: 'cancelled' }) });
+    h.newVisit_(); const n0 = h.draft.nid; h.draft.letter_body = '架空の手紙';
+    await h.save_();
+    t('まだ保存していない受診の番号が取り消されていた（cancelled）時は、番号を作り直して新しい受診として残せるようにする（反証レビュー）',
+      UUID_RE.test(h.draft.nid) && h.draft.nid !== n0 && h.draft.id == null && h.calls.some((c) => c.msg === 'h-dmsg' && /新しい受診として残します/.test(c.txt || '')));
+  }
   for (const err of ['idtaken', 'badid']) {
     const h = harness({ rpc: () => Promise.resolve({ ok: false, error: err }) });
     h.newVisit_(); const n0 = h.draft.nid; h.draft.letter_body = '架空の手紙';

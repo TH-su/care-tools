@@ -42,19 +42,23 @@ say('\n— 1. 違えた時の予告 —');
 
 say('\n— 2. ログインの印の読み取り —');
 {
-  const src = J.slice(J.indexOf('var SESS_RE ='), J.indexOf('function swapReload('));
-  const ctx = { localStorage: fakeLs({ su_device_role: 'office', 'sb-abcdef-auth-token': session('u-a') }) }; vm.createContext(ctx);
-  let ok = J.indexOf('var SESS_RE =') >= 0; try { if (ok) vm.runInContext(src, ctx); } catch (e) { ok = false; }
+  const src = J.slice(J.indexOf('var SESS_KEY ='), J.indexOf('function swapReload('));
+  const ctx = { localStorage: fakeLs({ su_device_role: 'office', 'sb-jhbernqawjrzqwrmqrih-auth-token': session('u-a') }) }; vm.createContext(ctx);
+  let ok = J.indexOf('var SESS_KEY =') >= 0; try { if (ok) vm.runInContext(src, ctx); } catch (e) { ok = false; }
   ok = ok && typeof ctx.sessUid === 'function';
   t('sessUid がある', ok);
   if (ok) {
     t('印の利用者 id を読む', ctx.sessUid() === 'u-a');
     ctx.localStorage = fakeLs({ su_device_role: 'office' });
     t('印が無い（ログアウト）時は空', ctx.sessUid() === '');
-    ctx.localStorage = fakeLs({ 'sb-abcdef-auth-token': '{壊れた' });
+    ctx.localStorage = fakeLs({ 'sb-jhbernqawjrzqwrmqrih-auth-token': '{壊れた' });
     t('壊れた印は空（落ちない）', ctx.sessUid() === '');
+    ctx.localStorage = fakeLs({ 'sb-gaurbzkjdpypxnehrnth-auth-token': session('u-k'), 'sb-jhbernqawjrzqwrmqrih-auth-token': session('u-a') });
+    t('同じ公開元のほかのアプリ（別の Supabase）の印が先に並んでいても、給与の接続先の印だけを読む（反証レビュー）', ctx.sessUid() === 'u-a');
+    ctx.localStorage = fakeLs({ 'sb-gaurbzkjdpypxnehrnth-auth-token': session('u-k') });
+    t('ほかのアプリの印しか無い時は空（給与はログアウトとみなす）', ctx.sessUid() === '');
   }
-  t('印は読むだけ（setItem・removeItem で触らない）', !/localStorage\.(setItem|removeItem)\([^)]*auth-token/.test(J) && !/SESS_RE[^\n]*setItem/.test(J));
+  t('印は読むだけ（setItem・removeItem で触らない）', !/localStorage\.(setItem|removeItem)\([^)]*auth-token/.test(J) && !/SESS_KEY[^\n]*setItem/.test(J));
 }
 
 say('\n— 3. 別のタブでアカウントが替わった時 —');
@@ -66,13 +70,13 @@ say('\n— 3. 別のタブでアカウントが替わった時 —');
   const run = (o) => {
     const log = [];
     const ctx = {
-      view: o.view || 'app', pinOn: o.pinOn !== false, bootUid: 'u-a', SESS_RE: /^sb-[a-z0-9]+-auth-token$/,
+      view: o.view || 'app', pinOn: o.pinOn !== false, bootUid: 'u-a', SESS_KEY: 'sb-jhbernqawjrzqwrmqrih-auth-token',
       sessUid: () => o.now, swapped: () => !!o.now && o.now !== 'u-a',
       pinLockNow: (w) => log.push('lock:' + w), mask: () => log.push('mask'), swapReload: () => log.push('reload'),
       window: { addEventListener: (ev, fn) => { if (ev === 'storage') ctx.fn = fn; } },
     };
     vm.createContext(ctx);
-    try { vm.runInContext(listener, ctx); ctx.fn({ key: o.key === undefined ? 'sb-abcdef-auth-token' : o.key }); } catch (e) { log.push('error:' + e.message); }
+    try { vm.runInContext(listener, ctx); ctx.fn({ key: o.key === undefined ? 'sb-jhbernqawjrzqwrmqrih-auth-token' : o.key }); } catch (e) { log.push('error:' + e.message); }
     return log;
   };
   if (listener) {
@@ -81,6 +85,7 @@ say('\n— 3. 別のタブでアカウントが替わった時 —');
     t('暗証番号の無い DB では金額を隠す', run({ now: '', pinOn: false }).join() === 'mask');
     t('同じ人の印の更新では何もしない', run({ now: 'u-a' }).length === 0);
     t('ほかの鍵の変化では何もしない', run({ now: 'u-b', key: 'payroll_tab' }).length === 0);
+    t('ほかのアプリ（別の Supabase）のログインの印の変化では何もしない（反証レビュー）', run({ now: 'u-b', key: 'sb-gaurbzkjdpypxnehrnth-auth-token' }).length === 0);
     t('全部消された（key が null）時も鍵の画面', run({ now: '', key: null }).join() === 'lock:account');
     t('鍵の画面の間（app でない）にほかの人へ替わったら読み込み直すだけ', run({ now: 'u-b', view: 'lock' }).join() === 'reload');
   }
