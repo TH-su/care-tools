@@ -8,7 +8,8 @@
  *   → 打刻なし（no_punch＝予定の終わりを過ぎて打刻なし）→ まだ（予定はあるが打刻なし・上のどれでもない）
  *   → 退勤の打刻なし（打刻はあるが勤務中でなく missing_out）→ 退勤済み（ほかの打刻のある塊）。打刻の無い塊でその日に1日の特別休暇・代休があれば 休み
  *   確認済み（checked・freee の取り込みを含む）の塊は、打刻なし・退勤の打刻なしでも札にしない
- * ・並びは 遅れ → 打刻なし → まだ → 勤務中 → 退勤の打刻なし → 退勤済み → 休み → 欠勤、その中は予定の開始（予定が無い時は最初の打刻）の順
+ * ・並びは 遅れ → 打刻なし → まだ → 勤務中 → 退勤の打刻なし → 退勤済み → 休み → 欠勤、その中は予定の開始（予定が無い時は最初の打刻）の順。
+ *   行は予定・勤務の1つ（塊）ごとに1行で、同じ人の行は、その人のいちばん急ぐ行の位置に隣り合わせにまとめる（2行目から cont）
  * ・事業所の絞り込みは日ごとの画面（kintai.js の paintDay）と同じく塊の事業所（b.office）で見る
  * ・氏名などの業務データを端末に残さない（このファイルは計算だけ）。試験も架空の職員だけ
  */
@@ -73,7 +74,7 @@
 
   /* 今日の出勤状況。month は kintai-calc.js の computeMonth の結果・today は 'YYYY-MM-DD'（日本時間）・office は '' か 'facility'・'visit'・'day'
      返す: { rows: [行], counts: { scheduled, clockedIn, notInYet, working }（箱と同じ名前・絞り込んだ行だけで数える）, tally: { 状態: 行の数 }, total }
-     行: { staff_id, name, office, date（塊の日）, blockIndex, prevDay, status, label, unusual, review, scheduled, symbol, schedStart, schedEnd, nextDay, inAt, outAt, punched } */
+     行: { staff_id, name, office, date（塊の日）, blockIndex, prevDay, cont（同じ人の2行目から）, status, label, unusual, review, scheduled, symbol, schedStart, schedEnd, nextDay, inAt, outAt, punched } */
   function board(month, today, office) {
     var rows = [], seq = 0, of = typeof office === 'string' ? office : '';
     var people = (month && month.people) || [], td = isDate(today) ? today : '', yday = td ? prevDate(td) : '';
@@ -91,7 +92,14 @@
         }
       }
     }
-    rows.sort(function (a, b) { return (ORDER.indexOf(a.status) - ORDER.indexOf(b.status)) || (a._k - b._k) || (a._s - b._s); });
+    /* 並び: 塊の行を状態の順・予定の開始の順に並べた後、同じ人の行を隣り合わせにまとめる（反証レビュー 2026-11-27）。
+       その人の行のうちいちばん急ぐ（並びの早い）行の位置に、その人の行をまとめて置く。2行目からは cont（続きの行）を付ける */
+    var cmp = function (a, b) { return (ORDER.indexOf(a.status) - ORDER.indexOf(b.status)) || (a._k - b._k) || (a._s - b._s); };
+    rows.sort(cmp);
+    var lead = {}, gi = 0;
+    rows.forEach(function (r) { var id = String(r.staff_id); if (!(id in lead)) lead[id] = gi++; r._g = lead[id]; });
+    rows.sort(function (a, b) { return (a._g - b._g) || cmp(a, b); });
+    rows.forEach(function (r, i) { r.cont = i > 0 && rows[i - 1]._g === r._g; });
     var counts = { scheduled: 0, clockedIn: 0, notInYet: 0, working: 0 }, tally = {};
     ORDER.forEach(function (s) { tally[s] = 0; });
     rows.forEach(function (r) {
@@ -100,7 +108,7 @@
       if (r.status === 'late') counts.notInYet++;
       if (r.status === 'working') counts.working++;
       tally[r.status]++;
-      delete r._k; delete r._s;
+      delete r._k; delete r._s; delete r._g;
     });
     return { rows: rows, counts: counts, tally: tally, total: rows.length };
   }

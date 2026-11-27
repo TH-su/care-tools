@@ -141,6 +141,8 @@ legend{font-weight:600;padding:0 6px}
 .tdl .tdr:hover{background:var(--th)}
 .tdr:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 .tdn{font-weight:700;overflow-wrap:anywhere}
+/* 同じ人の2行目から（分けた勤務など）: 名前を薄く・上の線を点線にして、前の行の続きに見せる（仮置き） */
+.tdl .tdr.tdc{border-top-style:dashed}.tdr.tdc .tdn{color:var(--muted);font-weight:400}
 .tdo{color:var(--sub);font-size:15px}
 .tdp,.tdi,.tdx{font-variant-numeric:tabular-nums;white-space:nowrap}
 .tdp small{display:block;font-size:15px;color:var(--muted)}

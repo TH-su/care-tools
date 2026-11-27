@@ -610,7 +610,7 @@
       var st = r.unusual ? '<span class="tag rv">' + esc(r.label) + '</span>' : '<span class="tds ' + (TDY_CLS[r.status] || '') + '">' + esc(r.label) + '</span>';
       if (r.review && !r.unusual) st += '<span class="tag rv">要確認</span>';
       var inT = r.inAt != null ? tdHm(r.inAt) : '—', outT = r.outAt != null ? tdHm(r.outAt) : '—';
-      return '<li><button type="button" class="tdr" data-tab="day" data-date="' + esc(r.date) + '">' +
+      return '<li><button type="button" class="tdr' + (r.cont ? ' tdc' : '') + '" data-tab="day" data-tdr="1" data-date="' + esc(r.date) + '">' +
         '<span class="tdn">' + esc(r.name) + '</span><span class="tdo">' + esc(officeName(r.office)) + '</span>' +
         '<span class="tdp">' + esc(sc) + (r.prevDay ? '<small>前の日から</small>' : '') + '</span><span class="tdi"><small>出 </small>' + esc(inT) + '</span><span class="tdx"><small>退 </small>' + esc(outT) + '</span><span class="tdt">' + st + '</span><span class="tdbr" aria-hidden="true"></span></button></li>';
     }).join('');
@@ -3733,6 +3733,7 @@
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       var t = b.getAttribute('data-tab');
+      if (t && b.hasAttribute('data-tdr')) dayFilter = null;   /* ホームの今日の出勤状況の行から移る時だけ、日ごとの札の絞り込みを外す（押した人が見えるように・2026-11-27） */
       if (t) { var td0 = b.getAttribute('data-date'); if (td0 && C.isDate(td0)) selDate = td0; if (b.getAttribute('data-rq') === 'pending') reqF = { status: 'pending', ym: '' }; setTab(t); return; }   /* v5 段5: 申請の箱・締めの画面からは承認待ち・すべての月分で開く */   /* ホームの「今日」の箱は今日の日ごとへ */
       var a = b.getAttribute('data-act');
       if (!a) return;

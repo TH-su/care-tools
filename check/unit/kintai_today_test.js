@@ -98,6 +98,32 @@ console.log('\n— 2. 並び順 —');
   t('ORDER の並びは 遅れ・打刻なし・まだ・勤務中・退勤の打刻なし・退勤済み・休み・欠勤', T.ORDER.join(',') === 'late,nopunch,before,working,noout,done,leave,absent', T.ORDER);
 }
 
+console.log('\n— 2b. 同じ人の行は隣り合わせ（反証レビュー 2026-11-27） —');
+{
+  const adjacent = (rows) => { const seen = {}; let prev = null; for (const r of rows) { if (r.staff_id !== prev && seen[r.staff_id]) return false; seen[r.staff_id] = 1; prev = r.staff_id; } return true; };
+  const contOk = (rows) => rows.every((r, i) => r.cont === (i > 0 && rows[i - 1].staff_id === r.staff_id));
+  /* 遅番 12:00〜 の乙が 8:00 に早く来た（12:30 に見る）: 予定の塊は遅れ・早く来た分は予定なしの勤務中の塊。ほかの人の行を間に挟まない */
+  const cE = { sT01: { 15: '早' }, sT02: { 15: '遅' }, sT03: { 15: '日3' }, sT07: { 15: '日1' } };
+  const pE = [P('sT01', 'in', TODAY, '6:58'), P('sT02', 'in', TODAY, '8:00'), P('sT07', 'in', TODAY, '7:55')];
+  const mE = month(cE, pE, '2026-12-15T12:30:00+09:00');
+  const rE = agrees('遅番の前に早く来た人（12:30）', mE);
+  const iL = rE.rows.findIndex((r) => r.staff_id === 'sT02' && r.status === 'late');
+  t('早く来た乙は「遅れ」の行のすぐ下に、乙の「勤務中」の行が並ぶ（続きの行の印）', iL >= 0 && rE.rows[iL + 1] && rE.rows[iL + 1].staff_id === 'sT02' && rE.rows[iL + 1].status === 'working' && rE.rows[iL + 1].cont === true, rE.rows.map((r) => [r.staff_id, r.status, r.cont]));
+  t('同じ人の行は離れない・2行目から cont', adjacent(rE.rows) && contOk(rE.rows), rE.rows.map((r) => [r.staff_id, r.status, r.cont]));
+  t('その人のいちばん急ぐ行（遅れ）の位置にまとめる（乙のまとまりは遅れの並び＝勤務中の甲・戊より前・頭は cont なし）', iL >= 0 && rE.rows[iL].cont === false && rE.rows.slice(0, iL).every((r) => r.status === 'late') && rE.rows.findIndex((r) => r.staff_id === 'sT01') > iL + 1, rE.rows.map((r) => [r.staff_id, r.status, r.cont]));
+  /* 分けた勤務（甲の予定が 8:00〜11:00 と 17:00〜21:00 の2つ・18:00 に見る）: 前の塊は退勤済み・後の塊は勤務中。
+     状態の順だけで並べると、甲の2行の間に庚（早番 7:00〜 の退勤済み）が入る */
+  const SR = (sid, s1, e1, seq, sym) => ({ kind: 'work', start_at: TODAY + 'T' + s1 + ':00+09:00', end_at: TODAY + 'T' + e1 + ':00+09:00', break_min: 0, paid_min: 0, staff_id: sid, work_date: TODAY, seq, office: 'facility', symbol: sym });
+  const schS = [SR('sT01', '08:00', '11:00', 1, '分1'), SR('sT01', '17:00', '21:00', 2, '分2'), SR('sT07', '07:00', '16:00', 1, '早'), SR('sT03', '09:00', '18:00', 1, '日3')];
+  const pS = [P('sT01', 'in', TODAY, '7:58'), P('sT01', 'out', TODAY, '11:00'), P('sT01', 'in', TODAY, '16:58'), P('sT07', 'in', TODAY, '6:58'), P('sT07', 'out', TODAY, '16:00'), P('sT03', 'in', TODAY, '8:55')];
+  const mS = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: schS, punches: pS, days: [], config: {}, now: Date.parse('2026-12-15T16:59:00+09:00') });
+  const rS = agrees('分けた勤務（16:59）', mS);
+  const s01 = rS.rows.filter((r) => r.staff_id === 'sT01');
+  t('（材料）甲は2行（勤務中と退勤済み）', s01.length === 2 && s01.some((r) => r.status === 'working') && s01.some((r) => r.status === 'done'), rS.rows.map((r) => [r.staff_id, r.status]));
+  t('分けた勤務の人の2行は隣り合わせ（勤務中の位置にまとめ、退勤済みの行が続く）', adjacent(rS.rows) && contOk(rS.rows) && s01[0].status === 'working' && s01[1].cont === true, rS.rows.map((r) => [r.staff_id, r.status, r.cont]));
+  t('1人1行の日は cont がどれも false', R1.rows.every((r) => r.cont === false));
+}
+
 console.log('\n— 3. 遅れの判定の境目（予定の開始＋15分） —');
 {
   const c = { sT02: { 15: '早' } };
@@ -170,6 +196,8 @@ console.log('\n— 7. 画面の読み込み —');
   const body = fnS >= 0 ? K.slice(fnS, fnE) : '';
   t('画面は KintaiToday.board の行を出す・名前と事業所の名前は esc を通す', fnS >= 0 && /\.board\(/.test(body) && /esc\(r\.name\)/.test(body) && /esc\(officeName\(/.test(body), fnS);
   t('一覧は画面だけ（no-print）・端末に残さない（localStorage を使わない）', /no-print/.test(body) && !/localStorage/.test(body));
+  t('一覧の行は印 data-tdr を持ち、続きの行は class tdc', /data-tdr="1"/.test(body) && /r\.cont \? ' tdc'/.test(body));
+  t('一覧の行から移る時だけ日ごとの札の絞り込みを外す（data-tdr のある data-tab のボタン）', /if \(t && b\.hasAttribute\('data-tdr'\)\) dayFilter = null;/.test(K) && K.indexOf("if (t && b.hasAttribute('data-tdr')) dayFilter = null;") < K.indexOf("if (t) { var td0 = b.getAttribute('data-date');"));
 }
 
 console.log('\n' + (fail ? '✗ ' : '✓ ') + pass + ' 件合格・' + fail + ' 件失敗');
