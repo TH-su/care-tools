@@ -207,6 +207,8 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
       ['< がある', { officeAddresses: { 通所: '見本<町' } }, /^accidentReport\.officeAddresses\.通所：/],
       ['{ がある', { officeNames: { 通所: '見本{事業所' } }, /^accidentReport\.officeNames\.通所：/],
       ['文字でない', { officeNames: { 施設: 5 } }, /^accidentReport\.officeNames\.施設：/],
+      ['C1 の制御文字', { officeNames: { 施設: '見本\u0085事業所' } }, /^accidentReport\.officeNames\.施設：/],
+      ['行の区切り U+2028', { officeAddresses: { 訪問: '見本町\u2028１－２' } }, /^accidentReport\.officeAddresses\.訪問：/],
     ];
     for (const [n, v, re] of ngCases) { const r = withAr(v); t('NG: ' + n, !r.ok && has(r, re), r.errors); }
     t('崩れた鍵だけを NG にする（ほかの鍵は数えない）', (() => { const r = withAr({ officeNames: { 施設: '見本ホーム事業所', 訪問: 'あ'.repeat(61) } }); return !r.ok && r.errors.length === 1; })());

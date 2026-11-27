@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CRYW5gTk+PVGq8/oUwArwJKXmJaEKTeSleenLYZt31E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0KrDtzkH/O70eLqZwkMaoP8xjyA5GOXai0db77UOgnM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,7 +18,7 @@
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="accident-report-calc.js?v=2026-11-28.2"></script>
+<script src="accident-report-calc.js?v=2026-11-28.3"></script>
 <style>
 /* 事故報告書（2026-11-28 本人指示）。画面は「つむぐケアの型」（su-theme.css の藍と生成り）でライト固定。
    文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。塗りのボタンは「保存する」の1つだけ。
@@ -635,13 +635,20 @@ function newReport_(){
   base=JSON.parse(JSON.stringify(draft));   // 入居者マスタから入れただけの新しい報告は「変更あり」にしない（保存はまだ）
 }
 function isDirty_(){ return !!(draft&&base&&!C.sameReport(draft,base)); }
+function relabelOffices_(){
+  var nm=C.officeLabels(draft&&draft.data,fac_());
+  Array.prototype.forEach.call(document.querySelectorAll('.chip[data-g="offices"]'),function(b){
+    var i=C.OFFICE_KINDS.indexOf(b.getAttribute('data-id')), o=C.optOf('offices',b.getAttribute('data-id'));
+    b.textContent=nm[i]||(o&&o.label)||'';
+  });
+}
 
 /* ═══════════ 入力の画面（欄と選択肢は accident-report-calc.js の定義から描く） ═══════════ */
 function chips_(g,cls){
-  var O=C.OPTS[g], f=fac_();
+  var O=C.OPTS[g], f=fac_(), nm=g==='offices'?C.officeLabels(draft&&draft.data,f):null;   /* 事業所の名前は保存した時の写しがあれば写し（紙と同じ） */
   return '<div class="chips'+(cls?' '+cls:'')+'" role="group" aria-label="'+esc(O.label)+'">'+O.opts.map(function(o){
     var lb=o.chip||String(o.label).replace(/\n/g,'');
-    if(g==='offices') lb=(f.offices[o.id]&&f.offices[o.id].name)||o.label;
+    if(g==='offices') lb=nm[C.OFFICE_KINDS.indexOf(o.id)]||o.label;
     return '<button type="button" class="chip" data-g="'+esc(g)+'" data-id="'+esc(o.id)+'" aria-pressed="false">'+esc(lb)+'</button>';
   }).join('')+'</div>';
 }
@@ -922,6 +929,7 @@ document.addEventListener('click',function(ev){
     if(!draft) return;
     if(!master||master.missing){ setMsg('a-dmsg',(master&&master.text)||'入居者マスタを読めていないため、入れ直せません。画面を読み込み直してください。'); return; }
     takeAuto_(C.fromResident(draft.data,master,fac_(),today_())); touched={};
+    relabelOffices_();   /* 入れ直しで事業所の名前の写しが今の名前に変わった時、チップの文字も合わせる */
     toast('入居者マスタと施設情報から入れ直しました'); changed_(); return;
   }
 });
