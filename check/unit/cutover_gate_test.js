@@ -93,6 +93,7 @@ console.log('B ログインしていない端末');
   const one = { rows: [{ role: 'field', login: false, d1: 0, d7: 1, d30: 1 }, { role: 'office', login: false, d1: 0, d7: 0, d30: 4 }] };
   const v = G.judge(base({ dev: { data: one } }));
   t('1台でも満たさず、台数を出す', !item(v, 'device').ok && item(v, 'device').value === '1台' && /1台/.test(item(v, 'device').why), item(v, 'device'));
+  t('端末の記録が上限（500行）の近く（30日で450台以上）まで埋まっている時は分からない（数え漏れうるので押せない側・偽の印で埋める場面）', G.unlogged({ rows: [{ login: true, d7: 449, d30: 449 }, { login: false, d7: 0, d30: 1 }] }) === null && G.unlogged({ rows: [{ login: true, d7: 3, d30: 449 }] }) === 0 && G.unlogged({ hb: [{ login: true, d7: 460, d30: 460 }] }, 'hb') === null);
   t('30日前だけの端末は数えない（7日で数える）', G.unlogged({ rows: [{ login: true, d7: 2 }, { login: false, d7: 0, d30: 5 }] }) === 0);
   const stale = G.judge(base({ dev: { data: { rows: [{ role: 'office', login: true, d1: 0, d7: 0, d30: 3 }, { role: 'field', login: false, d1: 0, d7: 0, d30: 4 }] } } }));
   t('この7日に1台も届いていない（送るのが止まった）時は0台とみなさず満たさない', !item(stale, 'device').ok && item(stale, 'device').value === '—' && G.unlogged({ rows: [{ login: false, d7: 0, d30: 5 }] }) === null, item(stale, 'device'));
