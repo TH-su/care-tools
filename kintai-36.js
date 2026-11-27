@@ -61,8 +61,9 @@
     return (m >= s ? y : y - 1) + '-' + pad(s);
   }
 
-  /* 法定休日を決めているか（kintai-calc.js の checkLegalHoliday と同じ読み方: 0〜6 の整数か '0'〜'6' だけ。ほかは決めていない＝休日労働 0） */
+  /* 法定休日を決めているか（kintai-calc.js の checkLegalHoliday と同じ読み方: 0〜6 の整数か '0'〜'6'、または週の決まり 'week'（2026-11-25）だけ。ほかは決めていない＝休日労働 0） */
   function legalHolidaySet(v) {
+    if (v === 'week') return true;
     if (typeof v === 'string') return /^[0-6]$/.test(v);
     return typeof v === 'number' && v >= 0 && v <= 6 && Math.floor(v) === v;
   }

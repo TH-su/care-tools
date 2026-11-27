@@ -1457,7 +1457,8 @@
       '</select> 15日にすると「12月分」は 11/16〜12/15 です。締めた月分の期間は変わりません。変えると、次の締めていない月分は「前の月分の終わりの翌日〜新しい締め日」になります（切り替えの月分は短く・長くなります）。1か月単位の変形労働時間制の起算日は期間の初日です</span>';
     h += '<label for="s-variableMonth">1か月単位の変形労働時間制</label><span><input type="checkbox" id="s-variableMonth"' + (c.variableMonth ? ' checked' : '') + '> 使う（法定外＝その日の予定の実働と8時間の長い方を超えた分）</span>';
     h += '<label for="s-legal">法定休日（週に1日の休日）</label><span><select id="s-legal"><option value=""' + (c.legal_holiday == null ? ' selected' : '') + '>決めない（休日労働を数えない）</option>' +
-      WD.map(function (w, i) { return '<option value="' + i + '"' + (c.legal_holiday === i ? ' selected' : '') + '>' + w + '曜日</option>'; }).join('') + '</select> この曜日に働いた時間を「休日労働」として分けて数え、法定外の残業には重ねません（就業規則で決めた曜日を選びます）</span>';
+      '<option value="week"' + (c.legal_holiday === 'week' ? ' selected' : '') + '>週の決まり（休みの無い週の最後の勤務日）</option>' +
+      WD.map(function (w, i) { return '<option value="' + i + '"' + (c.legal_holiday === i ? ' selected' : '') + '>' + w + '曜日</option>'; }).join('') + '</select> この曜日に働いた時間を「休日労働」として分けて数え、法定外の残業には重ねません（就業規則で決めた曜日を選びます）。「週の決まり」は、月曜〜日曜の週に休みが1日も無い時だけ、その週の最後の勤務日（日曜）に働いた時間を休日労働にします</span>';
     h += '<label for="s-monthRound30">月の残業・深夜の合計の端数</label><span><input type="checkbox" id="s-monthRound30"' + (c.monthRound30 ? ' checked' : '') + '> 1時間未満を30分で四捨五入する（就業規則に定めがある時だけ）</span>';
     h += '<label for="s-csvTime">CSV の時間の書き方</label><span><select id="s-csvTime"><option value="hmm"' + (c.csvTime === 'hmm' ? ' selected' : '') + '>8:30</option><option value="dec"' + (c.csvTime === 'dec' ? ' selected' : '') + '>8.50</option></select></span>';
     h += lvSetHtml();   /* v5 段4: 休暇と丸め（設定の欄の続き） */
@@ -2772,7 +2773,7 @@
       '<label data-ak="comp">代休の元の日（休日に働いた日） <input type="date" id="lv-a-comp"></label>' +
       '<label data-ak="swap">振替で働く日 <input type="date" id="lv-a-swap"></label>' +
       '<label>メモ <input type="text" id="lv-a-note" maxlength="200"></label><button type="button" class="btn sm" data-act="lv-abs-add">休暇を入れる</button></div>' +
-      '<p class="help">' + esc('休暇は来月分（' + ymdJa(absMaxDate()) + ' まで）の日付で入れられます。') + '特別休暇の種類と有給か無給かは「設定」で決めます。代休は無給で数えます。振替休日は、休む日の勤務の予定を数えず（欠勤・打刻なしにしません）、働く日が法定休日の曜日なら、休む日を法定休日として数えます。' +
+      '<p class="help">' + esc('休暇は来月分（' + ymdJa(absMaxDate()) + ' まで）の日付で入れられます。') + '特別休暇の種類と有給か無給かは「設定」で決めます。代休は無給で数えます。振替休日は、休む日の勤務の予定を数えず（欠勤・打刻なしにしません）、働く日が法定休日の曜日なら、休む日を法定休日として数えます。法定休日を「週の決まり」にした時は振替で法定休日を動かさず、実際に働いた日で決めます。' +
       (cfgL.hourlyPaidLeave ? '夜勤の日は勤務を始めた日で入れてください。時間単位の有休は1日＝' + dh + '時間で日数に直して有給の残りから引き、1年（付与日から）に5日分（' + (dh * 5) + '時間）までです（年5日の取得義務には数えません）。' + (yr && yr.from ? '今の1年（' + ymdJa(yr.from) + '〜' + ymdJa(yr.to) + '）は ' + (yr.usedMin / 60) + '時間使っています。' : '') : '') +
       '締めた月分の日は入れられません。一覧は有給のために読んだ月分の行です。</p>' +
       '<div class="tw"><table><thead><tr><th>日</th><th>種類</th><th>中身</th><th>メモ</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="5" class="empty">休暇はまだありません</td></tr>') + '</tbody></table></div></fieldset>';
