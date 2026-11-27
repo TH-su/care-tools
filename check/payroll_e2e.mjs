@@ -844,7 +844,7 @@ await scene_('7. 賞与のタブ', async () => {
   await p.fill('#bn-title', '見本の冬の賞与');
   await p.click('[data-act="b-new-go"]');
   await p.waitForSelector('[data-act="b-compute"]', { timeout: 10000 });
-  t('新しい賞与を作ると回の画面が開く（支給日・題）', /見本の冬の賞与（支給日 2026年12月24日）/.test(await p.textContent('#p-main')) && o.routes.calls.some((c) => c.name === 'payroll_bonus_create' && c.args.p_pay_date === '2026-12-24'));
+  t('新しい賞与を作ると回の画面が開く（支給日・題。2026-11-28 から題と「支払日」を分けて出す）', /見本の冬の賞与/.test(await p.textContent('#p-main .pl-bhd h2')) && /支払日\s*2026年12月24日/.test(await p.textContent('#p-main .pl-bhd')) && o.routes.calls.some((c) => c.name === 'payroll_bonus_create' && c.args.p_pay_date === '2026-12-24'));
   t('職員の一覧にいて在籍なのに給与の設定が無い人（s-11）を回の画面の上で知らせる（確定は止めない）', /給与の設定が無いので賞与の一覧に出ていない職員: 見本 十一（賞与の対象なら職員の給与の設定を先に入れてください）/.test(await p.textContent('#p-main')), (await p.textContent('#p-main')).slice(0, 300));
   t('前月の給与は11月分の確定した明細から読む（入れる欄を出さない）', /給与の記録/.test(await p.textContent('#p-main')) && (await p.locator('[data-bk="pm"]:not([data-bsid="s-12"])').count()) === 0);
   const idx = async (sid) => p.evaluate((s) => { const e = document.querySelector('[data-bk="amt"][data-bsid="' + s + '"]'); return e ? e.id : null; }, sid);
@@ -1181,8 +1181,8 @@ await scene_('勤怠管理から締めた勤怠を受け取る（?from=kintai）
   /* 警告のある人だけ（B2） */
   const wn = await a.page.evaluate(() => document.querySelectorAll('details.it .tag.warn').length);
   const wb = a.page.locator('[data-act="warn-only"]');
-  t('警告のある人だけ: 件数つきの切り替え（aria-pressed=false）が合計の帯と見出しの行の間に出る', wn > 0 && (await wb.count()) === 1 && await wb.getAttribute('aria-pressed') === 'false' && (await wb.textContent()) === '警告のある人だけ（' + wn + '）'
-    && await a.page.evaluate(() => { const r = document.querySelector('.wfilt'); return !!r && r.previousElementSibling.matches('.sumbar') && r.nextElementSibling.matches('.ihd'); }), wn);
+  t('警告のある人だけ: 件数つきの切り替え（aria-pressed=false）が合計の帯と見出しの行の間に出る（2026-11-28 から合計は開け閉めの箱・切り替えは件数の段の中）', wn > 0 && (await wb.count()) === 1 && await wb.getAttribute('aria-pressed') === 'false' && (await wb.textContent()) === '警告のある人だけ（' + wn + '）'
+    && await a.page.evaluate(() => { const r = document.querySelector('.wfilt'), s = document.querySelector('.sumbar'), h = document.querySelector('#p-main .ihd'); return !!r && !!s && !!h && !!(s.compareDocumentPosition(r) & 4) && !!(r.compareDocumentPosition(h) & 4); }), wn);
   await wb.click();
   t('警告のある人だけ: 押すと警告のある人だけになり aria-pressed=true・合計の帯は全員分のまま', (await a.page.locator('details.it').count()) === wn && await a.page.getAttribute('[data-act="warn-only"]', 'aria-pressed') === 'true' && /10 人/.test(await a.page.textContent('.sumbar')));
   await a.page.click('[data-act="warn-only"]');
