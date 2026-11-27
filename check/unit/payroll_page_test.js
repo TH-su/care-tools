@@ -291,7 +291,7 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★年末調整のタブ（2026-11-23・ROOT-yearend.md の C）を賞与の入った main に取り込み、両方が入った payroll.js を 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と、確定した賞与を年末調整の累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
   /* ★支給日の欄（既定27・全角と「日」を受ける・空の知らせ・2026-11-24）で 2026-11-24.1 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-26・手順の段階の入った版・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3）', /payroll\.js\?v=2026-11-26\.3"/.test(H));
+  t('payroll.js の版を上げた（2026-11-26・手順の段階の入った版・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27）', /payroll\.js\?v=2026-11-27"/.test(H));
 }
 
 console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C） —');
@@ -306,7 +306,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
   /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-26・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3）', /payroll\.js\?v=2026-11-26\.3"/.test(H));
+  t('payroll.js の版を上げた（2026-11-26・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27）', /payroll\.js\?v=2026-11-27"/.test(H));
   t('描く物は PayrollYearEndUI.html(ctx)・無ければ「計算の部品が読み込めていません」', /else if \(tab === 'yearend'\) h = YEU\(\) \? YEU\(\)\.html\(yeCtx\(\)\) : '<div class="band ng" role="alert">計算の部品が読み込めていません。/.test(J));
   t('出来事は ye- で始まる act だけ・金額を隠している間は渡さない', /else if \(\/\^ye-\/\.test\(a\) && YEU\(\) && view === 'app' && !masked\) YEU\(\)\.onClick\(yeCtx\(\), a, b\);/.test(J)
     && /YEU\(\)\.onChange\(yeCtx\(\), e\.target\)/.test(J));
@@ -745,7 +745,7 @@ console.log('\n— 賞与の「freee と比べる」と、確定した賞与を�
   t('振込の所の印は対象外の人を差に数えず、比べた後に計算が変われば知らせる', /var n = c\.res\.pass \? 0 : c\.res\.diffCount \+ c\.res\.others;/.test(U) && /freee と比べた後に計算が変わりました/.test(U));
   t('「直す」に従業員番号の欄（20字まで・空なら前に値があった時だけ空に戻す）・A9 の人は比べる対象から外すと知らせる', /inp\('f-emp', '従業員番号（freee の番号）', d\.freee_emp_num/.test(J) && /else if \(empIn\) d\.freee_emp_num = empIn;/.test(J)
     && /else if \('freee_emp_num' in obj\(p\.data\)\) d\.freee_emp_num = null;/.test(J) && /比べる対象から外します/.test(J));
-  t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-23\.2"/.test(H));
+  t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2・ファイルの欄の直しで yearend-ui 2026-11-27）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-27"/.test(H));
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {

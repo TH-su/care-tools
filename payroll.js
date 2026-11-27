@@ -30,7 +30,44 @@
   function note(where, e) { try { if (window.SUErrors && window.SUErrors.note) window.SUErrors.note('給与', e, 'payroll:' + where); } catch (_) {} }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   /* HTML を入れる所はここだけ（値は全部 esc を通してから組む） */
-  function put(el, html) { if (el) el.innerHTML = html; }
+  function put(el, html) { if (!el) return; fileKeep(el); if (el) el.innerHTML = html; filePlace(el); }   /* 代入の文は点検表（xss_census）の形のまま */
+  /* ファイルの欄は描き直しで作り直さない（2026-11-27）。描く HTML には欄の代わりに入れ物（fileSlot）だけを置き、本物の欄は1つの id に1つだけ作って、
+     描き直しの前に画面の外の隠れた置き場へ移し、描いた後に入れ物へ同じ部品のまま戻す。前は描き直すたびに欄を作り直していたので、
+     ファイルを選ぶ窓を開いている間に読み直し・締めた勤怠の確かめの答えで描き直されると、選んだファイルが外れた古い欄に入り、何も起きなかった */
+  var FILES = {}, fileLot = null;
+  function fileSlot(id, multiple, maxw) {
+    return '<span data-file-slot="' + esc(id) + '" data-accept=".csv,text/csv"' + (multiple ? ' data-multiple="1"' : '') + (maxw ? ' data-maxw="1"' : '') + ' style="display:contents"></span>';
+  }
+  function fileKeep(el) {
+    for (var id in FILES) {
+      var f = FILES[id];
+      if (f && f !== el && el.contains(f)) {
+        if (!fileLot) { fileLot = document.createElement('div'); fileLot.hidden = true; fileLot.setAttribute('aria-hidden', 'true'); document.body.appendChild(fileLot); }
+        fileLot.appendChild(f);
+      }
+    }
+  }
+  function filePlace(el) {
+    var slots = el.querySelectorAll ? el.querySelectorAll('[data-file-slot]') : [];
+    for (var i = 0; i < slots.length; i++) {
+      var s = slots[i], id = s.getAttribute('data-file-slot');
+      if (!/^[a-z][a-z0-9-]*$/.test(id || '')) continue;
+      var f = FILES[id];
+      if (!f) { f = document.createElement('input'); f.type = 'file'; f.id = id; FILES[id] = f; }
+      f.accept = s.getAttribute('data-accept') || '';
+      f.multiple = s.getAttribute('data-multiple') === '1';
+      f.style.maxWidth = s.getAttribute('data-maxw') === '1' ? '100%' : '';
+      s.appendChild(f);
+    }
+  }
+  /* 置き場にいる（今の画面に入れ物が無い＝タブを変えた・覆い・鍵の後）欄に届いた選びは使わず、欄を空に戻す（前の名前を残さない） */
+  function fileStray(el) {
+    if (!el || !el.id || FILES[el.id] !== el) return false;
+    var s = el.parentNode;
+    if (s && s.getAttribute && s.hasAttribute('data-file-slot') && document.documentElement.contains(s)) return false;
+    try { el.value = ''; } catch (_) {}
+    return true;
+  }
   function sync(t) { $('p-sync').textContent = t || ''; }
   function isField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (_) { return false; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
@@ -833,7 +870,7 @@
   function yeReset() { try { if (YEU()) YEU().reset(); } catch (e) { note('年末調整を捨てる', e); } }
   function yeCtx() {
     return { rpc: rpc, esc: esc, yen: yen, bs: bs, calc: calc, items: bs ? items() : [], ym: ym, paint: paint, toast: toast, openDlg: openDlg, closeDlg: closeDlg, isAdmin: isAdmin, note: note,
-      parseCsv: parseCsv, decode: decode, put: put, say: say, ask: ask, fail: fail, noDb: noDb, download: download,
+      parseCsv: parseCsv, decode: decode, put: put, fileSlot: fileSlot, say: say, ask: ask, fail: fail, noDb: noDb, download: download,
       frozen: !!bs && frozen(), runRev: bs && bs.run ? bs.run.rev : 0, payDate: bs ? payDate() : '', corpName: corpName(),
       adjOf: adjOf, setAdj: function (sid, list) { if (!frozen()) adjEdits[sid] = list; }, compute: doCompute, printSlips: printYe };
   }
@@ -1593,7 +1630,7 @@
     var F = FS(), UI = window.PayrollYearEndUI;
     var h = '<div class="cd"><h2>freee と比べる</h2><p class="help">freee から書き出したこの回（支給日 ' + esc(jdate(bb.run.pay_date)) + '）の賞与の明細の CSV を選ぶと、この画面の明細と人×項目で比べます。ファイルは画面の中だけで読み、どこにも保存しません。' +
       '従業員番号が ' + esc(F ? F.EXCLUDE_PREFIX : 'A9') + ' で始まる人は freee に登録が無いので比べません（差の数に入れず、人数だけ出します）。★賞与の CSV の見出しは、事務担当が書き出した実物でまだ確かめていません（未検証）。</p>' +
-      '<div class="row"><label for="b-cmpfile">この回の CSV</label><input type="file" id="b-cmpfile" accept=".csv,text/csv" style="max-width:100%"></div>';
+      '<div class="row"><label for="b-cmpfile">この回の CSV</label>' + fileSlot('b-cmpfile', false, true) + '</div>';
     var c = bCmp;
     if (!c || c.bid !== bb.run.bonus_id) return h + '</div>';
     if (c.err) return h + '<div class="band ng" role="alert">' + esc(c.err) + '</div></div>';
@@ -1876,6 +1913,7 @@
     document.addEventListener('change', function (e) {
       var el = e.target, k = el && el.getAttribute && el.getAttribute('data-bk'), sid = el && el.getAttribute('data-bsid');
       if (el && el.id === 'b-who') { bSlipSid = el.value; paint(); return; }
+      if (fileStray(el)) return;   /* 今の画面に欄が無い時に届いた選びは使わない（2026-11-27） */
       if (el && el.id === 'b-cmpfile') { if (tab === 'bonus') bonusCmpFile(el.files && el.files[0]); el.value = ''; return; }
       if (!k || !bb || tab !== 'bonus') return;
       if (k === 'pm' || k === 'psrc') { bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' }; bIn[sid][k] = String(el.value || ''); bDirty = true; if (k === 'pm') { paint(); var f = $(el.id.replace('b-pm-', 'b-pp-')) || $(el.id); if (f) f.focus(); } }
@@ -2244,7 +2282,7 @@
   }
   function importHtml() {
     var h = '<div class="cd"><h2>freee の書き出しを取り込む（管理者）</h2><p class="help">freee 人事労務から書き出した従業員の CSV を選ぶと、画面の中だけで読み、今の設定との違いを見せます。ファイルはどこにも保存しません。「送る」を押すまでデータベースは変わりません。取り込みは足すだけで、この月分の版がもうある人の設定と、口座がもうある人の口座は書き換えません（直す時は「直す」「口座」から）。</p>';
-    h += '<div class="row"><label for="i-file">CSV のファイル</label><input type="file" id="i-file" accept=".csv,text/csv"></div>';
+    h += '<div class="row"><label for="i-file">CSV のファイル</label>' + fileSlot('i-file', false, false) + '</div>';
     if (importErr) h += '<div class="band ng" role="alert">' + esc(importErr) + '</div>';
     if (importRows) {
       var ok = importRows.filter(importable), ic = importRows.cols;
@@ -2732,6 +2770,7 @@
     }, true);
     document.addEventListener('change', function (e) {
       var id = e.target && e.target.id;
+      if (fileStray(e.target)) return;   /* 今の画面に欄が無い時に届いた選びは使わない（2026-11-27） */
       if (id === 'p-ym') setYm(e.target.value);
       else if (id === 's-who') { slipSid = e.target.value; paint(); }
       else if (id === 'i-file') { var f = e.target.files && e.target.files[0]; importFile(f); e.target.value = ''; }

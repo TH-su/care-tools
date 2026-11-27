@@ -31,15 +31,42 @@ const YM = '2026-11';
 const run = (o) => o.routes.db.runs[YM] || { status: null, rev: 0 };
 let pass = 0, fail = 0;
 function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e).slice(0, 600) : '')); } }
+/* 場面ごとに囲む（2026-11-27）: 1つの場面が時間切れ・例外で止まっても、どの場面で何が起きたかを出し、その場面の画面を閉じて次の場面へ進む。
+   止まった場面は失敗に数える（終了コードは 0 以外）。前は止まった所で全体が落ち、出力の最後が Node の版の行だけで、どの場面か追えなかった */
+let scene = '（場面の外）';
+const liveCtx = new Set();
+const errText = (e) => (e && e.stack ? String(e.stack).split('\n').slice(0, 8).join('\n      ') : String(e));
+async function scene_(name, fn) {
+  scene = name;
+  try { await fn(); } catch (e) {
+    fail++;
+    console.log('  ✗ 場面「' + name + '」が途中で止まりました（この場面のここから後は確かめていません）\n      ' + errText(e));
+    for (const c of [...liveCtx]) await c.close().catch(() => {});
+  } finally { liveCtx.clear(); scene = '（場面の外）'; }
+}
+/* 場面の外で起きた捕まえていない例外も、場面の名前と中身を出してから 0 以外で終える（握りつぶさない） */
+for (const ev of ['unhandledRejection', 'uncaughtException']) {
+  process.on(ev, async (e) => {
+    console.log('\n  ✗ 捕まえていない' + (ev === 'uncaughtException' ? '例外' : '約束の失敗') + '（場面「' + scene + '」の間）\n      ' + errText(e));
+    console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + (fail + 1) + ' 件失敗（途中で止まった） ──────────');
+    await browser.close().catch(() => {});
+    process.exit(1);
+  });
+}
 
 async function open(opt = {}) {
   const ctx = await browser.newContext({ viewport: opt.viewport || { width: 1280, height: 900 }, deviceScaleFactor: 1, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', colorScheme: opt.dark ? 'dark' : 'light', acceptDownloads: true });
+  liveCtx.add(ctx); ctx.on('close', () => liveCtx.delete(ctx));
   const routes = FX.routesFor(Object.assign({ ym: YM, now: CLOCK }, opt));
+  /* 場面の材料を偽の DB へ入れるのは、ページを開く前（seed）。開いた後に入れると、画面の最初の読み込み（年末調整の確かめなど）が
+     入れる前の DB を読んで、知らせが出ないまま時間切れになることがあった（2026-11-27） */
+  if (typeof opt.seed === 'function') opt.seed(routes.db);
   const outside = [];
   await ctx.route('**/*', (route) => { const u = new URL(route.request().url()); if (u.origin === srv.url || u.origin === FX.URL) return route.fallback(); outside.push(u.origin); return route.abort(); });
   for (const r of routes) await ctx.route(r.match, r.handle);
   for (const r of (opt.extraRoutes || [])) await ctx.route(r.match, r.handle);   /* 場面だけの口（後から足した口が先に効く・2026-11-26 暗証番号の画面を通る場面） */
   await ctx.addInitScript((st) => { for (const k of Object.keys(st)) localStorage.setItem(k, st[k]); }, FX.storageFor(opt));
+  ctx.on('page', trackDb);   /* この画面の後から開くタブ（ctx.newPage）も数える */
   const page = await ctx.newPage();
   /* 時計は固定の日（月分は 2026-11＝材料の月分）。タイマーは動かす */
   await page.clock.setFixedTime(CLOCK);
@@ -71,19 +98,66 @@ async function sud(page, answer = 'ok', wait = 5000) {
 }
 const shot = async (page, name, full = true) => { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: full }); };
 /* 画面が開き、職員の並び（入職順・kintai_master_list）の読み込みと描き直しまで落ち着くのを待つ（描き直しの途中でファイルの欄などを触らない・2026-11-21） */
-/* 読み直し（読み込みの表示）と通信が落ち着くのを待つ */
-const settle = async (page) => {
-  await page.waitForFunction(() => !document.getElementById('p-sync').textContent, null, { timeout: 10000 });
-  await page.waitForLoadState('networkidle').catch(() => {});
+/* 読み直し（読み込みの表示）と通信が落ち着くのを待つ。
+   2026-11-27 直し: 前は「読み込みの表示が消えた」＋ waitForLoadState('networkidle') だったが、networkidle はページを開いた時に一度済むと
+   すぐ返るので、読み直しの後の通信（締めた勤怠の確かめ kintai_month_get・職員の並び）を待っていなかった。その答えで #p-main が
+   描き直され（innerHTML）、ファイルの欄が入れ替わった所へファイルを選ぶと、選んだ変化が画面に届かず取り込みの表が出ないまま止まった。
+   今は (1) 読み込みの表示が消え (2) 偽の DB への通信が全部答えを受け取り (3) #p-main と読み込みの表示が 300ms 変わらない、が
+   そろうまで待つ（そろう前に通信や表示が動いたら、もう一度確かめる）。時間の上限は今までと同じ 10 秒 */
+const inflight = new WeakMap();
+const busyN = (page) => (inflight.get(page) || new Set()).size;
+/* 偽の DB へ出ていて、まだ答えの届いていない通信（settle が「通信が終わった」を確かめる）。open() の画面の全部のタブで数える。
+   読み込み直し・移動で切られた通信は requestfinished も requestfailed も来ない（確かめた）ので、ページの読み込みが始まったら
+   （一番外の枠の移動の要求）、前の文書の分を捨てる。URL だけを書き換える移動（history）は要求が出ないので捨てない */
+function trackDb(page) {
+  const live = new Set(); inflight.set(page, live);
+  page.on('request', (r) => {
+    if (r.isNavigationRequest() && r.frame() === page.mainFrame()) { live.clear(); return; }
+    if (r.url().startsWith(FX.URL)) live.add(r);
+  });
+  const doneReq = (r) => { live.delete(r); };
+  page.on('requestfinished', doneReq); page.on('requestfailed', doneReq);
+}
+const settle = async (page, timeout = 10000) => {
+  const end = Date.now() + timeout, left = () => Math.max(1, end - Date.now());
+  const why = (s) => new Error('settle: ' + s + '（' + timeout + 'ms の間に落ち着かない）');
+  for (;;) {
+    await page.waitForFunction(() => !document.getElementById('p-sync').textContent, null, { timeout: left() });
+    while (busyN(page) > 0) { if (Date.now() > end) throw why('偽の DB への通信が ' + busyN(page) + ' 本終わらない'); await new Promise((r) => setTimeout(r, 25)); }
+    const q = await page.evaluate(([ms, cap]) => new Promise((res) => {
+      let tm = 0, n = 0, last = '';
+      const ob = new MutationObserver((ms0) => { n += ms0.length; const m = ms0[ms0.length - 1], el = m.target.nodeType === 1 ? m.target : m.target.parentElement; last = m.type + ' ' + (el ? el.tagName + (el.id ? '#' + el.id : '') + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') : '') + (m.attributeName ? ' [' + m.attributeName + ']' : ''); clearTimeout(tm); tm = setTimeout(() => fin(true), ms); });
+      const capT = setTimeout(() => fin(false), cap);
+      const fin = (v) => { ob.disconnect(); clearTimeout(tm); clearTimeout(capT); res({ v, n, last }); };
+      ['p-main', 'p-sync'].forEach((id) => { const el = document.getElementById(id); if (el) ob.observe(el, { childList: true, subtree: true, characterData: true, attributes: true }); });
+      tm = setTimeout(() => fin(true), ms);
+    }), [300, left()]);
+    if (!q.v) throw why('画面の描き直しが止まらない（変化 ' + q.n + ' 回・最後は ' + q.last + '）');
+    if (busyN(page) === 0 && !(await page.evaluate(() => document.getElementById('p-sync').textContent))) return;
+    if (Date.now() > end) throw why('通信か読み込みの表示が続く');
+  }
 };
 const waitApp = async (page) => {
   await page.waitForFunction(() => !document.getElementById('p-app').hidden && !document.querySelector('#p-main .skel'), null, { timeout: 15000 });
   await page.waitForLoadState('networkidle').catch(() => {});
 };
+/* ファイルを選ぶ窓を開いたまま画面を描き直させ、その後に選ぶ（人の手順の写し・2026-11-27）。
+   窓を開いた後に #p-main へ印を1つ置き、描き直し（repaint）で印が消えた＝#p-main が作り直されたのを確かめてから、落ち着くのを待って選ぶ。
+   選んだ物は、窓を開いた時の欄に入る（Playwright の filechooser）。前の画面は描き直すたびに欄を作り直していたので、ここで選んだ物が画面に届かなかった */
+const pickAcross = async (page, sel, files, repaint) => {
+  const [ch] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10000 }), page.click(sel)]);
+  await page.evaluate(() => { const x = document.createElement('i'); x.hidden = true; x.setAttribute('data-e2e-old', '1'); document.getElementById('p-main').appendChild(x); });
+  await repaint();
+  await page.waitForFunction(() => !document.querySelector('#p-main [data-e2e-old]'), null, { timeout: 10000 });
+  await settle(page);
+  await ch.setFiles(files);
+};
+/* 条件が満たされたかを真偽で返す（満たされなければ t の失敗に数える。時間切れで場面を止めない） */
+const seen = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 10000 }).then(() => true, () => false);
 
 /* ── 1. 計算→下書き保存→確定 ── */
 console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
-{
+await scene_('1. 計算 → 下書き保存 → 確定', async () => {
   const o = await open({ tab: 'run', start: 'none' });
   const p = o.page;
   await waitApp(p);
@@ -155,11 +229,11 @@ console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
   t('console.log に何も出さない', o.logs.length === 0, o.logs);
   t('外への通信 0', o.outside.length === 0, o.outside);
   await o.ctx.close();
-}
+});
 
 /* ── 2. 確定の窓の後に入力が変わった ── */
 console.log('\n— 2. 確定の窓の後に入力が変わる —');
-{
+await scene_('2. 確定の窓の後に入力が変わる', async () => {
   const o = await open({ tab: 'run', start: 'none' });
   const p = o.page;
   await waitApp(p);
@@ -185,11 +259,11 @@ console.log('\n— 2. 確定の窓の後に入力が変わる —');
   t('計算し直した後の保存は通る', run(o).rev >= 2);
   t('画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
+});
 
 /* ── 4. 給与明細と印刷 ── */
 console.log('\n— 4. 給与明細と印刷 —');
-{
+await scene_('4. 給与明細と印刷', async () => {
   const o = await open({ tab: 'slip', start: 'confirmed' });
   const p = o.page;
   await waitApp(p);
@@ -232,11 +306,11 @@ console.log('\n— 4. 給与明細と印刷 —');
   t('確定を取り消すと下書きに戻り、計算し直せる', run(o).status === 'draft' && o.routes.calls.some((c) => c.name === 'payroll_run_unconfirm' && c.args.p_reason === '見本の直し'));
   t('画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
+});
 
 /* ── 5. 振込と書き出し ── */
 console.log('\n— 5. 振込と書き出し —');
-{
+await scene_('5. 振込と書き出し', async () => {
   const o = await open({ tab: 'export', start: 'confirmed' });
   const p = o.page;
   await waitApp(p);
@@ -331,11 +405,11 @@ console.log('\n— 5. 振込と書き出し —');
   fs.rmSync(zp, { force: true });
   t('画面のエラー 0', o.errors.length + o2.errors.length === 0, o.errors.concat(o2.errors));
   await o2.ctx.close();
-}
+});
 
 /* ── 6. 覆い・設定・iPhone・暗い表示・10分 ── */
 console.log('\n— 6. 覆い・その他 —');
-{
+await scene_('6. 覆い・その他', async () => {
   const o = await open({ tab: 'run', deny: true });
   await o.page.waitForFunction(() => !document.getElementById('p-gate').hidden, null, { timeout: 15000 });
   t('42501 なら覆いの画面だけ（給与の名簿に入っていない）', /給与の名簿に入っていません/.test(await o.page.textContent('#p-gate')) && await o.page.evaluate(() => document.getElementById('p-app').hidden));
@@ -561,11 +635,11 @@ console.log('\n— 6. 覆い・その他 —');
     t(nm + ': 画面のエラー 0', q.errors.length === 0, q.errors);
     await q.ctx.close();
   }
-}
+});
 
 /* ── 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）: 開く・freee の明細を取り込む・1人を開いて計算・コンソールのエラー 0 ── */
 console.log('\n— 年末調整のタブ —');
-{
+await scene_('年末調整のタブ', async () => {
   const o = await open({ tab: 'yearend', start: 'confirmed' });
   const p = o.page;
   await waitApp(p);
@@ -601,15 +675,15 @@ console.log('\n— 年末調整のタブ —');
   t('年末調整のタブ: 画面のエラー 0', o.errors.length === 0, o.errors);
   t('年末調整のタブ: 外へ通信しない', o.outside.length === 0, o.outside);
   await o.ctx.close();
-}
+});
 
 /* ── 年末調整の精算（今月の給与のタブ）: 確定した人の過不足を「年末調整の精算を入れる」で入れ、確定の前の確かめ（payroll_yearend_check）を通す・合わなければ止める ── */
 console.log('\n— 年末調整の精算（今月の給与） —');
-{
-  const o = await open({ tab: 'yearend', start: 'none' });
-  const p = o.page;
+await scene_('年末調整の精算（精算を入れて確定する）', async () => {
   /* 架空の年末調整の確定（精算する月分を表示中の 2026-11 にした見本・還付 1,200 円） */
-  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }];
+  const seed = (db) => { db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }]; };   /* 開く前に入れる（開いた後に入れると最初の読み込みとの順が揃わない・2026-11-27） */
+  const o = await open({ tab: 'yearend', start: 'none', seed });
+  const p = o.page;
   await waitApp(p);
   await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   await p.click('[data-tab="run"]');
@@ -634,15 +708,16 @@ console.log('\n— 年末調整の精算（今月の給与） —');
   t('確定は payroll_yearend_check(p_year) で合っていると確かめてから payroll_run_confirm', iChk >= 0 && iConf > iChk && o.routes.calls[iChk].args.p_year === 2026, o.routes.calls.map((c) => c.name));
   t('精算: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
-{
-  const o = await open({ tab: 'yearend', start: 'none' });
+});
+await scene_('年末調整の精算（精算が入っていない時は確定しない）', async () => {
+  const seed = (db) => { db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null }]; };   /* 開く前に入れる（開いた後に入れると最初の読み込みとの順が揃わない・2026-11-27） */
+  const o = await open({ tab: 'yearend', start: 'none', seed });
   const p = o.page;
-  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: -1200, balance_settle: -1200, warnings: [] }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null }];
   await waitApp(p);
   await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   await p.click('[data-tab="run"]');
   await p.waitForSelector('[data-act="ye-settle"]', { timeout: 10000 });
+  await settle(p);   /* 締めた勤怠の確かめ（kintai_month_get）の答えと描き直しを待ってから押す（確かめの間に押すと「少し待って」の窓が出る・2026-11-27） */
   await p.click('[data-act="compute"]');   /* 精算を入れずに計算して保存する */
   await p.click('[data-act="save"]');
   await settle(p);
@@ -654,16 +729,17 @@ console.log('\n— 年末調整の精算（今月の給与） —');
   t('精算が入っていない時は確定しない（payroll_run_confirm を呼ばない）', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm') && (o.routes.db.runs[YM] || {}).status === 'draft');
   t('止めた時: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
+});
 /* 反証レビュー（2026-11-23）: 年末調整の確定の後に精算する月分の明細が変わった（stale）は、今月の給与のタブで知らせ、確定を止める */
-{
-  const o = await open({ tab: 'run', start: 'none' });
+await scene_('年末調整の精算（確定の後に明細が変わった stale）', async () => {
+  const seed = (db) => { db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: 0, balance_settle: 0, warnings: [] }, basis: { ytd: [], items: [{ ym: YM, rev: 1, gross: 1, taxable: 1, si: 1, tax: 1 }] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null },
+    { year: 2026, staff_id: 's-02', decl: { kou: true }, result: {}, basis: { ytd: [], items: [] }, status: 'draft', settle_ym: YM, rev: 1, finalized_at: null }]; };   /* 開く前に入れる（開いた後に入れると最初の読み込みとの順が揃わない・2026-11-27） */
+  const o = await open({ tab: 'run', start: 'none', seed });
   const p = o.page;
-  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: true, balance: 0, balance_settle: 0, warnings: [] }, basis: { ytd: [], items: [{ ym: YM, rev: 1, gross: 1, taxable: 1, si: 1, tax: 1 }] }, status: 'final', settle_ym: YM, rev: 2, finalized_at: null },
-    { year: 2026, staff_id: 's-02', decl: { kou: true }, result: {}, basis: { ytd: [], items: [] }, status: 'draft', settle_ym: YM, rev: 1, finalized_at: null }];
   await waitApp(p);
   await p.waitForFunction(() => /年末調整を確定した後に、この月分の明細が変わりました/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('stale: 今月の給与のタブに「確定した後に明細が変わった」を出す（年末調整のタブを開かなくても）・下書きの人は止めない知らせ', /見本 一郎/.test(await p.textContent('#p-main')) && /年末調整の知らせ（確定は止めません）: 見本 二子（年末調整がまだ下書き）/.test(await p.textContent('#p-main')));
+  await settle(p);   /* 同上（締めた勤怠の確かめの答えを待つ・2026-11-27） */
   await p.click('[data-act="compute"]');
   await p.click('[data-act="save"]');
   await settle(p);
@@ -675,12 +751,12 @@ console.log('\n— 年末調整の精算（今月の給与） —');
   t('stale: 確定しない（payroll_run_confirm も読み直しも呼ばない）', !o.routes.calls.some((c) => c.name === 'payroll_run_confirm') && (o.routes.db.runs[YM] || {}).status === 'draft');
   t('stale: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
+});
 /* 源泉徴収票の印刷は payroll_yearend_log が通ってから */
-{
-  const o = await open({ tab: 'yearend', start: 'confirmed' });
+await scene_('源泉徴収票の印刷', async () => {
+  const seed = (db) => { db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: false, reasons: ['not_kou'], balance: null, balance_settle: 0, warnings: [], lines: null }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: '2026-12', rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }]; };   /* 開く前に入れる（開いた後に入れると最初の読み込みとの順が揃わない・2026-11-27） */
+  const o = await open({ tab: 'yearend', start: 'confirmed', seed });
   const p = o.page;
-  o.routes.db.yearend = [{ year: 2026, staff_id: 's-01', decl: { kou: true }, result: { eligible: false, reasons: ['not_kou'], balance: null, balance_settle: 0, warnings: [], lines: null }, basis: { ytd: [], items: [] }, status: 'final', settle_ym: '2026-12', rev: 2, finalized_at: '2026-11-20T09:00:00+09:00' }];
   await waitApp(p);
   await p.waitForSelector('[data-act="ye-print"][data-k="all"]:not([disabled])', { timeout: 10000 });
   await p.evaluate(() => { window.print = function () {}; });
@@ -690,8 +766,9 @@ console.log('\n— 年末調整の精算（今月の給与） —');
   t('源泉徴収票の印刷: payroll_yearend_log(withholding_slip・1人) が通ってから紙を作る', !!lg && lg.args.p_kind === 'withholding_slip' && lg.args.p_count === 1 && o.routes.db.log.includes('yearend:withholding_slip'), lg && lg.args);
   t('源泉徴収票の印刷: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
-}
+});
 /* 年末調整のタブの iPhone 幅・暗い表示（横はみ出し 0・エラー 0） */
+await scene_('年末調整のタブの iPhone 幅・暗い表示', async () => {
 for (const [nm, vp, dark] of [['yearend.ph', { width: 390, height: 844 }, false], ['yearend.dark', { width: 1280, height: 900 }, true], ['yearend.ph-dark', { width: 390, height: 844 }, true]]) {
   const q = await open({ tab: 'yearend', start: 'confirmed', viewport: vp, dark });
   await waitApp(q.page);
@@ -702,13 +779,52 @@ for (const [nm, vp, dark] of [['yearend.ph', { width: 390, height: 844 }, false]
   t(nm + ': 画面のエラー 0', q.errors.length === 0, q.errors);
   await q.ctx.close();
 }
+});
+
+/* ── ファイルを選ぶ窓を開いている間に描き直されても、選んだファイルが届く（2026-11-27）: 職員の給与設定・年末調整の取り込みと比べる ── */
+console.log('\n— ファイルを選ぶ窓を開いている間の描き直し —');
+await scene_('ファイルを選ぶ窓を開いている間の描き直し（職員の給与設定・年末調整）', async () => {
+  const csvF = '従業員番号,氏名,給与形態,基本給\r\nF-1,見本 一郎,月給,245000\r\n';
+  const o = await open({ tab: 'profile', start: 'confirmed' });
+  const p = o.page;
+  await waitApp(p); await settle(p);
+  await pickAcross(p, '#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csvF, 'utf8') }, () => p.click('#p-reload'));
+  t('職員の給与設定（#i-file）: 窓を開いている間に読み直しても、選んだ CSV の取り込みの表が出る', await seen(p, () => !!document.querySelector('[data-act="imp-go"]')));
+  t('職員の給与設定: 選んだ後は欄が空（前のファイルの名前を残さない）・欄は1つだけ', await p.inputValue('#i-file') === '' && await p.evaluate(() => document.querySelectorAll('#i-file').length === 1));
+  if (await p.$('[data-act="imp-cancel"]')) { await p.click('[data-act="imp-cancel"]'); await settle(p); }   /* 表が出なかった時（直す前の画面）も後の欄を確かめる */
+  t('職員の給与設定: やめると取り込みの表が消える', !(await p.$('[data-act="imp-go"]')));
+  /* 年末調整のタブ: 累計の取り込み（#ye-files・いくつでも）と freee と比べる（#ye-cmpfile） */
+  await p.click('[data-tab="yearend"]');
+  await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  await settle(p);
+  t('年末調整: 累計の取り込みの欄は「いくつでも」選べる・CSV だけ', await p.evaluate(() => { const f = document.getElementById('ye-files'); return f.multiple && f.accept === '.csv,text/csv' && document.querySelector('label[for="ye-files"]').textContent === 'CSV のファイル'; }));
+  const csvY = '\ufeff氏名,支給日,総支給額,課税支給額,健康保険料,厚生年金保険料,雇用保険料,所得税\r\n見本 一郎,2026/03/25,"250,000","242,000","13,000","23,790","1,375","5,130"\r\n';
+  await pickAcross(p, '#ye-files', [{ name: 'freee-2026-03.csv', mimeType: 'text/csv', buffer: Buffer.from(csvY, 'utf8') }], () => p.click('#p-reload'));
+  t('年末調整の累計の取り込み（#ye-files）: 窓を開いている間に読み直しても、選んだ CSV の下見が出る', await seen(p, () => !!document.querySelector('[data-act="ye-imp-go"]')));
+  await pickAcross(p, '#ye-cmpfile', { name: 'other.csv', mimeType: 'text/csv', buffer: Buffer.from('あ,い\r\n1,2\r\n', 'utf8') }, () => p.click('#p-reload'));
+  t('年末調整の freee と比べる（#ye-cmpfile）: 窓を開いている間に読み直しても、選んだ CSV を読む（見出しの読めない CSV の知らせが出る）', await seen(p, () => /読めなかった見出し/.test(document.getElementById('p-main').textContent)));
+  t('年末調整: 選んだ後は2つの欄とも空', await p.inputValue('#ye-files') === '' && await p.inputValue('#ye-cmpfile') === '');
+  /* 欄の無いタブにいる間に届いた選びは使わない（タブを変えた時の今の捨て方のまま） */
+  await p.click('[data-tab="profile"]'); await settle(p);
+  const [ch] = await Promise.all([p.waitForEvent('filechooser', { timeout: 10000 }), p.click('#i-file')]);
+  await p.click('[data-tab="run"]'); await settle(p);
+  await ch.setFiles({ name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csvF, 'utf8') });
+  await p.click('[data-tab="profile"]'); await settle(p);
+  t('欄の無いタブ（今月の給与）にいる間に選んだファイルは使わない（職員の給与設定へ戻っても取り込みの表は出ない・欄は空）', !(await p.$('[data-act="imp-go"]')) && await p.inputValue('#i-file') === '');
+  t('画面に出ていない欄は隠れた置き場にある（今の画面の欄のほかは見えない）', await p.evaluate(() => [...document.querySelectorAll('input[type=file]')].every((f) => f.closest('#p-main') || (f.closest('[hidden]') && f.getClientRects().length === 0))));
+  await p.emulateMedia({ media: 'print' });
+  t('ファイルの欄は紙に出ない（画面だけ）', await p.evaluate(() => [...document.querySelectorAll('input[type=file]')].every((f) => f.getClientRects().length === 0)));
+  await p.emulateMedia({ media: 'screen' });
+  t('ファイルを選ぶ窓の場面: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+});
 
 /* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
 /* 賞与額が空の欄に 0 を入れる・前月の給与の欄を全員「前月の給与なし」にする（代表者の答え 2026-11-23「誰も外さない」で、空の人がいると確定できないため） */
 const fillZero = async (pg, skip = []) => { const ids = await pg.evaluate((sk) => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value && !sk.includes(e.getAttribute('data-bsid'))).map((e) => e.id), skip); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
 const allNone = async (pg) => { const sids = await pg.evaluate(() => [...document.querySelectorAll('[data-bk="pm"]')].map((e) => e.getAttribute('data-bsid'))); for (const x of sids) await pg.selectOption('[data-bk="pm"][data-bsid="' + x + '"]', 'none'); return sids.length; };
 console.log('\n— 7. 賞与のタブ —');
-{
+await scene_('7. 賞与のタブ', async () => {
   /* 関数の無い DB（0121 の前）: 「まだ使えません」だけ出して何もしない */
   const o0 = await open({ tab: 'bonus', start: 'confirmed', noBonusDb: true });
   await o0.page.waitForSelector('text=賞与はまだ使えません（データベースの準備中）', { timeout: 15000 });
@@ -833,6 +949,9 @@ console.log('\n— 7. 賞与のタブ —');
   await up(csvB(paid.map((i) => rowOf(i, { date: 'R8.12.24' }))));
   await p.waitForFunction(() => /支給日の読めない行が/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('支給日の読めない賞与の CSV（R8.12.24）は比べない（合格の帯を出さない）', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  /* 窓を開いている間に読み直しても、選んだ CSV で比べる（2026-11-27）。読み直しで前の結果は捨てる */
+  await pickAcross(p, '#b-cmpfile', { name: 'bonus.csv', mimeType: 'text/csv', buffer: csvB(paid.map((i) => rowOf(i))) }, () => p.click('#p-reload'));
+  t('賞与の freee と比べる（#b-cmpfile）: 窓を開いている間に読み直しても、選んだ CSV で比べる（「1円まで一致」）・欄は空', await seen(p, () => /1円まで一致/.test(document.getElementById('p-main').textContent)) && await p.inputValue('#b-cmpfile') === '');
   /* freee に登録の無い人（従業員番号 A9 始まり）: CSV に居なくても対象外として別に数え、ほかが全部同じなら合格 */
   const a9 = paid[paid.length - 1];
   o.routes.db.profiles.filter((q) => q.staff_id === a9.staff_id).forEach((q) => { q.data = Object.assign({}, q.data, { freee_emp_num: 'A901' }); });
@@ -1010,10 +1129,10 @@ console.log('\n— 7. 賞与のタブ —');
   await shot(q.page, 'payroll.bonus-run.ph');
   t('賞与（iPhone の幅）: 画面のエラー 0', q.errors.length === 0, q.errors);
   await q.ctx.close();
-}
+});
 
 /* ── 勤怠管理との行き来（2026-11-25 本人指示）: ?ym= で来た月分で開き、URL から消し、「勤怠管理へ」は今の月分の締めと出力のタブへ ── */
-{
+await scene_('勤怠管理との行き来（?ym=）', async () => {
   console.log('\n— 勤怠管理との行き来 —');
   const h = await open({ path: 'payroll.html?ym=2026-10' });
   await h.page.waitForFunction(() => !document.getElementById('p-app').hidden && document.getElementById('p-main').textContent.length > 0, null, { timeout: 15000 });
@@ -1037,10 +1156,10 @@ console.log('\n— 7. 賞与のタブ —');
   t('iPhone の幅: 頭に「勤怠管理へ」が入っても横はみ出し 0', await ph.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0);
   await shot(ph.page, 'payroll.hop.ph', false);
   await ph.ctx.close();
-}
+});
 
 /* ── 勤怠管理から締めた勤怠を受け取る（?from=kintai・2026-11-26 本人指示）: 1回だけ自動で計算し、保存・確定は人が押す ── */
-{
+await scene_('勤怠管理から締めた勤怠を受け取る（?from=kintai）', async () => {
   console.log('\n— 勤怠管理から受け取る（from=kintai） —');
   const waitRun = async (pg) => { await waitApp(pg); await pg.waitForFunction(() => !/確かめています/.test(document.getElementById('p-main').textContent), null, { timeout: 15000 }).catch(() => {}); await settle(pg); };
   const saveCalls = (o) => o.routes.calls.filter((c) => /^payroll_run_(save|confirm)$/.test(c.name)).length;
@@ -1412,7 +1531,7 @@ console.log('\n— 7. 賞与のタブ —');
     if (w === 390 && z === 1) await shot(q.page, 'payroll.from-kintai.ph', false);
     await q.ctx.close();
   }
-}
+});
 
 await browser.close();
 await srv.close();

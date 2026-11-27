@@ -33,7 +33,7 @@ input, select, textarea { font: inherit; font-size: 16px; color: var(--tx); back
 textarea { min-height: 88px; resize: vertical; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-visible, .tab:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .1em; }
-.pin { max-width: 10em; }
+.pin { max-width: 320px; font-size: 20px; }   /* 暗証番号は幅いっぱい（最大 320px）・大きめの字（2026-11-27） */
 .chk { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0 0 8px; }
 .chk input { width: 24px; height: 24px; min-height: 24px; margin: 0; }
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 8px 16px; border-radius: 10px;
@@ -54,7 +54,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .tab[aria-selected="true"] { background: var(--pri); color: var(--pri-tx); border-color: var(--pri); }
 .seg { display: flex; gap: 8px; margin: 0 0 10px; }
 .seg .btn { flex: 1 1 0; }
-.seg .btn[aria-pressed="true"] { background: var(--pri); color: var(--pri-tx); }
+.seg .btn { border-color: var(--line); color: var(--tx); }
+/* 月の切り替えは塗らない（塗りは上のタブだけ）。選ばれている方は淡い地と下線（2026-11-27） */
+.seg .btn[aria-pressed="true"] { background: var(--pri-l); color: var(--pri); border-color: var(--pri); box-shadow: inset 0 -3px 0 var(--pri); }
 .list { display: grid; gap: 8px; }
 .day { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .day .d { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
@@ -85,6 +87,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .an-box .an-d { margin: 0 0 10px; color: var(--mut); }
 .rows { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; }
 .rows li { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 6px 0 0; }
+/* 有給の付与ごと: 1行目に付与日と残り、2行目に期限（日付は折らない・2026-11-27） */
+.rows li.lot { flex-wrap: wrap; row-gap: 0; }
+.rows li.lot .lot-g { flex: 1 1 auto; min-width: 0; }
+.rows li.lot .lot-r { white-space: nowrap; }
+.rows li.lot .lot-e { flex: 1 0 100%; color: var(--mut); font-size: 0.9375rem; }
+.nw { white-space: nowrap; }   /* 日付の途中で折らない（狭い幅・大きな字では日付の前後で折れる） */
+.help.em { color: var(--tx); font-weight: 700; }
+/* 締める前の目安の注記（箱なし）・予定も打刻も無い月の空の箱 */
+.help.draft-note { margin: 0 0 8px; }
+.muted.empty { margin: 4px 0; text-align: center; padding: 16px 0; }
+/* 確かめが要る日の帯（押すとその日の箱へ・色だけで伝えない＝文で日数と日付を出す） */
+.need-box { margin: 0 0 10px; }
+.need-box .need { display: block; width: 100%; min-height: 44px; text-align: left; padding: 10px 14px; border-radius: 10px; border: 2px solid var(--warn); background: var(--warn-l); color: var(--warn); font: inherit; font-weight: 700; cursor: pointer; }
+.need-box .need::after { content: " ›"; }
+/* 帯で送った先の日の箱は、上に貼り付く見出しの下で止める（--hdr-h は画面が見出しの高さを測って入れる・測れない時は 2段の見出しの高さ） */
+.day { scroll-margin-top: calc(var(--hdr-h, 112px) + 8px); }
+.need-box .need:focus-visible, .day:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
+#p-req > h2.sh { margin-top: 24px; }   /* 「出した申請」の見出しの上を空ける（2026-11-27） */
 @media print {
   body * { display: none !important; }
   body::before { content: "この画面は印刷しません。"; display: block; }

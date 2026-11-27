@@ -15,7 +15,7 @@
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-27"></script>
 <script src="kintai-calc.js?v=2026-11-23.1"></script>
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<link rel="stylesheet" href="su-theme.css?v=2026-11-27">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <style>
 :root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--field:#fafbfc;--press:#e9eef5;--sug:rgba(31,79,191,.35);--fill-in:#1d4ed8;--fill-out:#b91c1c;--in:#1d4ed8;--in-bg:#e8efff;--out:#b91c1c;--out-bg:#fdeaea;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf}
@@ -181,6 +181,18 @@ main.sel .clock .time{font-size:28px;line-height:1.2}
   .chip.ng{border-color:#7a3a44}
   /* 共通の「不具合を報告」の窓は白地のままなので、入力欄とボタンも明るい表示で描かせる（白地に白い字にしない） */
   .sur-dlg{color-scheme:light}
+}
+/* 検品の指摘の直し 2026-11-27（今ある決まりは書き換えず、ここで上書きする・画面の作り（kintai-clock.js）は変えない）
+   ・名前の行は空白の所でだけ折り、1字だけ残る折れ方をしない（balance）
+   ・氏名を選ぶ札は名前の途中で折らない（姓と名の間の空白でだけ折る）。列の数は今のまま（iPad 横の6列＝31人が送らずに1画面の決まり 83699af を守る）
+   ・「名前が出ない時は 番号で打刻」は幅 280px 以上・高さ 48px 以上
+   ・パスコードの画面の「やめる」は、ほかのボタンと 16px 以上離し、色を弱める */
+#k-panel .who{word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance}
+#k-panel .nm{word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance}
+#k-panel .h-code{min-width:min(280px,100%);min-height:48px}
+main[data-v="pass"] #k-panel .back{margin-top:24px;color:var(--sub);border-style:dashed}
+@media screen and (min-width: 900px){
+  main[data-v="pass"] #k-panel .who{font-size:clamp(24px,3.2vw,34px)}
 }
 </style>
 </head>

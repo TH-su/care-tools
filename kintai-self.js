@@ -69,6 +69,7 @@
     open = null; months = {}; curYm = null; viewYm = null; leaveData = null; reqRows = null; lastReq = null; notices = null; monthWait = {};
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     ['days-head', 'days-list', 'leave-box', 'req-list', 'nt-box'].forEach(function (id) { clear($(id)); });
+    clear($('need-box')); $('need-box').hidden = true;   /* 確かめが要る日の帯も捨てる（2026-11-27） */
     $('nt-box').hidden = true; $('rq-lv-remain').textContent = '';
     $('who').textContent = '';
     $('f-req').reset(); msg('rq-msg', ''); msg('app-msg', '');
@@ -217,25 +218,50 @@
     if (!d || my !== gen) return;
     paintDays(d, viewYm, today);
   }
+  /* 確かめが要る日（2026-11-27）: 日の札（S.dayRows の flags）のうち、計算の部品の要確認（C.REVIEW）の札がある日。確認済みの札がある日は数えない。
+     札の名前は計算の部品の FLAG_LABEL をそのまま使う（判定を2つに分けない）。返す: [{ date, label }] */
+  function needDays(rows) {
+    var rv = (C && C.REVIEW) || {}, fl = (C && C.FLAG_LABEL) || {}, labels = {};
+    Object.keys(rv).forEach(function (k) { if (fl[k]) labels[fl[k]] = 1; });
+    var chk = fl.checked;
+    return rows.filter(function (r) { return !r.future && r.flags.some(function (f) { return labels[f]; }) && r.flags.indexOf(chk) < 0; });
+  }
+  /* 上に貼り付く見出しの高さを CSS の --hdr-h に写す（送った先の日の箱が見出しの下に隠れないように・見出しが2段に折れても追従・審査役の指摘 2026-11-27） */
+  function syncHdr() { var h = document.querySelector('.hdr'); if (h) document.documentElement.style.setProperty('--hdr-h', Math.ceil(h.getBoundingClientRect().height) + 'px'); }
+  try { if (window.ResizeObserver) new ResizeObserver(syncHdr).observe(document.querySelector('.hdr')); else window.addEventListener('resize', syncHdr); } catch (e) { /* 測れない端末は CSS の既定の値 */ }
+  function md(date) { return (+date.slice(5, 7)) + '/' + (+date.slice(8, 10)); }
+  function paintNeed(need) {
+    var box = $('need-box');
+    clear(box);
+    box.hidden = !need.length;
+    if (!need.length) return;
+    var shown = need.slice(0, 3).map(function (r) { return md(r.date); }).join('・') + (need.length > 3 ? ' ほか ' + (need.length - 3) + ' 日' : '');
+    var b = el('button', 'need', '確かめが要る日が ' + need.length + ' 日あります（' + shown + '）');
+    b.type = 'button';
+    b.addEventListener('click', function () { var t = document.querySelector('#days-list .day[data-date="' + need[0].date + '"]'); if (t) { syncHdr(); t.scrollIntoView({ block: 'start', behavior: 'smooth' }); try { t.focus({ preventScroll: true }); } catch (e) { /* 焦点を移せない時は送るだけ */ } } });
+    box.appendChild(b);
+  }
   function paintDays(d, ym, today) {
     var head = $('days-head'), list = $('days-list');
-    clear(head); clear(list);
+    clear(head); clear(list); paintNeed([]);
     var m;
     try { m = S.computeOf(d, ym, C, Date.now()); } catch (e) { msg('app-msg', '勤怠を数えられませんでした。ページを読み込み直してください。', 'ng'); return; }
     var h = S.monthHead(d, C, ym), tot = S.monthTotals(m);
     head.appendChild(el('h2', null, h.label));
     if (h.locked) head.appendChild(el('p', 'msg ok', 'この月分は締めてあります。直しが要る時は事務所に伝えてください。'));
-    if (S.draftNote(h)) head.appendChild(el('p', 'msg warn', S.draftNote(h)));   /* 締めていない月分の数字は目安（反証レビュー 2026-11-21） */
+    var rows = S.dayRows(m, C, today);
+    if (!rows.length) { head.appendChild(el('p', 'muted empty', 'この月分の予定と打刻はまだありません。')); return; }   /* 予定も打刻も無い月は、0 の並ぶ合計を出さずに空の箱だけ（2026-11-27） */
+    if (S.draftNote(h)) head.appendChild(el('p', 'help draft-note', S.draftNote(h)));   /* 締めていない月分の数字は目安（反証レビュー 2026-11-21）。目立たせない注記にした（2026-11-27） */
+    paintNeed(needDays(rows));
     var t = el('div', 'tot');
     [['実働の合計', S.minText(tot.workMin)], ['出勤の日数', tot.workDays + ' 日'], ['有休', tot.paidDays + ' 日'], ['予定を超えた時間', S.minText(tot.overtimeMin)]].forEach(function (x) {
       var row = el('div'); row.appendChild(el('span', null, x[0])); row.appendChild(el('b', null, x[1])); t.appendChild(row);
     });
     head.appendChild(t);
     head.appendChild(el('p', 'help', '「数えた時刻」は勤怠として数える時刻です（早出・残業は事務所が認めた分だけ数えます）。違っていたら「申請」から直しを出してください。'));
-    var rows = S.dayRows(m, C, today);
-    if (!rows.length) { list.appendChild(el('p', 'muted', 'この月分の予定と打刻はまだありません。')); return; }
     rows.forEach(function (r) {
       var c = el('div', 'day'), top = el('div', 'd');
+      c.setAttribute('data-date', r.date); c.tabIndex = -1;   /* 確かめが要る日の帯から送る先（画面の中だけの印） */
       top.appendChild(el('span', null, r.label)); top.appendChild(el('span', 'w', r.work ? '実働 ' + r.work : ''));
       c.appendChild(top);
       var dl = el('dl');
@@ -273,13 +299,14 @@
     box.appendChild(el('h2', null, '有給の残り'));
     box.appendChild(el('p', 'big', dTxt(v.remain)));
     /* 時間単位の有休を使う施設で、受け口がまだ休暇の行（absences）を返さない間だけ（反証レビュー 2026-11-21・v6 で返す後は残りから引いてあるので出さない） */
-    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));
+    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));   /* 大きく出ている残りが時間単位で使った分だけ多く見える知らせなので、黄の箱に戻す（審査役の指摘 2026-11-27） */
     if (v.soon) box.appendChild(el('p', 'msg warn', 'いちばん早く消える残り: ' + v.soon.days + ' 日（' + v.soon.expires + ' まで）'));
-    if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'msg warn' : 'muted', v.ob5));
+    if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'help em' : 'muted', v.ob5));
     if (v.lots.length) {
       box.appendChild(el('h2', 'sh', '付与ごとの残りと期限'));
       var ul = el('ul', 'rows');
-      v.lots.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', null, '残り ' + dTxt(l.remain) + '・' + l.expires + ' まで')); ul.appendChild(li); });
+      /* 1行目に付与日（左）と残り（右）、2行目に期限（日付は折らない・2026-11-27） */
+      v.lots.forEach(function (l) { var li = el('li', 'lot'); li.appendChild(el('span', 'lot-g', l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', 'lot-r', '残り ' + dTxt(l.remain))); var e = el('span', 'lot-e', '期限 '); e.appendChild(el('span', 'nw', l.expires)); e.appendChild(document.createTextNode(' まで')); li.appendChild(e); ul.appendChild(li); });
       box.appendChild(ul);
     }
     if (v.next) box.appendChild(el('p', 'muted', '次の付与: ' + v.next.date + '（' + v.next.days + ' 日）'));
