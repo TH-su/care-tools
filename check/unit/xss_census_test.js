@@ -344,6 +344,24 @@ const CENSUS = {
     [E, "$('k-panel').innerHTML = '<div class=\"done\" role=\"alert\">' + (o.name ? '<p class=\"d-name\">' + esc(o.name) + '</p>' : '') + '<p class=\"d-kind\">' + esc(o.big) + '</p>' + (o.time ? '<p class=\"d-time\">' + esc(o.time) + '</p>' : '') + '<p class=\"d-sub\">' + esc(o.sub) + '</p>' + (o.small ? '<p class=\"d-small\">' + esc(o.small) + '</p>' : '') + '<p class=\"d-tap\">画面を押すと、すぐ次の人へ</p>' + '<div class=\"d-bar\" aria-hidden=\"true\"><i></i></div></div>'"]
   ],
   "revenue-calc.js": [],
+  "accident-report-calc.js": [],
+  "accident-report.html": [
+    [F, "g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、事故報告書は開きません。</p><p><a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"],
+    [E, "$('a-res').innerHTML=list.length?list.map(function(r){ return '<li><button type=\"button\" data-act=\"pick\" data-id=\"'+esc(r.id)+'\"><span class=\"rm\">'+esc(r.room)+'</span><span class=\"nm\">'+esc(r.name)+'</span></button></li>'; }).join(''):'<li class=\"empty\">'+(roster.length?'見つかりません。名前・ふりがな・居室の番号で探してください。':'入居者の名簿を読めていません。')+'</li>'"],
+    [E, "$('a-recent').innerHTML=rows.length?rows.map(function(r){ return '<li><button type=\"button\" data-act=\"open-recent\" data-rid=\"'+esc(r.resident_id)+'\" data-aid=\"'+esc(r.id)+'\">'+ '<span class=\"dt\">'+esc(C.mdw(r.occurred_on)||'発生日なし')+'</span><span class=\"nm\">'+esc(r.resident_name||'（名前なし）')+'</span>'+kindTag_(r)+'</button></li>'; }).join(''):'<li class=\"empty\">まだ事故報告書はありません。左で入居者を選ぶと書き始められます。</li>'"],
+    [F, "$('a-form').innerHTML='<p class=\"empty\">読み込んでいます…</p>'"],
+    [F, "$('a-past').innerHTML=''"],
+    [F, "$('a-pv').innerHTML=''"],
+    [F, "$('a-form').innerHTML=''"],
+    [E, "$('a-form').innerHTML=h"],
+    [E, "$('a-past').innerHTML=reports.length?reports.map(function(r){ var me=draft&&String(draft.id)===String(r.id); return '<li><button type=\"button\" data-act=\"open\" data-aid=\"'+esc(r.id)+'\" aria-current=\"'+me+'\"><span class=\"k\">'+esc(C.kindLabel(r.report_kind,r.report_no))+'</span>'+ '<span class=\"d\">発生 '+esc(C.mdw(r.occurred_on)||'日付なし')+'</span><span class=\"d\">提出 '+esc(C.mdw(r.submit_date)||'なし')+'</span></button></li>'; }).join(''):'<li class=\"empty\">まだこの方の事故報告書はありません。</li>'"],
+    [E, "root.innerHTML=C.paperHtml(paperModel_())"],
+    [E, "root.innerHTML=C.paperHtml(paperModel_())"],
+    [E, "root.innerHTML=C.paperHtml(paperModel_())"],
+    [E, "if(p) p.innerHTML=C.paperHtml(paperModel_())"],
+    [F, "if(p) p.innerHTML=''"],
+    [F, "$('a-bigpv').innerHTML=''"]
+  ],
   "hospital-visit-calc.js": [],
   "hospital-visit.html": [
     [F, "g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、受診連絡は開きません。</p><p><a class=\"btn\" href=\"index.html\">メニューへ戻る</a></p>'"],
