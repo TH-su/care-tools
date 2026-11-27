@@ -2939,8 +2939,8 @@
     ctx.keep = keepOf(ctx, act);
     busy = true; msg.textContent = '保存しています…';
     var restore = pressBusy(btn, '保存しています…', $('g-dlg-b'));
-    var firstOk = false;   /* 付与（1段目）を保存できたか。2段目（移行日）で断られた時に、窓を同じ値で残して二重に付与させないため */
-    rpc(call[0], call[1]).then(okOr).then(function () { firstOk = true; return then2 ? rpc(then2[0], then2[1]).then(okOr) : null; }).then(function () {
+    var firstOk = false, secondOk = false;   /* 付与（1段目）を保存できたか。2段目（移行日）で断られた時に、窓を同じ値で残して二重に付与させないため */
+    rpc(call[0], call[1]).then(okOr).then(function () { firstOk = true; return then2 ? rpc(then2[0], then2[1]).then(okOr).then(function (v) { secondOk = true; return v; }) : null; }).then(function () {
       busy = false; toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）' + (warnAfter ? '。' + warnAfter : ''));
       /* v5 段4: 休暇の行は月の読み出しにだけ入るので、その日の月分を読み直してから有給を数え直す */
       var p2 = isAbs ? refreshAbsMonths([at, at2]).then(function () { return loadLeave(false); }) : loadLeave(false);
@@ -2950,7 +2950,12 @@
       return p2;
     })['catch'](function (e) {
       busy = false; note('有給の保存', e);
-      if (firstOk && then2) {
+      if (firstOk && (!then2 || secondOk)) {
+        /* 保存は全部済んで、その後の読み直し・描き直しだけが失敗した時は「保存できませんでした」と出さない */
+        closeDlg(); toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）。表示を読み直せなかったので、画面を読み込み直してください');
+        return;
+      }
+      if (firstOk && then2 && !secondOk) {
         /* 付与は保存できて移行日だけ入らなかった時は、窓を閉じて有給を読み直す（もう一度押して同じ付与を二重に足さない・直しの保存の一部だけ保存と同じ扱い） */
         var m2 = '付与は保存しました。移行日は入っていません（' + leaveMsg(e) + '）。読み直したので、移行日は有給の窓の設定の「移行日」でもう一度入れてください。';
         closeDlg(); loadLeave(false); alert(m2);

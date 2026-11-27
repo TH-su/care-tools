@@ -486,11 +486,13 @@
       ctx.closeDlg(); ctx.toast('累計に足しました。'); reload(ctx);
     }, function (e) {
       S.busy = false; if (btn) btn.disabled = false;
-      if (my === S.gen && keepOnThrow(e)) { if (ctx.note) ctx.note('累計に足す', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（入れた数を捨てない） */
+      if (my === S.gen && dlgOpen() && keepOnThrow(e)) { if (ctx.note) ctx.note('累計に足す', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（入れた数を捨てない） */
       ctx.closeDlg(); if (ctx.fail) ctx.fail(e, '累計に足す');
     });
   }
 
+  /* 窓がまだ開いているか（送っている間に Esc・「やめる」で閉じた後は、窓を残す道に入らない＝「入れた内容は残っています」と偽らない） */
+  function dlgOpen() { try { var el = document.getElementById('p-dlg'); return !!(el && el.open); } catch (e) { return false; } }
   /* 送信が投げた時、通信の失敗（通信切れ・時間切れ）なら窓を閉じずに入力を残す。鍵（42501）・2段階認証・画面の決まった断り・
      データベースの断りなど通信でない失敗は、今までどおり窓を閉じて ctx.fail に任せる（理由の文は ctx.fail が出す） */
   function keepOnThrow(e) {
@@ -742,7 +744,7 @@
       if (then) then(c); else { ctx.toast('下書き保存しました。'); ctx.paint(); }
     }, function (e) {
       S.busy = false; if (btn) btn.disabled = false;
-      if (my === S.gen && S.dlg === D && keepOnThrow(e)) { if (ctx.note) ctx.note('年末調整の下書き保存', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（申告の入力を捨てない） */
+      if (my === S.gen && S.dlg === D && dlgOpen() && keepOnThrow(e)) { if (ctx.note) ctx.note('年末調整の下書き保存', e); dlgNg(ctx, NET_NG); return; }   /* 通信切れでは窓を残す（申告の入力を捨てない） */
       ctx.closeDlg(); S.dlg = null; if (ctx.fail) ctx.fail(e, '年末調整の下書き保存');
     });
   }

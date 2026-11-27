@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-lH8IZi4o5ZxI6zzIWe7EBVkaEVCL+OWz8l6dy4tMdPU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-WE4DNc/wnbxIBd5OBvrtRsXGnJpH/vdwdqioN/mnAFk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -982,7 +982,7 @@ function vqSave_(id){
     if(my!==gen||form!==f) return false;
     eqNote_('業者のその場の追加', e);
     say(friendly_(e),'ng'); return false;
-  }).then(function(v){ vqBusy=false; vqBtn_(id,false); return v; });
+  })['catch'](function(e){ eqNote_('業者を足した後の描き直し', e); return false; }).then(function(v){ vqBusy=false; vqBtn_(id,false); return v; });   /* 描き直しが投げても送信中の印は必ず戻す */
 }
 function vendorOptions_(cur){
   return [['','（業者なし）']].concat(data.vendors.filter(function(v){ return !v.disabled||String(v.id)===String(cur); }).map(function(v){ return [String(v.id),String(v.name||'')]; }));

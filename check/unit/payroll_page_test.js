@@ -406,7 +406,8 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
       t('累計に手で足す: 通信でない失敗（データベースの断り）は今までどおり窓を閉じて fail に任せる（「通信が切れた」と偽らない）', c.dlg === null && c.failed && c.failed.code === '23505' && !D.f['ye-dlg-ng']);
       c.rpc = keepRpc; delete D.f['p-dlg']; delete D.f['p-dlg-b']; c.failed = null;
     }
-    t('年末調整の下書き保存も同じ（投げた時は窓を残す・鍵の時は今までどおり）', /if \(my === S\.gen && S\.dlg === D && keepOnThrow\(e\)\) \{ if \(ctx\.note\) ctx\.note\('年末調整の下書き保存', e\); dlgNg\(ctx, NET_NG\); return; \}[^\n]*\n\s*ctx\.closeDlg\(\); S\.dlg = null; if \(ctx\.fail\) ctx\.fail\(e, '年末調整の下書き保存'\);/.test(U)
+    t('送っている間に窓を閉じた後は、窓を残す道に入らない（「入れた内容は残っています」と偽らない・累計に足す・下書き保存の両方・反証レビュー）', /function dlgOpen\(\) \{ try \{ var el = document\.getElementById\('p-dlg'\); return !!\(el && el\.open\); \}/.test(U) && /if \(my === S\.gen && dlgOpen\(\) && keepOnThrow\(e\)\) \{ if \(ctx\.note\) ctx\.note\('累計に足す', e\);/.test(U));
+    t('年末調整の下書き保存も同じ（投げた時は窓を残す・鍵の時は今までどおり）', /if \(my === S\.gen && S\.dlg === D && dlgOpen\(\) && keepOnThrow\(e\)\) \{ if \(ctx\.note\) ctx\.note\('年末調整の下書き保存', e\); dlgNg\(ctx, NET_NG\); return; \}[^\n]*\n\s*ctx\.closeDlg\(\); S\.dlg = null; if \(ctx\.fail\) ctx\.fail\(e, '年末調整の下書き保存'\);/.test(U)
       && /if \(e && \(e\.code === '42501' \|\| e\.payroll \|\| \/aal2\|mfa\/i\.test\(String\(e\.message \|\| ''\)\)\)\) return false;/.test(U));
     /* 精算（今月の給与のタブ）: もとは DB の payroll_yearend_check の行（年末調整のタブで読んだ物に頼らない）。二度押しても1行に置き換わる・額は balance_settle（負＝還付） */
     const CHK = (rows) => (n) => n === 'payroll_yearend_check' ? { ok: true, year: 2026, rows } : { ok: true };

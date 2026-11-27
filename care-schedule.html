@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Akf4FwHXvDrpTYtZyo7POXVgohF5BqXKtGEy1nhIDzk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-eulpMVVlgrAS7H1Yf+2Jha/23SaYLe+kiTp+CBIi1yk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -10279,7 +10279,8 @@ const SIM = {
     /* 端末に書けなかった時は「保存しました」を出さない（失敗の知らせは csPlanCommit_ が出す）。砂場はもう閉じて控えも消えたので、
        予約は画面のメモリ（DB）にだけある。メモリだけの未送信の印を立てて、裏の取得が古い姿で上書きしないようにする（砂場を閉じる時と同じ形・
        端末に残る印（markDirty）は使わない＝読み込み直した後に予約の無い姿で「競合」やワークスケジュールの止めを残さないため。「💾 保存」で端末に書き直して送れる） */
-    if (!saved) { SYNC._dirty = true; return; }
+    /* 送る版数は印を立てた時の版に固定する（markDirty と同じ。固定しないと、送るまでにワークスケジュールが進めた版を名乗り、その変更を黙って上書きする） */
+    if (!saved) { if (!SYNC._dirty) SYNC._baseRev = SYNC.loadCareRev(); SYNC._dirty = true; return; }
     showToast(csPlanYmdJa_(pl.from) + 'からの計画（予約）を保存しました。その日から今の計画になります');
   },
   /* 予約の編集の中で、開始日・介護度・メモを変える */

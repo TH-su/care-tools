@@ -33,7 +33,7 @@ function run(commitOk) {
     csPlanSaveBlock_: () => '',
     SUDialog: { alert: (m) => { log.push('alert:' + m); return Promise.resolve(); } },
     csPlanServerRes_: () => Promise.resolve({ ok: false }),
-    SYNC: { _dirty: false, hasTarget: () => false, pull: () => Promise.resolve(), markDirty() { log.push('markDirty'); } },
+    SYNC: { _dirty: false, _baseRev: null, loadCareRev: () => 41, hasTarget: () => false, pull: () => Promise.resolve(), markDirty() { log.push('markDirty'); } },
     csWho_: () => 'x',
     csPlanNewId_: () => 'p1',
     csPlanCommit_: (what) => { log.push('commit:' + what); return commitOk; },
@@ -48,7 +48,7 @@ function run(commitOk) {
     kind: 'plan', plan: { resId: 'r1', isNew: true, from: '2026-12-01', note: '' },
     exit() { log.push('exit'); ctx.DB = { residents: [JSON.parse(JSON.stringify(resv))] }; return Promise.resolve(); }
   };
-  return ctx.O.savePlan.call(self).then(() => ({ toasts, log, db: ctx.DB, dirty: ctx.SYNC._dirty }));
+  return ctx.O.savePlan.call(self).then(() => ({ toasts, log, db: ctx.DB, dirty: ctx.SYNC._dirty, baseRev: ctx.SYNC._baseRev }));
 }
 
 (async () => {
@@ -60,6 +60,7 @@ function run(commitOk) {
     t('… 作った予約は画面のメモリに残る（「💾 保存」で書き直せる・編集が消えない）', p.length === 1 && p[0].from === '2026-12-01' && p[0].events[0].id === 'e9', p);
     t('… 描き直しはする（画面のメモリの予約を見せる）', r.log.indexOf('render') > r.log.indexOf('commit:予約を保存'), r.log);
     t('… メモリだけの未送信の印を立てる（砂場の控えは消えているので、裏の取得が古い姿でメモリの予約を上書きしないように・端末に残る印 markDirty は使わない）', r.dirty === true && r.log.indexOf('markDirty') < 0, r.log);
+    t('… 送る版数を印を立てた時の版に固定する（固定しないと、送るまでにワークスケジュールが進めた版を名乗り、その変更を黙って上書きする・反証レビュー）', r.baseRev === 41, r.baseRev);
   }
   {
     const r = await run(true);

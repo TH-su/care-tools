@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ceFmIVVTbqHVzd/zFZWzGpGh3Khp3SR8ZptVjqtQmOk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-sCL0Kgc2T3xeiKowQk8v1HuG2Mowzwy+v1Of5Max+hg='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -912,6 +912,8 @@ function restoreDrafts_(){
 function draftSecs_(){ return DRAFT_SECS.filter(function(x){ return hasDraft_(x[0]); }).map(function(x){ return x[1]; }); }
 /* 保存していない値をまとめて保存する（基本情報 → 入職準備 → 連絡の記録 → 面接の順）。1つでも保存できなければ false（板に理由が出る） */
 function saveDrafts_(){
+  /* 前の保存を送っている最中は黙って止めず、終わってから押し直すよう知らせる */
+  if(basicBusy||contactBusy){ dMsg_('保存の途中です。終わってからもう一度押してください。','warn'); return Promise.resolve(false); }
   var steps=[];
   if(hasDraft_('f-')) steps.push(function(){ return saveBasic_().then(function(r){ return r==='ok'; }); });
   if(hasDraft_('p-')) steps.push(function(){ return savePrep_().then(function(r){ return r==='ok'; }); });
@@ -1068,7 +1070,7 @@ function saveBasic_(){
     else if(r==='pending'){ paintDetail_(); dMsg_(PENDING_MSG+'。','warn'); }
     else if(r==='ng') dMsg_('保存できませんでした。');
     return r;
-  },function(e){ atsNote_('基本情報の保存', e); dMsg_(friendly_(e)); return 'error'; }).then(end);
+  },function(e){ atsNote_('基本情報の保存', e); dMsg_(friendly_(e)); return 'error'; })['catch'](function(e){ atsNote_('基本情報の保存の後の描き直し', e); return 'error'; }).then(end);   /* 描き直しが投げても送信中の印は必ず戻す */
 }
 function newApplicant_(){
   var body='<div class="fi"><label for="d-nname">氏名</label><input id="d-nname" type="text" maxlength="80"></div>'+
