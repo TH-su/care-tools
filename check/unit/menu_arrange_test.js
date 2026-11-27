@@ -129,22 +129,29 @@ t('7e ログインの記録が無い端末では控えを使わない（ログ�
 
 console.log('8 ケアログのボタン');
 const resTiles = DEF.sections.find(s => s.id === 'sec-resident').tiles;
-const care = resTiles.slice(-3)[0], day = DEF.sections.find(s => s.id === 'sec-daycare').tiles.slice(-1)[0], mtg = resTiles.slice(-2)[0], equip = resTiles.slice(-1)[0];
-t('8a 入居者の区分の末尾から3枚目にケアログ（別サイト・事務所専用ではない。デイは 2026-10-26 にデイの区分へ移した）',
+const care = resTiles.slice(-4)[0], day = DEF.sections.find(s => s.id === 'sec-daycare').tiles.slice(-1)[0], mtg = resTiles.slice(-3)[0], equip = resTiles.slice(-2)[0], hv = resTiles.slice(-1)[0];
+t('8a 入居者の区分の末尾から4枚目にケアログ（別サイト・事務所専用ではない。デイは 2026-10-26 にデイの区分へ移した）',
   care.href === 'https://th-su.github.io/care-log/' && care.nm === 'ケアログ' && care.ext === true && !care.officeOnly, care);
 t('8c デイの区分の末尾はデイ（ケアログのデイの画面・名前の事業所名は施設情報から・別サイト・事務所専用ではない）',
   day.href === 'https://th-su.github.io/care-log/#/record/daycare' && day.nm === 'デイ {{通所}}' && day.ext === true && !day.officeOnly, day);
-t('8d 末尾から2枚目は担当者会議の記録（事務所専用・2026-10-25）、末尾は設備・修繕の記録（事務所専用・2026-11-03）',
+t('8d 末尾から3枚目は担当者会議の記録（事務所専用・2026-10-25）、2枚目は設備・修繕の記録（事務所専用・2026-11-03）、末尾は受診連絡（事務所専用・2026-11-27）',
   mtg.href === 'care-meeting.html' && mtg.nm === '担当者会議の記録' && mtg.officeOnly === true && !mtg.ext
-  && equip.href === 'equip-log.html' && equip.nm === '設備・修繕の記録' && equip.officeOnly === true && !equip.ext, [mtg, equip]);
+  && equip.href === 'equip-log.html' && equip.nm === '設備・修繕の記録' && equip.officeOnly === true && !equip.ext
+  && hv.href === 'hospital-visit.html' && hv.nm === '受診連絡' && hv.officeOnly === true && !hv.ext, [mtg, equip, hv]);
 t('8e 担当者会議の記録を足す前の並び（設備・修繕の記録もまだ無い）で保存した設定でも、入居者の区分の並びは既定のまま・フェイスシートの新しい行の印も残る（2026-10-25 審査の指摘）', (function () {
-  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'care-meeting.html' && h !== 'equip-log.html'); });
+  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'care-meeting.html' && h !== 'equip-log.html' && h !== 'hospital-visit.html'); });
   const out = M.arrange(DEF, { ver: 1, order: prev, secs: DEF.sections.map(s => s.id) }, 'office');
   const got = out.sections.find(s => s.id === 'sec-resident').tiles;
   return got.map(x => x.href).join('|') === resTiles.map(x => x.href).join('|') && got.some(x => x.href === 'facesheet.html' && x.newrow === true);
 })());
 t('8e2 設備・修繕の記録を足す前の並びで保存した設定でも、入居者の区分の並びは既定のまま・フェイスシートの新しい行の印も残る（2026-11-03・8e と同じ形）', (function () {
-  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'equip-log.html'); });
+  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'equip-log.html' && h !== 'hospital-visit.html'); });
+  const out = M.arrange(DEF, { ver: 1, order: prev, secs: DEF.sections.map(s => s.id) }, 'office');
+  const got = out.sections.find(s => s.id === 'sec-resident').tiles;
+  return got.map(x => x.href).join('|') === resTiles.map(x => x.href).join('|') && got.some(x => x.href === 'facesheet.html' && x.newrow === true);
+})());
+t('8e3 受診連絡を足す前の並びで保存した設定でも、入居者の区分の並びは既定のまま・フェイスシートの新しい行の印も残る（2026-11-27・8e と同じ形）', (function () {
+  const prev = {}; DEF.sections.forEach(s => { prev[s.id] = s.tiles.map(x => x.href).filter(h => h !== 'hospital-visit.html'); });
   const out = M.arrange(DEF, { ver: 1, order: prev, secs: DEF.sections.map(s => s.id) }, 'office');
   const got = out.sections.find(s => s.id === 'sec-resident').tiles;
   return got.map(x => x.href).join('|') === resTiles.map(x => x.href).join('|') && got.some(x => x.href === 'facesheet.html' && x.newrow === true);
