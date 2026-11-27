@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-pr87EbwdkMTAZE1YFhyPcSikfwhK9dZsiBrRp9wfEgI='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2PRn3hXYEC25KH/AoOzSkaPsS5KoSlsGu7TMnSUnAJQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -60,7 +60,7 @@ main{max-width:1680px; margin:0 auto; padding:14px 16px 72px}
 .btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 16px; border-radius:999px;
   border:1.5px solid var(--ink); background:var(--surf); color:var(--ink); font-weight:700; white-space:nowrap; text-decoration:none}
 .btn:hover{background:var(--surf2)}
-.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn:disabled,.btn.go:disabled,.btn.pink:disabled,.btn.orange:disabled{background:var(--surf2); border-color:var(--line); color:var(--ink3); cursor:not-allowed; filter:none}
 .btn.go{background:var(--go); border-color:var(--go); color:var(--on-neon)}
 .btn.go:hover{filter:brightness(.94)}
 .btn.pink{background:var(--pink); border-color:var(--pink); color:var(--on-neon)}
@@ -87,7 +87,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--ink)}
 
 /* 入居者の一覧（選ぶ所）。札は使わず、居室の番号を薄い字で */
 .res-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(176px,1fr)); gap:6px; margin:8px 0 0; padding:0; list-style:none}
-.res-list button{width:100%; min-height:48px; text-align:left; border:1px solid var(--line2); background:var(--surf); border-radius:8px; padding:6px 10px;
+.res-list button{width:100%; height:100%; min-height:56px; align-items:center; text-align:left; border:1px solid var(--line2); background:var(--surf); border-radius:8px; padding:6px 10px;
   display:flex; gap:8px; align-items:baseline}
 .res-list button:hover{border-color:var(--ink)}
 .res-list .rm{color:var(--ink2); font-size:.9375rem; min-width:2.6em}
@@ -193,6 +193,7 @@ body.sur-has-fab .foot{padding-right:150px}
   .work{grid-template-columns:1fr}
   .side{position:static; max-height:none}
   .narrowtabs{display:flex}
+  .foot{position:static}   /* 狭い幅では帯を貼り付けない（入力欄に重ならない） */
   .work[data-pane=desk] .side{display:none}
   .work[data-pane=side] .desk{display:none}
 }
@@ -248,7 +249,7 @@ body.sur-has-fab .foot{padding-right:150px}
       <section class="panel" aria-labelledby="h-pick-h">
         <h2 id="h-pick-h">入居者を選ぶ</h2>
         <p class="sub">名前・ふりがな・居室の番号で探せます。</p>
-        <input type="search" class="search" id="h-q" maxlength="40" autocomplete="off" aria-label="入居者を探す（名前・ふりがな・居室の番号）">
+        <input type="search" class="search" id="h-q" maxlength="40" autocomplete="off" placeholder="例：はなこ・203" aria-label="入居者を探す（名前・ふりがな・居室の番号）">
         <ul class="res-list" id="h-res"></ul>
       </section>
       <section class="panel" aria-labelledby="h-recent-h">
@@ -275,7 +276,7 @@ body.sur-has-fab .foot{padding-right:150px}
       <section class="desk" aria-label="今回の受診">
         <div class="visitbar">
           <div class="fi"><label for="h-visit">書いている受診</label><select id="h-visit"></select></div>
-          <button type="button" class="btn orange" data-act="new">＋ 新しい受診</button>
+          <button type="button" class="btn" data-act="new">＋ 新しい受診</button>
         </div>
         <div class="tabs" role="tablist" aria-label="今回の受診">
           <button type="button" class="tab" role="tab" data-rtab="letter" id="rt-letter" aria-controls="rp-letter">手紙</button>
@@ -430,6 +431,7 @@ function takeShared_(d){
 
 /* ═══════════ 入居者を選ぶ前（主役＝選ぶ所・脇＝最近の受診） ═══════════ */
 function showHome_(){
+  clearConflict_(); setLoading_(false);
   cur=null; medical=null; visits=[]; draft=null; base=null; prevId='';
   $('h-home').hidden=false; $('h-work').hidden=true; $('h-home-btn').hidden=true;
   $('h-who').innerHTML='<b>入居者を選んでください</b>';
@@ -465,7 +467,7 @@ function pickResident_(id,openVid){
     paintWho_(); setMsg('h-msg',''); setMsg('h-dmsg','');
     $('lp-prev').innerHTML='<p class="ro empty">読み込んでいます…</p>'; $('lp-meds').innerHTML='<p class="ro empty">読み込んでいます…</p>';
     $('rp-letter').innerHTML='<p class="ro empty">読み込んでいます…</p>'; $('rp-result').innerHTML=''; $('rp-paper').innerHTML='';
-    lockDesk_(true);
+    clearConflict_(); lockDesk_(true); setLoading_(true);
     setSync('読み込んでいます…');
     var pV=rpc_('hv_list',{p_resident:r.id}).then(function(d){
       if(my!==gen) return;
@@ -493,7 +495,7 @@ function pickResident_(id,openVid){
       if(!target&&visits.length&&!C.hasResult(visits[0])) target=visits[0];
       if(target){ openVisit_(target); if(openVid&&!C.hasResult(target)&&C.trim(target.letter_body)) rtab='result'; }
       else newVisit_();
-      lockDesk_(dbState!=='ok');
+      lockDesk_(dbState!=='ok'); setLoading_(false);
       paintAll_();
     });
   };
@@ -506,10 +508,17 @@ function paintWho_(){
   $('h-who').innerHTML='<b>'+esc(cur.name)+' 様</b>'+(cur.room?'<span>居室 '+esc(cur.room)+'</span>':'');
 }
 function lockDesk_(on){ var b=$('h-save'); if(b) b.disabled=!!on; }
+/* 読み込み中は書く所（右）と見る所（左）を丸ごと止める（押せる・書ける瞬間を作らない・反証レビュー 4） */
+var loading=false;
+function setLoading_(on){ loading=!!on; var w=$('h-work'); if(w){ w.inert=loading; w.setAttribute('aria-busy',String(loading)); } }
+/* 定期薬を読めているか（読めない・読み込み中は「記載なし」と書き込まない・反証レビュー 2） */
+function medsOk_(){ return !!(medical&&!medical.missing); }
+var NO_MEDS='入居者マスタの定期薬を読めていないため、薬を差し込めません。画面を読み込み直してください。';
 
 /* ═══════════ 受診を開く・新しく始める ═══════════ */
-function openVisit_(v){ draft=C.fromRow(v); base=C.fromRow(v); prevId=''; }
+function openVisit_(v){ clearConflict_(); draft=C.fromRow(v); base=C.fromRow(v); prevId=''; }
 function newVisit_(){
+  clearConflict_();
   draft=C.blankVisit(cur,C.todayJST()); prevId='';
   /* 病院は前回の受診のものを初めから入れる（選び直せる） */
   var p=C.prevVisitFor(visits,draft);
@@ -593,6 +602,7 @@ function paintLeft_(){
   }
   $('lp-meds').innerHTML=mh;
 }
+function prevHasMeds_(){ var p=draft?C.prevVisitFor(visits,draft):null; return !!(p&&/【[^】]*受診[前後]】/.test(String(p.result_body||''))); }
 function roBox_(t,empty){ return C.trim(t)?'<div class="ro">'+esc(t)+'</div>':'<div class="ro empty">'+esc(empty)+'</div>'; }
 /* 診察内容の【受診前】と【受診後】の違い（足された薬・消えた薬）を目立たせる。判定はしない＝人が確かめる */
 function diffHtml_(text){
@@ -625,16 +635,16 @@ function paintRight_(){
     '<div class="fi"><label for="f-doctor">医師名（宛名）</label><input type="text" id="f-doctor" maxlength="60" value="'+esc(v.doctor)+'"></div></div>'+
     '<div class="fi" style="margin-top:10px"><label for="f-letter_title">題（空なら「'+esc(settings.titleTail)+'」）</label><input type="text" id="f-letter_title" maxlength="40" value="'+esc(v.letter_title)+'"></div>'+
     '<div class="fi" style="margin-top:10px"><label for="f-letter_body">本文（枠の中に刷る文）</label><textarea id="f-letter_body" rows="18" maxlength="8000">'+esc(v.letter_body)+'</textarea></div>'+
-    '<div class="acts"><button type="button" class="btn orange sm" data-act="letter-start"'+(C.trim(v.letter_body)?' disabled':'')+'>前回の薬で書き始める</button>'+
+    '<div class="acts"><button type="button" class="btn orange sm" data-act="letter-start"'+(C.trim(v.letter_body)||(!medsOk_()&&!prevHasMeds_())?' disabled':'')+'>前回の薬で書き始める</button>'+
     '<span class="sub" style="color:var(--ink2);font-size:.9375rem;align-self:center">本文が空の時だけ使えます。左の「前回の受診」「服薬中の薬」からも差し込めます。</span></div>';
   /* 受診の結果（見本1枚目の形） */
   $('rp-result').innerHTML=
-    '<div class="grid3"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
     '<div class="fi"><span class="lb">受診病院・受診科</span><div class="ro" style="min-height:44px;padding:8px 10px">'+esc([v.hospital_name,v.dept].filter(Boolean).join('　')||'（手紙のタブで選びます）')+'</div></div>'+
+    '<div class="grid2" style="margin-top:10px"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
     '<div class="fi"><label for="f-visit_date2">受診日</label><input type="date" id="f-visit_date2" value="'+esc(v.visit_date)+'"></div></div>'+
     '<div class="fi" style="margin-top:10px"><label for="f-result_body">診察内容</label><textarea id="f-result_body" rows="14" maxlength="8000">'+esc(v.result_body)+'</textarea></div>'+
     diffHtml_(v.result_body)+
-    '<div class="acts"><button type="button" class="btn orange sm" data-act="result-start"'+(C.trim(v.result_body)?' disabled':'')+'>今の定期薬で書き始める</button></div>'+
+    '<div class="acts"><button type="button" class="btn orange sm" data-act="result-start"'+(C.trim(v.result_body)||!medsOk_()?' disabled':'')+'>今の定期薬で書き始める</button></div>'+
     '<div class="grid2" style="margin-top:12px"><div class="fi"><label for="f-result1">結果</label><select id="f-result1">'+opt_(settings.results1,v.result1)+'</select></div>'+
     '<div class="fi"><label for="f-result2">結果（もう1つ）</label><select id="f-result2">'+opt_(settings.results2,v.result2)+'</select></div></div>'+
     '<div class="grid2" style="margin-top:12px"><div class="fi"><span class="lb" id="lb-am">追加薬</span><div class="radios" role="radiogroup" aria-labelledby="lb-am">'+
@@ -669,7 +679,7 @@ function save_(){
   if(errs.length){ setMsg('h-dmsg',errs.join(' ')); return Promise.resolve(false); }
   if(String(draft.resident_id)!==String(cur.id)){ setMsg('h-dmsg','書いている受診と選んでいる方が合いません。読み直してください。'); return Promise.resolve(false); }
   saving=true; lockDesk_(true); setMsg('h-dmsg',''); setSync('保存しています…');
-  var my=gen, body=C.toSave(draft), rev=draft.id?draft.rev:null;
+  var my=gen, sent=draft, body=C.toSave(draft), rev=draft.id?draft.rev:null;
   if(!body.hospital_id) body.hospital_id='';
   return rpc_('hv_save_visit',{p_row:body,p_rev:rev}).then(function(d){
     if(my!==gen) return false;
@@ -678,14 +688,16 @@ function save_(){
       visits.forEach(function(v,k){ if(String(v.id)===String(row.id)) i=k; });
       if(i>=0) visits[i]=row; else visits.push(row);
       visits=C.sortVisits(visits);
-      draft=C.fromRow(row); base=C.fromRow(row);
-      toast('保存しました'); setSync('');
+      /* 保存の間に別の受診を開いた・新しく始めた時は、今の下書きに触らない。同じ受診なら、保存の間に打った分を残す（入力欄から読み直す） */
+      if(draft===sent){ readForm_(); var keep=draft; base=C.fromRow(row); keep.id=base.id; keep.rev=base.rev; draft=keep; }
+      toast('保存しました'); setSync(''); if(draft===sent) clearConflict_();
       refreshRecent_();
       paintAll_();
       return true;
     }
     if(d&&d.conflict){
       setSync('');
+      if(draft!==sent) return false;
       setMsg('h-dmsg','ほかの人（または別の画面）がこの受診を先に直しました。書いた内容は残っています。控えてから「読み直す」を押すと、今の内容を開きます。');
       showConflict_(d.row);
       return false;
@@ -697,12 +709,14 @@ function save_(){
   }).then(function(r){ saving=false; if(my===gen) lockDesk_(dbState!=='ok'); return r; });
 }
 function showConflict_(row){
+  showConflict_.row=row||null;
   var acts=document.querySelector('.foot');
   if(!acts||$('h-reload')) return;
   var b=document.createElement('button'); b.type='button'; b.className='btn sm'; b.id='h-reload'; b.textContent='読み直す'; b.setAttribute('data-act','reload-visit');
-  b.setAttribute('data-row',row&&row.id?String(row.id):''); acts.insertBefore(b,acts.firstChild.nextSibling);
-  showConflict_.row=row;
+  acts.insertBefore(b,acts.firstChild.nextSibling);
 }
+/* 競合の読み直しを外す（方・受診を替えた時・保存できた時）。別の方の行を開けるボタンを残さない（反証レビュー 1） */
+function clearConflict_(){ showConflict_.row=null; var rb=$('h-reload'); if(rb) rb.remove(); }
 function refreshRecent_(){
   var my=gen;
   rpc_('hv_list',{p_resident:null}).then(function(d){ if(my!==gen||!d||d.ok!==true) return; recent=Array.isArray(d.visits)?d.visits:[]; }).catch(function(e){ note_('一覧の読み直し',e); });
@@ -754,10 +768,13 @@ function print_(){
 var dlgOpen='', dlgBack=null;
 function openDlg_(kind,html){
   dlgBack=document.activeElement; dlgOpen=kind;
-  $('h-dlg-box').innerHTML=html; $('h-dlg').hidden=false;
+  $('h-dlg-box').innerHTML=html; $('h-dlg').hidden=false; dlgDirty=false;
   var f=$('h-dlg-box').querySelector('input,select,textarea,button'); if(f) try{ f.focus(); }catch(_){}
 }
-function closeDlg_(){ $('h-dlg').hidden=true; $('h-dlg-box').innerHTML=''; dlgOpen=''; if(dlgBack) try{ dlgBack.focus(); }catch(_){} }
+function closeDlg_(){ $('h-dlg').hidden=true; $('h-dlg-box').innerHTML=''; dlgOpen=''; dlgDirty=false; if(dlgBack) try{ dlgBack.focus(); }catch(_){} }
+var dlgDirty=false;
+/* 窓に書いた内容を黙って捨てない（Esc・外側のクリック・閉じる・反証レビュー 8） */
+function askCloseDlg_(){ if(!dlgDirty) return closeDlg_(); confirm_('窓に書いた内容を保存していません。保存せずに閉じますか？').then(function(ok){ if(ok) closeDlg_(); }); }
 var hEdit=null;
 function hospDlg_(){
   var rows=hospitals.slice().sort(function(a,b){ return (a.disabled?1:0)-(b.disabled?1:0)||(a.sort||0)-(b.sort||0)||String(a.name).localeCompare(String(b.name),'ja'); });
@@ -790,7 +807,10 @@ function hospSave_(){
       if(my===gen&&cur&&draft){ readForm_(); paintRight_(); }
       return;
     }
-    if(d&&d.conflict){ setMsg('d-msg','ほかの人が先に直しました。閉じて開き直してください。'); return; }
+    if(d&&d.conflict){
+      if(d.row){ var j=-1; hospitals.forEach(function(h,k){ if(String(h.id)===String(d.row.id)) j=k; }); if(j>=0) hospitals[j]=d.row; hEdit=d.row; }
+      hospDlg_(); setMsg('d-msg','ほかの人が先にこの病院を直しました。今の内容を読み込んだので、もう一度直して保存してください。'); return;
+    }
     setMsg('d-msg',ngText_('病院の保存',d));
   }).catch(function(e){ note_('病院の保存',e); setMsg('d-msg',friendly_(e)); });
 }
@@ -817,7 +837,7 @@ function setSave_(){
   var my=gen;
   rpc_('hv_save_settings',{p_data:d,p_rev:settingsRev}).then(function(r){
     if(r&&r.ok===true){ settings=C.normSettings(r.data); settingsRev=Number(r.rev); toast('設定を保存しました'); closeDlg_(); if(my===gen&&cur&&draft){ readForm_(); paintRight_(); } return; }
-    if(r&&r.conflict){ settings=C.normSettings(r.data); settingsRev=Number(r.rev); setMsg('d-msg','ほかの人が先に設定を直しました。今の設定を読み込んだので、もう一度直して保存してください。'); return; }
+    if(r&&r.conflict){ settings=C.normSettings(r.data); settingsRev=Number(r.rev); setDlg_(); setMsg('d-msg','ほかの人が先に設定を直しました。今の設定を読み込んだので、もう一度直して保存してください。'); return; }
     setMsg('d-msg',ngText_('設定の保存',r));
   }).catch(function(e){ note_('設定の保存',e); setMsg('d-msg',friendly_(e)); });
 }
@@ -846,22 +866,27 @@ document.addEventListener('click',function(ev){
   if(a==='print') return print_();
   if(a==='cancel-visit') return cancelVisit_();
   if(a==='reload-visit'){
-    var row=showConflict_.row; var rb=$('h-reload'); if(rb) rb.remove();
-    if(row){ var i=-1; visits.forEach(function(v,k){ if(String(v.id)===String(row.id)) i=k; }); if(i>=0) visits[i]=row; openVisit_(row); setMsg('h-dmsg',''); paintAll_(); }
+    var row=showConflict_.row;
+    if(!row||!cur||!draft||String(row.resident_id)!==String(cur.id)||String(row.id)!==String(draft.id)){ clearConflict_(); return; }
+    var i=-1; visits.forEach(function(v,k){ if(String(v.id)===String(row.id)) i=k; }); if(i>=0) visits[i]=row;
+    openVisit_(row); setMsg('h-dmsg',''); paintAll_();
     return;
   }
   if(a==='hosp-pick'){
     readForm_();
     var key=t.getAttribute('data-key'), hc=C.hospitalChoices(hospitals,medical&&!medical.missing?medical:null,visits), c=null;
     hc.forEach(function(x){ if(x.key===key) c=x; });
-    if(c){ draft.hospital_id=c.hospital_id||''; draft.hospital_name=c.name; draft.dept=c.dept||draft.dept; draft.doctor=c.doctor||draft.doctor; paintRight_(); paintLeft_(); paintState_(); }
+    if(c){ draft.hospital_id=c.hospital_id||''; draft.hospital_name=c.name; draft.dept=c.dept||''; draft.doctor=c.doctor||''; paintRight_(); paintLeft_(); paintState_(); }
     return;
   }
-  if(a==='letter-start'){ readForm_(); if(C.trim(draft.letter_body)) return; var p=C.prevVisitFor(visits,draft); draft.letter_body=C.letterStarter(p,medical&&medical.medsRegular); paintRight_(); paintState_(); return; }
-  if(a==='result-start'){ readForm_(); if(C.trim(draft.result_body)) return; draft.result_body=C.resultStarter(medical&&medical.medsRegular,draft.visit_date); paintRight_(); paintState_(); return; }
+  if(a==='letter-start'){ readForm_(); if(C.trim(draft.letter_body)) return; var p=C.prevVisitFor(visits,draft);
+    if(!(p&&/【[^】]*受診[前後]】/.test(String(p.result_body||'')))&&!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
+    draft.letter_body=C.letterStarter(p,medical.medsRegular!=null?medical.medsRegular:''); paintRight_(); paintState_(); return; }
+  if(a==='result-start'){ readForm_(); if(C.trim(draft.result_body)) return; if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } draft.result_body=C.resultStarter(medical.medsRegular,draft.visit_date); paintRight_(); paintState_(); return; }
   if(a==='ins-prev'){ var pv=prevVisit_(); if(!pv) return; readForm_(); setRtab_('letter'); insertAt_('f-letter_body',String(pv.result_body||'').replace(/【受診前】/g,'【前回受診前】')); return; }
-  if(a==='ins-meds-letter'){ readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.medsBlock('現在の処方',medical&&medical.medsRegular)); return; }
+  if(a==='ins-meds-letter'){ if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.medsBlock('現在の処方',medical&&medical.medsRegular)); return; }
   if(a==='ins-meds-result'){
+    if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
     readForm_(); setRtab_('result');
     if(C.trim(draft.result_body)) insertAt_('f-result_body',C.resultStarter(medical&&medical.medsRegular,draft.visit_date));
     else { draft.result_body=C.resultStarter(medical&&medical.medsRegular,draft.visit_date); paintRight_(); paintState_(); }
@@ -874,7 +899,7 @@ document.addEventListener('click',function(ev){
   if(a==='hosp-save') return hospSave_();
   if(a==='set-open') return setDlg_();
   if(a==='set-save') return setSave_();
-  if(a==='dlg-close') return closeDlg_();
+  if(a==='dlg-close') return askCloseDlg_();
 });
 document.addEventListener('input',function(ev){
   var t=ev.target;
@@ -899,10 +924,14 @@ document.addEventListener('change',function(ev){
   if(t.name==='f-added_med'||/^f-/.test(t.id)){ readForm_(); paintState_(); }
 });
 document.addEventListener('keydown',function(ev){
-  if(ev.key==='Escape'&&dlgOpen){ closeDlg_(); return; }
-  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')&&view==='app'&&draft){ ev.preventDefault(); save_(); }
+  if(ev.key==='Escape'&&dlgOpen){ askCloseDlg_(); return; }
+  /* Cmd/Ctrl+S もボタンと同じ止めを通す（読み込み中・読めなかった時は保存しない・反証レビュー 7） */
+  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')&&view==='app'&&draft){ ev.preventDefault(); var sb=$('h-save'); if(!loading&&!dlgOpen&&sb&&!sb.disabled) save_(); }
 });
-$('h-dlg').addEventListener('click',function(ev){ if(ev.target===$('h-dlg')) closeDlg_(); });
+$('h-dlg').addEventListener('click',function(ev){ if(ev.target===$('h-dlg')) askCloseDlg_(); });
+$('h-dlg').addEventListener('input',function(){ dlgDirty=true; });
+/* 別のタブで端末の用途が「現場」に変わったら、読み込み直して起動の止めに任せる（CLAUDE.md §2-5・反証レビュー 6） */
+window.addEventListener('storage',function(ev){ if(ev.key===DEVICE_KEY&&isField()&&view!=='field'){ try{ location.reload(); }catch(e){ note_('用途の切り替え',e); } } });
 window.addEventListener('beforeunload',function(ev){ if(isDirty_()){ ev.preventDefault(); ev.returnValue=''; } });
 
 function init_(){
