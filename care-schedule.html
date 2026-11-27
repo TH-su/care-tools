@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Blj0REom7D6ZRbVpAd8SyRdPAls6bzk1S++jFrZKXOM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Rs6d0foNsLlmQ4N64GUx6RhdSa+uQGRAofe1xcUL0r0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -4572,6 +4572,7 @@ const SYNC = {
             if (!stamp && csPlanDataHasPlans_(d0)) stamp = await csPlanGateWait_(pr);
           }
           if (stamp) d0.csAppVer = CS_APP_VER;
+          csPlanPutStamp_ = stamp;
           pl = Object.assign({}, payload, { data: d0 });
         } else if (typeof CarePlanCalc !== 'undefined') {
           csPlanGateProbe_();   /* 起動の取得・巡回の時に裏で確かめを始めておく（答えを待たない） */
@@ -4958,8 +4959,10 @@ const SYNC = {
       let unconfSent = [], viaSb = false;
       try { unconfSent = csUnconfirmedSent_(DB); } catch (e) {}
       try { viaSb = !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed('care_schedule_v2')); } catch (e) {}
+      csPlanPutStamp_ = null;
       const j = await this.gas({ action: 'put', key: 'care_schedule_v2',
                                  rev: baseRev, data: DB, force: !!force });
+      const sentStamp = csPlanPutStamp_;
       /* 応答の間に画面の中の窓が出ていたら、答えの後の処理を先に済ませてから応答を扱う（競合の取り込みで DB が差し替わる前に、
          窓の答えの後の書き換えを「自分の編集」に入れる＝ブラウザの窓の時と同じ順番・2026-11-12・仮置き） */
       if (typeof SUDialog !== 'undefined' && SUDialog.busy()) await SUDialog.idle();
@@ -4972,6 +4975,14 @@ const SYNC = {
            通らず、この端末の古い内容でクラウドを丸ごと上書きしうる。通常送信なら、ずれていれば競合の取り込みに、
            大きく減る時はサーバーの実数つきの確認に乗る。 */
       if (j && j.error === 'oldapp') {
+        /* 印なしで送った（口が「あり」とまだ分かっていなかった）時だけ、口を確かめ直し（最大10秒）、「あり」なら1回だけ頭から送り直す
+           （その時の手元の中身と版数で・印つき）。印つきで断られた・確かめても「なし」・送り直しても断られた時は下の扱い */
+        if (sentStamp === false && !this._oldAppRetry && typeof CarePlanCalc !== 'undefined' && await csPlanGateRecheck_()) {
+          this._busy = false;
+          this._oldAppRetry = true;
+          this.log('ℹ️ 新しい保存先の確かめが済んだので、もう一度送ります');
+          try { return await this.push(force); } finally { this._oldAppRetry = false; }
+        }
         /* 共通 DB の門が「印の無い古い版の画面」と断った（新しい画面では起きないはず）。送り直さず、未送信は端末に残す */
         this._busy = false; this._oldApp = true;
         this.markDirty(); this.updateStatusUI('未同期…');
@@ -5243,10 +5254,15 @@ function csStripAppVerResp_(j) {
 }
 /* 共通 DB の移行 0136 の有る無し（2026-11-27 反証 F1）。口 cs_plan_gate（引数なし・ログインしていれば役割を問わず {ok:true, minAppVer}）が
    ok:true を返した時だけ「あり」と覚える（メモリだけ・このタブの間。あり は覚えたまま）。答えが「なし」・エラーの時は5分後に確かめ直す。
-   ログインの部品が無い・新しい保存先へ切り替えていない時は呼ばず、「まだ確かめていない」のまま（5分待たない・仮置き）。同時の確かめは1本にまとめる */
+   ログインの部品が無い・新しい保存先へ切り替えていない時は呼ばず、「まだ確かめていない」のまま（5分待たない・仮置き）。同時の確かめは1本にまとめる。
+   答えが15秒来ない時は打ち切り、確かめの約束を空に戻して「なし」の時刻を付ける（5分後に確かめ直す）。打ち切りの後に届いた ok:true は「あり」と覚える */
 var CS_PLAN_GATE_RECHECK_MS = 5 * 60 * 1000;
 var CS_PLAN_GATE_WAIT_MS = 3000;
+var CS_PLAN_GATE_TIMEOUT_MS = 15000;
+var CS_PLAN_GATE_RETRY_WAIT_MS = 10000;
 var csPlanGate_ = { yes: false, noAt: 0, p: null };
+/* 直前に新しい保存先へ送った週間計画の保存に版の印を付けたか（true / false・送っていなければ null）。送信（push）が oldapp の扱いを決めるのに読む */
+var csPlanPutStamp_ = null;
 function csPlanGateProbe_() {
   try {
     if (csPlanGate_.yes) return Promise.resolve(true);
@@ -5254,23 +5270,43 @@ function csPlanGateProbe_() {
     if (csPlanGate_.noAt && Math.abs(Date.now() - csPlanGate_.noAt) < CS_PLAN_GATE_RECHECK_MS) return Promise.resolve(false);
     if (!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed(LS_KEY))) return Promise.resolve(false);
   } catch (e) { csNote_('新しい保存先の版の確かめ', e); return Promise.resolve(false); }
-  const p = csAuthLoad_().then(() => {
+  const core = csAuthLoad_().then(() => {
     const sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
     if (!sb || typeof sb.rpc !== 'function') return false;   /* 呼べない＝まだ確かめていないまま */
     return Promise.resolve(sb.rpc('cs_plan_gate')).then((r) => {
       if (r && !r.error && r.data && typeof r.data === 'object' && r.data.ok === true) { csPlanGate_.yes = true; return true; }
-      csPlanGate_.noAt = Date.now(); return false;
-    }, (e) => { csPlanGate_.noAt = Date.now(); csNote_('新しい保存先の版の確かめ', e); return false; });
+      if (!csPlanGate_.yes) csPlanGate_.noAt = Date.now();
+      return false;
+    }, (e) => { if (!csPlanGate_.yes) csPlanGate_.noAt = Date.now(); csNote_('新しい保存先の版の確かめ', e); return false; });
   }, (e) => { csNote_('新しい保存先の版の確かめ（ログインの部品）', e); return false; })
-    .then((v) => { csPlanGate_.p = null; return v === true; }, () => { csPlanGate_.p = null; return false; });
+    .then((v) => v === true, () => false);
+  let tm = null;
+  const cut = new Promise((ok) => { tm = setTimeout(() => ok(null), CS_PLAN_GATE_TIMEOUT_MS); });
+  const p = Promise.race([core, cut]).then((v) => {
+    clearTimeout(tm);
+    if (v === null) {   /* 15秒の打ち切り（遅れて届いた答えは core の中で覚える） */
+      if (!csPlanGate_.yes) csPlanGate_.noAt = Date.now();
+      csNote_('新しい保存先の版の確かめ（答えが来ない）', new Error('cs_plan_gate timeout'));
+    }
+    if (csPlanGate_.p === p) csPlanGate_.p = null;   /* 自分が今の確かめの時だけ空に戻す（打ち切りの後に始めた確かめを消さない） */
+    return v === true;
+  });
   csPlanGate_.p = p;
   return p;
 }
-/* 確かめの答えを最大3秒待つ（来なければ印なし＝false） */
-function csPlanGateWait_(pr) {
+/* 確かめの答えを最大3秒（ms を渡した時はその長さ）待つ（来なければ印なし＝false） */
+function csPlanGateWait_(pr, ms) {
   let tm = null;
-  const late = new Promise((ok) => { tm = setTimeout(() => ok(false), CS_PLAN_GATE_WAIT_MS); });
+  const late = new Promise((ok) => { tm = setTimeout(() => ok(false), (typeof ms === 'number' && ms > 0) ? ms : CS_PLAN_GATE_WAIT_MS); });
   return Promise.race([Promise.resolve(pr).then((v) => v === true, () => false), late]).then((v) => { clearTimeout(tm); return v; });
+}
+/* 印なしの保存が oldapp で断られた時の確かめ直し（5分の待ちを素通りする）。確かめの最中ならその答えを、無ければ新しく確かめ、最大10秒待つ。「あり」なら true */
+function csPlanGateRecheck_() {
+  try {
+    if (csPlanGate_.yes) return Promise.resolve(true);
+    if (!csPlanGate_.p) csPlanGate_.noAt = 0;
+  } catch (e) { csNote_('新しい保存先の版の確かめ直し', e); return Promise.resolve(false); }
+  return csPlanGateWait_(csPlanGateProbe_(), CS_PLAN_GATE_RETRY_WAIT_MS);
 }
 /* 計画の版の項目を持つ利用者がいるか（世代1以上・予約が空でない） */
 function csPlanDataHasPlans_(db) {

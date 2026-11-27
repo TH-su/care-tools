@@ -2,7 +2,7 @@
  * 切り替えた後の計画に前の計画の予定・入浴が混ざらないことを確かめる通し試験（2026-11-27・門まわりの反証 3回目・助言役の指示）
  *
  *   node check/care_plan_oldtab_e2e.mjs [--only A,B] [--shots <保存先>]
- *   CS_BASE_REF=<コミット> … 古い版（比べる元・既定 origin/main）。改修を取り込んだ後は、取り込み前のコミットを渡す
+ *   CS_BASE_REF=<コミット> … 古い版（比べる元・既定は計画の版を取り込む直前の main＝918f014。計画の版が main に入った後は main の最新が古い版にならないため固定した・2026-11-27）
  *
  * 古い版（CS_BASE_REF の画面と共通部品・care-plan-calc.js は無い）を /old/、今の作業ツリーを /new/ に置き、同じサーバー（同じオリジン＝同じ localStorage）で配る。
  * 偽の共通 DB（check/fixtures/care-plan-gate.mjs）は、版の印の門（oldapp）・中身の確かめ（planstale: 世代が下がる・同じ世代で開始日が違う・取り消した予約が戻る）・
@@ -55,7 +55,7 @@ async function waitFor(fn, timeout = 15000, step = 200) {
 }
 
 /* ── 古い版と新しい版を同じオリジンに置く ── */
-const BASE_REF = process.env.CS_BASE_REF || 'origin/main';
+const BASE_REF = process.env.CS_BASE_REF || '918f0149e212ade8fa3db00ed544318e1fd7d6fc';
 const root = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'cp-oldtab-'));
 fs.mkdirSync(path.join(root, 'old')); fs.mkdirSync(path.join(root, 'new'));
 execFileSync('bash', ['-c', 'git -C "$1" archive "$3" | tar -x -C "$2"', '_', repoDir, path.join(root, 'old'), BASE_REF]);
