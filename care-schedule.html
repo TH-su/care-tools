@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Rs6d0foNsLlmQ4N64GUx6RhdSa+uQGRAofe1xcUL0r0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-q82gsLPw380jCvSZNFP2kYzM5Ha66w0B5kfwUrghUpA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -10273,9 +10273,12 @@ const SIM = {
       p.updatedAt = now; p.updatedBy = who;
     }
     r.nextPlans = C.sortPlans(r.nextPlans);
-    csPlanCommit_('予約を保存');
+    const saved = csPlanCommit_('予約を保存');
     try { csSetSelection_(r.id); } catch (e) { csNote_('計画の版の表示', e); }
     try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) { csNote_('計画の版の表示', e); }
+    /* 端末に書けなかった時は「保存しました」を出さない（失敗の知らせは csPlanCommit_ が出す）。砂場はもう閉じて控えも消えたので、
+       予約は画面のメモリ（DB）にだけある。未送信の印を立てて、裏の取得が古い姿で上書きしないようにする（「💾 保存」で端末に書き直して送れる） */
+    if (!saved) { try { SYNC.markDirty(); } catch (e) { csNote_('予約の保存の未送信の印', e); } return; }
     showToast(csPlanYmdJa_(pl.from) + 'からの計画（予約）を保存しました。その日から今の計画になります');
   },
   /* 予約の編集の中で、開始日・介護度・メモを変える */
