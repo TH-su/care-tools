@@ -126,7 +126,7 @@ legend{font-weight:600;padding:0 6px}
 .hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
 /* v6: ホームの箱の下の「本人のスマホに知らせる」の並び（画面だけ・状態は文字でも出す＝色だけで伝えない） */
 .hcell{display:grid;gap:6px;align-content:start}
-/* ホームの今日の出勤状況（2026-11-27・画面だけ）。「今日」の箱の升を横いっぱいに広げ、箱のすぐ下に1人1行で並べる。iPhone の幅（700px 以下）では1人2行 */
+/* ホームの今日の出勤状況（2026-11-27・画面だけ）。「今日」の箱の升を横いっぱいに広げ、箱のすぐ下に予定・勤務の1つごとに1行で並べる。iPhone の幅（700px 以下）では1人2行 */
 @media screen{
 .tdw{grid-column:1/-1;display:grid;gap:8px;align-content:start}
 /* ホームの箱は例外を先に並べる（su-office.css の order）。今日の升も中の「今日」の箱の色と同じ段に置く */

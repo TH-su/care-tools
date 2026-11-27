@@ -638,7 +638,7 @@
         if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
         var c = b.counts;
         var tbx = ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in'));
-        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + '</div>' : tbx);   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（1人1行）。部品が無い時は今の箱だけ */
+        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + '</div>' : tbx);   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（予定・勤務の1つごとに1行）。部品が無い時は今の箱だけ */
         return;
       }
       if (b.key === 'a36') {
