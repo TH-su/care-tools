@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-DdodkgckJfwv8VMcsWG6n5mAdL+FliNBM3wgxi3jSmc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-Blj0REom7D6ZRbVpAd8SyRdPAls6bzk1S++jFrZKXOM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -115,6 +115,98 @@ body.sim-mode .sim-tag { display: inline; }
 /* ヘッダーを橙にする＝画面上での取り違え防止（高さは変えないのでレイアウト無影響） */
 body.sim-mode .hdr { background: linear-gradient(135deg, #e65100 0%, #ff9800 100%); }
 body.sim-mode .summary-bar { box-shadow: inset 0 3px 0 #ff9800; }
+/* ── 計画の版（2026-11-27）: 予約の編集（plan-mode・藍）と過去の計画を見る（view-mode・灰）。試算（橙）と見分ける。
+   高さ・位置は変えない（--sum-h と盤面の calc に触れない）。印刷の紙には何も足さない（札は @media print で消す） */
+/* 見出しの札は入力欄に見えないよう、枠でなく塗りの札（白字・14px・太字）。予約＝藍より少し明るい面（白字 9.0:1）、過去＝濃い灰（白字 10.5:1） */
+.plan-tag { display: none; font-size: 0.875rem; font-weight: 700; margin-left: 8px; line-height: 1.5;
+  background: #34477A; color: #fff; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+body.plan-mode .plan-tag, body.view-mode .plan-tag { display: inline-block; }
+body.view-mode .plan-tag { background: #3C4043; }
+.plan-tag .pt-only { display: inline-block; background: #fff; color: #3C4043; border-radius: 4px; padding: 0 5px; margin-right: 6px; }
+/* 札の文は PC では長く、iPad 縦・iPhone（899px 以下）では短く（見出しのボタンを画面の外へ押し出さない） */
+.plan-tag .pt-short { display: none; }
+@media screen and (max-width: 899px) { .plan-tag .pt-long { display: none; } .plan-tag .pt-short { display: inline; } }
+@media screen {
+  body.plan-mode .hdr, :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body.plan-mode .hdr { background: #1F2A44; color: #fff; }
+  /* 過去を見る間の見出しは明るい灰（#E4E6EB）に濃い灰の字（#3C4043・8.3:1） */
+  body.view-mode .hdr, :root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body.view-mode .hdr { background: #E4E6EB; color: #3C4043; }
+  body.plan-mode .summary-bar { box-shadow: inset 0 3px 0 #1F2A44; }
+  body.view-mode .summary-bar { box-shadow: inset 0 3px 0 #8A9099; }
+  /* 予約の編集・過去を見る間だけ、注記の段を2段にして説明を先に全部読めるようにする（折り返す）。既存の注記はその次の行。
+     通常の時の --sum-h（106px）と注記の段（26px）は変えない */
+  body.plan-mode, body.view-mode { --sum-h: 138px; }
+  body.plan-mode .sum-note-row, body.view-mode .sum-note-row { flex: 0 0 58px; display: block; overflow-x: hidden; overflow-y: auto; padding: 4px 12px; white-space: normal; }
+  body.plan-mode .cs-plan-mode-note, body.view-mode .cs-plan-mode-note { display: block; white-space: normal; margin: 0 0 2px; }
+  body.plan-mode .sum-note-row .rate-note, body.view-mode .sum-note-row .rate-note { display: block; white-space: normal; font-size: 0.8125rem; }
+  /* iPhone の幅（699px 以下）: 説明が折り返す分だけ段を高くし、見出しは保存・閉じるを最初の画面に出す（行き来のボタン・利用者の選択はこの間だけ畳む） */
+  @media (max-width: 699px) {
+    body.plan-mode, body.view-mode { --sum-h: 188px; }
+    body.plan-mode .sum-note-row, body.view-mode .sum-note-row { flex: 0 0 108px; }
+    body.plan-mode .hdr-btns > .hdr-btn:not(#btnPlanSave):not(#btnPlanClose),
+    body.view-mode .hdr-btns > .hdr-btn:not(#btnPlanClose) { display: none !important; }   /* 「この計画をもとに…」は「計画の履歴・予約」の窓から */
+    body.plan-mode .hdr .resident-selector, body.view-mode .hdr .resident-selector { display: none; }
+    body.plan-mode .hdr .su-help-link, body.view-mode .hdr .su-help-link { display: none !important; }   /* 「使い方」はこの間だけ畳む（閉じた後は戻る） */
+    body.plan-mode .hdr h1, body.view-mode .hdr h1 { font-size: 0; }
+    body.plan-mode .hdr h1 .plan-tag, body.view-mode .hdr h1 .plan-tag { font-size: 0.875rem; margin-left: 0; }
+    body.plan-mode .hdr-btns, body.view-mode .hdr-btns { flex-shrink: 0; overflow: visible; }
+  }
+}
+.cs-plan-cur { font-size: 0.8125rem; color: #3C4043; font-weight: 700; margin-left: 6px; white-space: nowrap; }
+.cs-plan-cur:empty { display: none; }
+.cs-plan-badge { margin-left: 6px; font-size: 0.8125rem; font-weight: 700; color: #1F2A44; background: #EEF0F5; border-radius: 4px; padding: 1px 6px; }
+.cs-plan-badge:empty { display: none; }
+/* 注記の段（26px）に置く1行の帯。押すと年表を開く（ボタンは年表の中で 44px 以上）。段の高さを変えないため 44px にはしない（移動ロックと同じ作法） */
+.cs-plan-warn { font: inherit; font-size: 0.9375rem; line-height: 1.3; font-weight: 700; color: #7a4200; background: none; border: none;
+  padding: 0; margin-inline-end: 12px; white-space: nowrap; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; flex-shrink: 0; }
+.cs-plan-warn.ng { color: #b71c1c; }
+.cs-plan-warn:focus-visible { outline: 3px solid #1F2A44; outline-offset: 1px; }
+.cs-plan-mode-note { font-size: 0.9375rem; line-height: 1.3; font-weight: 700; color: #1F2A44; white-space: nowrap; margin-inline-end: 12px; flex-shrink: 0; }
+body.view-mode .cs-plan-mode-note { color: #3C4043; }
+.cs-plan-warn[hidden], .cs-plan-mode-note[hidden], #cs-plan-btn[hidden] { display: none !important; }
+#mk-plan .md { max-width: min(760px, 96vw); }
+#mk-plan-form .md { max-width: min(480px, 96vw); }
+#mk-plan .md, #mk-plan-form .md { font-size: 1rem; }
+.cs-pl-sec { margin-top: 20px; }
+.cs-pl-sec:first-of-type { margin-top: 4px; }
+.cs-pl-sec > h3 { font-size: 1rem; font-weight: 700; color: #1F2A44; margin-bottom: 8px; }
+.cs-pl-card { border: 1px solid var(--g3); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fff; }
+.cs-pl-card.cur { border-color: #1F2A44; border-width: 2px; }
+.cs-pl-card.next { border-left: 4px solid #1F2A44; }
+.cs-pl-card.past { background: #F6F7F9; }
+.cs-pl-card.alert { border-color: #e0a100; background: #fff8e1; }
+.cs-pl-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cs-pl-chip { display: inline-block; font-size: 0.8125rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #EEF0F5; color: #1F2A44; }
+.cs-pl-chip.next { background: #1F2A44; color: #fff; }
+.cs-pl-chip.old { background: #DADCE0; color: #3C4043; }
+.cs-pl-ttl { font-size: 1.0625rem; font-weight: 700; color: var(--g9); }
+.cs-pl-meta { font-size: 0.9375rem; color: var(--g7); margin-top: 4px; line-height: 1.5; }
+.cs-pl-note { font-size: 0.9375rem; color: var(--g8); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+.cs-pl-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+#mk-plan .btn, #mk-plan-form .btn { min-height: 44px; font-size: 0.9375rem; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-line { background: #fff; color: #1F2A44; border: 1px solid #1F2A44; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-line:hover { background: #EEF0F5; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-ink { background: #1F2A44; color: #fff; border: 1px solid #1F2A44; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-ink:hover { background: #141C2E; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-ng-line { background: #fff; color: #9E1C24; border: 1px solid #9E1C24; }
+:is(#mk-plan, #mk-plan-form) .btn.btn-ng-line:hover { background: #FAE7E8; }
+:is(#mk-plan, #mk-plan-form) .btn:focus-visible { outline: 3px solid #A85C05; outline-offset: 2px; }
+.cs-pl-empty { font-size: 0.9375rem; color: var(--g7); padding: 6px 0; }
+.cs-pl-err { font-size: 0.9375rem; color: #7a4200; background: #fff8e1; border-radius: 6px; padding: 8px 10px; }
+.cs-pl-log { list-style: none; margin: 0; padding: 0; }
+.cs-pl-log > li { border-top: 1px solid var(--g2); padding: 8px 0; }
+.cs-pl-log .when { font-size: 0.9375rem; font-weight: 700; color: var(--g9); }
+.cs-pl-log .who { font-size: 0.9375rem; color: var(--g7); margin-left: 8px; word-break: break-all; }
+.cs-pl-log .what { font-size: 0.9375rem; color: var(--g8); margin-top: 2px; }
+.cs-pl-log .ln { font-size: 0.9375rem; color: var(--g8); font-variant-numeric: tabular-nums; }
+.cs-pl-form-row { margin-bottom: 14px; }
+.cs-pl-form-row > label, .cs-pl-form-row > .lbl { display: block; font-size: 0.9375rem; font-weight: 600; color: var(--g8); margin-bottom: 6px; }
+.cs-pl-form-row .inp { font-size: 1rem; min-height: 44px; }
+.cs-pl-radio { display: flex; gap: 8px; flex-wrap: wrap; }
+.cs-pl-radio label { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--g3); border-radius: 8px; font-size: 0.9375rem; cursor: pointer; }
+.cs-pl-radio label:has(input:checked) { border-color: #1F2A44; background: #EEF0F5; }
+.cs-pl-errs { color: #9E1C24; font-size: 0.9375rem; font-weight: 700; margin-top: 6px; }
+.cs-pl-hint { font-size: 0.9375rem; color: #7a4200; background: #fff8e1; border-radius: 6px; padding: 8px 10px; margin-top: 8px; line-height: 1.5; }
+.ci-level-plan-note { font-size: 0.9375rem; color: #1F2A44; background: #EEF0F5; border-radius: 6px; padding: 6px 10px; margin: -6px 0 12px; }
 /* ケア内容チップ（訪問介護の予定編集・要件4） */
 .care-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .care-chip { border: 1px solid #cfd8dc; background: #fff; color: #37474f; border-radius: 14px;
@@ -796,6 +888,8 @@ select.inp { cursor: pointer; }
     pointer-events: none; print-color-adjust: exact; -webkit-print-color-adjust: exact;
   }
   body.sim-mode .sim-tag { display: inline; }
+  /* 計画の版（2026-11-27）の札・帯・窓は紙に出さない（A3 週間予定表・週ボードの紙を変えない） */
+  .plan-tag, body.plan-mode .plan-tag, body.view-mode .plan-tag, .cs-plan-warn, .cs-plan-mode-note, .cs-plan-cur, #mk-plan, #mk-plan-form { display: none !important; }
 }
 
 /* ── Responsive ── */
@@ -946,7 +1040,7 @@ select.inp { cursor: pointer; }
 <header class="hdr">
   <a class="hdr-btn su-menu-back" href="index.html">← メニュー</a>
   <a class="hdr-btn su-help-link" href="help.html?sec=care-schedule">使い方</a>
-  <h1>週間計画<span class="sim-tag">（試算・未確定）</span></h1>
+  <h1>週間計画<span class="sim-tag">（試算・未確定）</span><span class="plan-tag" id="cs-plan-tag"></span></h1>
   <!-- 週ボードA4印刷のときだけ紙に出る注記。ヘッダの中に置くので、盤面の高さ計算（yOf）にも
        行送りにも影響しない＝既存の印刷レイアウトを動かさない。画面では非表示（下の注記が出ている）。 -->
   <span class="print-rate-note" id="print-rate-note"></span>
@@ -963,6 +1057,11 @@ select.inp { cursor: pointer; }
          .hdr-btns は overflow-x:auto にしてあるので、増やしても右端が画面外へ出ない。 -->
     <!-- 取り消しの入口。Cmd/Ctrl+Z と同じ undo() を呼ぶだけ（一括取込の確認・空履歴のトースト・
          試算モードの履歴分離は undo() 側の既存実装がそのまま効く）。キーボードの無い iPad のための入口。 -->
+    <!-- 計画の版（2026-11-27）: 予約の編集・過去の計画を見る間だけ出す。【先頭に足す】＝既存ボタンの位置が動かない -->
+    <button class="hdr-btn applybtn" id="btnPlanSave" style="display:none" data-on-click="SIM.savePlan" title="この計画を予約として保存する（今の計画とワークスケジュールは変わりません）">💾 予約を保存</button>
+    <button class="hdr-btn" id="btnPlanMeta" style="display:none" data-on-click="SIM.editPlanMeta" title="この計画の開始日・介護度・メモを変える">開始日・介護度</button>
+    <button class="hdr-btn" id="btnPlanCopy" style="display:none" data-on-click="SIM.copyViewToPlan" title="この過去の計画をもとに、次の計画を作る">この計画をもとに次の計画を作る</button>
+    <button class="hdr-btn" id="btnPlanClose" style="display:none" data-on-click="SIM.exit" title="閉じて今の計画へ戻る">✕ 閉じる</button>
     <button class="hdr-btn undobtn" id="btnUndo" data-on-click="undo" title="直前の操作を取り消す（一括取込の取り消しは確認あり・Ctrl/Cmd+Zと同じ）">↩ 元に戻す</button>
     <button class="hdr-btn simbtn" id="btnSimStart" data-on-click="SIM.enter" title="試算モード：この盤面を自由に試せます。ワークスケジュール・デイ利用表・クラウドには一切反映されません">🧪 試算</button>
     <button class="hdr-btn applybtn" id="btnSimApply" style="display:none" data-on-click="SIM.openApply" title="試算の内容を実データへ反映する">✅ 実装</button>
@@ -985,6 +1084,7 @@ select.inp { cursor: pointer; }
     <div class="sum-group">
       <span class="sum-label">介護度</span>
       <span class="sum-val" id="sum-level">—</span>
+      <span class="cs-plan-cur" id="cs-plan-cur"></span>
     </div>
     <div class="sum-group" id="sum-limit-group">
       <span class="sum-label">支給限度</span>
@@ -1034,12 +1134,14 @@ select.inp { cursor: pointer; }
     <button class="sum-edit-btn" id="sync-btn" data-on-click="openSyncModal" title="クラウド同期">☁️ <span id="sync-status">同期</span></button>
     <button class="sum-edit-btn" data-on-click="openOfficeInfoModal">🏢 事業所情報</button>
     <button class="sum-edit-btn" data-on-click="openCareInfoModal">⚙ 介護情報</button>
+    <!-- 計画の版（2026-11-27）: 年表（予約・現行・過去の計画・変更の記録）を開く。部品が読めない時は出さない -->
+    <button class="sum-edit-btn" id="cs-plan-btn" data-on-click="csPlanOpenYear_" hidden title="この方の計画の予約・今の計画・過去の計画・変更の記録">🗓 計画の履歴・予約<span class="cs-plan-badge" id="cs-plan-badge"></span></button>
     <button class="sum-edit-btn" data-on-click="openResidentListModal" title="全利用者の介護度・負担・利用状況を一覧表示">👥 利用者一覧</button>
     <!-- 同じ方のほかの画面へ移る（su-resident-hop.js・同じタブ・代表者の決定 2026-11-02 案A）。入居者マスタとつながっている方の時だけ出す -->
     <button class="sum-edit-btn" id="cs-hop-btn" data-on-click="csToggleHop" aria-expanded="false" aria-controls="cs-hop-pop" hidden title="同じ方のほかの画面へ移る（同じタブで開きます）">🔗 この方の画面 ▾</button>
   </div>
   <!-- 3段目: 参考値の注記。単位・金額を出す画面には必ず添える（文言は RATE_DISCLAIMER が正） -->
-  <div class="sum-row sum-note-row"><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" data-on-click="csHideSelf_" data-this="1" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
+  <div class="sum-row sum-note-row"><span class="cs-plan-mode-note" id="cs-plan-mode-note" hidden></span><button type="button" class="cs-plan-warn" id="cs-plan-warn" data-on-click="csPlanOpenYear_" hidden></button><span class="sum-limit-warn" id="cs-app-warn" role="alert" style="display:none"></span><span class="sum-limit-warn" id="sum-limit-warn" style="display:none"></span><span class="sum-limit-warn" id="cs-oldpeer-warn" role="status" title="押すと消えます" data-on-click="csHideSelf_" data-this="1" style="display:none;cursor:pointer"></span><span class="rate-note" id="sum-rate-note"></span></div>
 </div>
 
 <div class="no-resident" id="no-resident" style="display:none">
@@ -1323,6 +1425,8 @@ select.inp { cursor: pointer; }
     </div>
     <!-- 入居者マスタとつながっている方は、介護度を入居者マスタで直す（代表者の決定 2026-11-02「マスタを正にする」） -->
     <p class="ci-level-note" id="ci-level-note" hidden>介護度は入居者マスタで直してください（入居者マスタの値を使います）</p>
+    <!-- 予約の編集の間だけ（2026-11-27）: マスタとつながっている方も、この計画だけの介護度を選べる -->
+    <p class="ci-level-plan-note" id="ci-level-plan-note" hidden></p>
 
     <div class="form-row">
       <label id="ci-limit-label" style="display:none"></label>
@@ -1752,6 +1856,8 @@ if(!window.SUDialog) window.SUDialog = {
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="su-roster.js?v=2026-11-17"></script>
+<!-- 計画の版（履歴・予約・版ごとの介護度）の決まりの純関数（2026-11-27）。読めない時（window.CarePlanCalc が無い時）は版の機能を出さず今までどおり動く -->
+<script src="care-plan-calc.js?v=2026-11-27"></script>
 <script>
 /* ══ 画面が黙って壊れないようにする（2026-08-29 追加）════════════════════════
  * これまで window.onerror も unhandledrejection も無く、描画中や非同期処理の例外は
@@ -2959,6 +3065,12 @@ var csSelMissingNotified_ = null;      // 「削除されました」通知の�
 /* 利用者を選ぶ唯一の入口。★saveDB() は呼ばない＝この選択をクラウドへ伝播させない。 */
 var csSelSeq_ = 0;   // 選択を決めた回数（職員の操作・本人指定の選び直し）。取り込み（adopt）の戻しでは増えない
 function csSetSelection_(id) {
+  /* 予約の編集・過去の計画を見る間は、その方から切り替えない（2026-11-27） */
+  if (typeof SIM !== 'undefined' && SIM_ON && SIM.plan && (SIM.kind === 'plan' || SIM.kind === 'view') && String(id) !== String(SIM.plan.resId)) {
+    try { showToast('予約の編集・過去の計画を見ている間は、ほかの方に切り替えられません（「✕ 閉じる」で戻ります）'); } catch (e) { csNote_('計画の版の表示', e); }
+    try { const sel = $('#resident-select'); if (sel) sel.value = String(SIM.plan.resId); } catch (e) { csNote_('計画の版の表示', e); }
+    return;
+  }
   csSelSeq_++;
   DB.currentResidentId = id || null;
   csWriteSelection_(id);
@@ -3201,6 +3313,7 @@ function csFieldChangeText_() {
    相手にしか居ない利用者だけは丸ごと足す（消失より復活）。 */
 function csMergeEventsFrom_(other, mine) {
   const out = JSON.parse(JSON.stringify(mine));
+  if (out && typeof out === 'object' && Object.prototype.hasOwnProperty.call(out, 'csAppVer')) delete out.csAppVer;   /* 版の印は持ち回さない（反証 F1） */
   if (!other || !Array.isArray(other.residents) || !Array.isArray(out.residents)) return out;
   const merged = csRebaseEdits(other, mine);     // 既存の規則（id単位・入浴の和・3-way）で events を作る
   const byId = {};
@@ -3214,6 +3327,16 @@ function csMergeEventsFrom_(other, mine) {
     const m = byId[r.id];
     if (m && Array.isArray(m.events)) r.events = m.events;   // 取り込むのは events だけ
     if (m && typeof csTakeNewerEdit_ === 'function') csTakeNewerEdit_(r, m);                            // と、直した人・日時の新しい方
+    /* と、計画の版の項目（2026-11-27）。相手の計画を丸ごと採った時（'server'）は介護度も相手から（予定と介護度は組なので）。
+       版の項目のある利用者だけ（csPlanTook_ に載る）＝版の無いデータは今までと同じ */
+    const took = (m && typeof csPlanTook_ !== 'undefined' && csPlanTook_) ? csPlanTook_[r.id] : undefined;
+    if (took) {
+      ['planFrom', 'planGen', 'planLevel', 'planNote', 'nextPlans', 'planGone'].forEach(function (k) {
+        if (Object.prototype.hasOwnProperty.call(m, k)) r[k] = m[k];
+        else if (took !== 'same') delete r[k];
+      });
+      if (took === 'server') { if (Object.prototype.hasOwnProperty.call(m, 'careLevel')) r.careLevel = m.careLevel; else delete r.careLevel; }
+    }
     delete byId[r.id];
   }
   for (const id in byId) {
@@ -3229,13 +3352,16 @@ function csAbsorbForeignWrite_() {
   if (!raw) return none;
   let other = null;
   try { other = JSON.parse(raw); } catch (e) { return none; }
+  if (other && typeof other === 'object' && Object.prototype.hasOwnProperty.call(other, 'csAppVer')) delete other.csAppVer;   /* 版の印は持ち込まない（反証 F1） */
   if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return none;
+  if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(other, DB)) { csAppBand_('計画の部品を読めませんでした。読み込み直してください'); return none; }   /* 2026-11-27 */
   _csAbsorbing = true;
   try {
     csNoteOldPeerWrite_();                       // 未送信中に古い版のタブが書いていたら知らせる
     const before = csCountEventsAll_(DB.residents);
     const beforeJson = JSON.stringify(DB);
     DB = csMergeEventsFrom_(other, DB);
+    if (typeof csPlanDroppedNotify_ === 'function') csPlanDroppedNotify_();   /* 計画が切り替わって載せなかった未送信の変更（2026-11-27） */
     const changed = JSON.stringify(DB) !== beforeJson;
     const gained = csCountEventsAll_(DB.residents) - before;
     /* ★区分(category)を相手の値に採ったら単位数を焼き直す。放置すると区分と単位が食い違ったまま
@@ -3496,13 +3622,16 @@ function csMergeLocalBeforePush_() {
   if (!raw) return 0;
   let other = null;
   try { other = JSON.parse(raw); } catch (e) { return 0; }
+  if (other && typeof other === 'object' && Object.prototype.hasOwnProperty.call(other, 'csAppVer')) delete other.csAppVer;   /* 版の印は持ち込まない（反証 F1） */
   if (!other || typeof other !== 'object' || !Array.isArray(other.residents)) return 0;
+  if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(other, DB)) return 0;   /* 部品が無い端末は統合しない（2026-11-27） */
   const before = csCountEventsAll_(DB.residents);
   try {
     /* 土台＝相手の版・自分の編集は id 単位で優先（既存の競合リベースと同じ規則）。
        ここで DB を差し替えても、自分の編集は mine 側として全部残る。 */
     DB = csRebaseEdits(other, DB);
   } catch (e) { return 0; }
+  if (typeof csPlanDroppedNotify_ === 'function') csPlanDroppedNotify_();   /* 計画が切り替わって載せなかった未送信の変更（2026-11-27） */
   saveLocalOnly();                 // 指紋も更新される＝次回はこの版が基準になる
   const gained = csCountEventsAll_(DB.residents) - before;
   if (gained > 0) {
@@ -3732,7 +3861,10 @@ async function restoreFromGen_(idx, whole) {
   const when = new Date(g.at).toLocaleString('ja-JP');
   const q = whole
     ? ('【丸ごと戻す】' + when + ' の姿に置き換えます。\n\n'
-       + '・戻る予定：' + d.add + '件\n・消える予定：' + d.del + '件\n\nよろしいですか？')
+       + '・戻る予定：' + d.add + '件\n・消える予定：' + d.del + '件\n'
+       + (typeof csPlanOlderInGen_ === 'function' && csPlanOlderInGen_(res, DB.residents) > 0
+          ? '・計画が切り替わった後の方 ' + csPlanOlderInGen_(res, DB.residents) + '名は、今の計画のままにします\n' : '')
+       + '\nよろしいですか？')
     : ('【足す】' + when + ' にあって今は無い予定 ' + d.add + '件を戻します。\n'
        + '今ある予定は1件も消えません。\n\nよろしいですか？');
   if (!d.add && !d.del) { showToast('この控えと今の内容に差はありません'); return; }
@@ -3742,9 +3874,16 @@ async function restoreFromGen_(idx, whole) {
 
 /* 「足す」の中身: いま無い利用者・いま無いコマだけを足す。今あるコマの中身には一切触らない。
    （原則5「消失より復活」＝戻す操作が別の消失を生まないようにする） */
+/* ★計画の版（2026-11-27）: 控えの計画が今の計画より前（世代 planGen が小さい・同じ世代で開始日 planFrom が違う）の利用者には予定を足さない
+   （前の計画の予定が今の計画に混ざるため）。飛ばした人数は csRestoreSkipped_ に残し、呼び出し元が知らせる。版の項目の無いデータは今までと同じ */
+var csRestoreSkipped_ = 0;
+function csPlanGenOf_(r) { const g = r ? r.planGen : 0; return (typeof g === 'number' && isFinite(g) && g >= 0 && Math.floor(g) === g) ? g : 0; }
 function csRestoreAddOnly_(current, gen) {
   const out = JSON.parse(JSON.stringify(Array.isArray(current) ? current : []));
+  csRestoreSkipped_ = 0;
   if (!Array.isArray(gen)) return out;
+  const pgen = (typeof csPlanGenOf_ === 'function') ? csPlanGenOf_ : function () { return 0; };
+  const pfrom = function (r) { return (r && r.planFrom != null) ? String(r.planFrom) : ''; };
   const byId = {};
   for (let i = 0; i < out.length; i++) if (out[i] && out[i].id !== undefined) byId[out[i].id] = out[i];
   for (let i = 0; i < gen.length; i++) {
@@ -3752,6 +3891,7 @@ function csRestoreAddOnly_(current, gen) {
     if (!gr || gr.id === undefined) continue;
     const cur = byId[gr.id];
     if (!cur) { const add = JSON.parse(JSON.stringify(gr)); out.push(add); byId[add.id] = add; continue; }
+    if (pgen(gr) < pgen(cur) || (pgen(gr) === pgen(cur) && pfrom(gr) !== pfrom(cur))) { csRestoreSkipped_++; continue; }
     if (!Array.isArray(cur.events)) cur.events = [];
     const have = {};
     for (let k = 0; k < cur.events.length; k++) {
@@ -3766,6 +3906,45 @@ function csRestoreAddOnly_(current, gen) {
   return out;
 }
 
+/* 丸ごとの復元で、今の計画の印を保つ（2026-11-27）。今もいる利用者だけ（今いない利用者は控えのまま）。
+   世代（planGen）は今より小さくしない。開始日・介護度の印・メモ・予約・取り消した予約の印は今の物（今に無ければ消す）。
+   ＝控えの予定を「今の計画の直し」として戻す（開始日が古いまま残ると、次の統合で別の計画として丸ごと負けるため・仮置き） */
+var csRestoreKeptPlan_ = 0;
+/* 丸ごとの復元で、控えの計画が今より前（世代が小さい・同じ世代で開始日が違う）の方の数（確かめの窓に出す） */
+function csPlanOlderInGen_(restored, current) {
+  if (!Array.isArray(restored) || !Array.isArray(current)) return 0;
+  const byId = {};
+  current.forEach(r => { if (r && r.id !== undefined) byId[r.id] = r; });
+  const pf = r => (r && r.planFrom != null) ? String(r.planFrom) : '';
+  return restored.filter(r => { const c = r && byId[r.id]; return c && (csPlanGenOf_(r) < csPlanGenOf_(c) || (csPlanGenOf_(r) === csPlanGenOf_(c) && pf(r) !== pf(c))); }).length;
+}
+function csPlanKeepOnWhole_(restored, current) {
+  csRestoreKeptPlan_ = 0;
+  if (!Array.isArray(restored) || !Array.isArray(current)) return restored;
+  const KEYS = ['planFrom', 'planLevel', 'planNote', 'nextPlans', 'planGone'];
+  const byId = {};
+  current.forEach(r => { if (r && r.id !== undefined && !Object.prototype.hasOwnProperty.call(byId, r.id)) byId[r.id] = r; });
+  restored.forEach(r => {
+    if (!r || r.id === undefined || !Object.prototype.hasOwnProperty.call(byId, r.id)) return;
+    const c = byId[r.id];
+    const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    if (!KEYS.concat(['planGen']).some(k => has(c, k) || has(r, k))) return;   // 版の項目の無い方は今までどおり
+    const gr = csPlanGenOf_(r), gc = csPlanGenOf_(c);
+    const pf = x => (x && x.planFrom != null) ? String(x.planFrom) : '';
+    if (gr < gc || (gr === gc && pf(r) !== pf(c))) {
+      /* 控えの計画が今より前の方は、予定を戻さない（今の計画をそのまま保つ・反証レビュー B7） */
+      const keep = JSON.parse(JSON.stringify(c));
+      Object.keys(r).forEach(k => { delete r[k]; });
+      Object.assign(r, keep);
+      csRestoreKeptPlan_++;
+      return;
+    }
+    if (gc > gr || (has(c, 'planGen') && !has(r, 'planGen'))) r.planGen = c.planGen;
+    KEYS.forEach(k => { if (has(c, k)) r[k] = JSON.parse(JSON.stringify(c[k])); else delete r[k]; });
+  });
+  return restored;
+}
+
 /* 復元の実行本体（端末の控え・クラウドの履歴の両方から呼ぶ唯一の経路）。
    ★ここが「戻す」側の要。丸ごと戻すと今日の入力が消えうるので、足す＝和集合を既定にしている。 */
 function csApplyRestore_(res, whole, when, d) {
@@ -3773,7 +3952,10 @@ function csApplyRestore_(res, whole, when, d) {
   const diff = d || csGenDiff_(res);
   pushUndo();                                  /* 復元も1手で取り消せるようにする */
   if (whole) {
+    const before_ = DB.residents;
     DB.residents = JSON.parse(JSON.stringify(res));
+    /* 計画の版（2026-11-27）: 丸ごと戻しても、今の計画の印（世代・開始日・予約・取り消した予約の印）は今の物を保つ */
+    if (typeof csPlanKeepOnWhole_ === 'function') DB.residents = csPlanKeepOnWhole_(DB.residents, before_);
   } else {
     /* ★足す＝「いま無いコマだけを足す」真の和集合（2026-08-31 レビュー M-5）。
        従来は控えを mine 側に置いた競合リベースで、同じ id のコマは控えの中身で置き換わっていた＝
@@ -3784,7 +3966,17 @@ function csApplyRestore_(res, whole, when, d) {
   if (!saveDB()) { showToast('復元を保存できませんでした'); return false; }
   populateResidentSelect(); renderAll();
   closeRestoreModal();
-  showToast(whole ? (when + ' の姿に戻しました') : ('予定 ' + diff.add + '件を戻しました'));
+  /* 計画が切り替わった後の方を飛ばした時は、実際に足した件数を出す（2026-11-27） */
+  const skipped_ = (!whole && typeof csRestoreSkipped_ !== 'undefined') ? csRestoreSkipped_ : 0;
+  const addedN_ = skipped_ > 0 ? Math.max(0, csGenDiff_(res).add < diff.add ? diff.add - csGenDiff_(res).add : 0) : diff.add;
+  showToast(whole ? (when + ' の姿に戻しました') : ('予定 ' + addedN_ + '件を戻しました'));
+  if (whole && typeof csRestoreKeptPlan_ !== 'undefined' && csRestoreKeptPlan_ > 0) {
+    try { showToast('計画が切り替わった後の方 ' + csRestoreKeptPlan_ + '名は、今の計画のままにしました'); } catch (e) { csNote_('復元の知らせ', e); }
+  }
+  /* 計画が切り替わった後の方には、前の計画の予定を足していない（2026-11-27・文は仮置き） */
+  if (!whole && typeof csRestoreSkipped_ !== 'undefined' && csRestoreSkipped_ > 0) {
+    try { showToast('計画が切り替わった後の方 ' + csRestoreSkipped_ + '名には、前の計画の予定を足していません'); } catch (e) { csNote_('復元の知らせ', e); }
+  }
   /* 復元はクラウドへも送る。件数が大きく戻る＝サーバーのガードに当たることがあるが、
      その時は既存の確認ダイアログが出て人が判断する（黙って force はしない）。 */
   if (SYNC.hasTarget()) { try { SYNC.push(); } catch(e){ csNote_('送信', e); } }
@@ -3886,7 +4078,9 @@ function csRestoreResidentsIfLost() {
     if (!csLooksLikeSampleOnly(DB.residents)) return false;   // 正データがあるなら何もしない
     const bk = JSON.parse(localStorage.getItem(CS_RESIDENT_BACKUP_KEY) || 'null');
     if (bk && !csLooksLikeSampleOnly(bk.residents) && csRealResidentCount(bk.residents) > 0) {
+      const before_ = DB.residents;
       DB.residents = bk.residents;
+      if (typeof csPlanKeepOnWhole_ === 'function') DB.residents = csPlanKeepOnWhole_(DB.residents, before_);   /* 今の計画の印を保つ（2026-11-27） */
       saveLocalOnly();
       if (suGetDeviceRole() !== 'field' && SYNC.hasTarget()) {
         SYNC.markDirty();
@@ -3955,6 +4149,7 @@ function loadDB() {
       const p = JSON.parse(raw);
       if (p && typeof p === 'object') {
         DB = { ...DB, ...p };
+        delete DB.csAppVer;   /* 版の印は持ち込まない（端末の控えに紛れていても・反証 F1。控えは次に書く時に消える） */
       } else {
         console.warn('loadDB: 不正なデータ形式（オブジェクト以外）。デフォルトを使用します');
       }
@@ -4039,7 +4234,7 @@ function migrateClearNotes_() {
 function saveDB() {
   /* 試算中は本物のキーへ一切書かない。呼び出し元は「保存できた」前提で描画を続けるので true を返し、
      代わりに試算専用キーへ退避する（再読み込みで試算の続きから戻れるようにするため）。 */
-  if (SIM_ON) { SIM.persist(); return true; }
+  if (SIM_ON) { if (SIM.kind === 'view') { SIM.revertView(); return true; } SIM.persist(); return true; }
   /* ★別タブの取り込みより前に見る（後だと相手の変更を自分が直したことにしてしまう） */
   try { csStampEdits_(); } catch(e){ csNote_('直した人の印', e); }
   ensureServiceDict_();   // 保存前に辞書をメモリへ同期（JSON.stringify より前）
@@ -4048,6 +4243,7 @@ function saveDB() {
      更新され、送信前マージ（csMergeLocalBeforePush_）も二度と発火しなくなる。 */
   try { csAbsorbForeignWrite_(); } catch(e){ csNote_('別タブの取り込み', e); }
   try {
+    if (DB && typeof DB === 'object' && Object.prototype.hasOwnProperty.call(DB, 'csAppVer')) delete DB.csAppVer;   /* 端末の控えに版の印を書かない（反証 F1） */
     const json = JSON.stringify(DB);
     try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   // 書く直前に版を名乗る（相手の誤警告を防ぐ・失敗しても保存は止めない）
     localStorage.setItem(LS_KEY, json);
@@ -4076,6 +4272,8 @@ function saveDB() {
  * 同期先未設定でも端末には保存される。 */
 function manualSave() {
   /* Ctrl/Cmd+S もここへ来る。試算中は反射的に押されても何も出さない。 */
+  if (SIM_ON && SIM.kind === 'plan') { showToast('予約の編集中です。保存するには「💾 予約を保存」を押してください'); return; }
+  if (SIM_ON && SIM.kind === 'view') { showToast('過去の計画は見るだけです（保存しません）'); return; }
   if (SIM_ON) { showToast('試算中は保存しません。反映するには「✅ 実装」を押してください'); return; }
   try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e0) {}
   const ok = saveDB();
@@ -4357,7 +4555,34 @@ const SYNC = {
       /* 接続先の無い端末（_liveHint）は保存を送らない。保存の後の Google への写し返しには接続先が要り、送れないと Google が古いまま残るため。
          今は現場のアカウントだけを「使える」にしている（現場のアカウントは週間計画を書けない＝今までと同じ断り） */
       if (this._liveHint && !this.target().endpoint && payload && payload.action === 'put') return { ok: false, error: 'forbidden' };
-      if (window.SUKv && SUKv.handles(payload)) return SUKv.call(payload, (p) => { p.__raw = true; return this.gas(p); });
+      if (window.SUKv && SUKv.handles(payload)) {
+        /* 版の印（2026-11-27 データ保護の反証レビュー・反証 F1）: 週間計画を新しい保存先へ送る時の写しにだけ、最上位に csAppVer を足す。
+           付けるのは、計画の版の部品（care-plan-calc.js）が読めた画面で、共通 DB の口 cs_plan_gate が答えた（移行 0136 がある）と分かっている時だけ。
+           0136 より前の共通 DB は印を除かずに保存し、開いたままの古い版のタブが取り込んで送り返すと門が効かなくなるため。
+           まだ確かめていない・確かめられない時は印を付けない（＝今までと同じ本文）。予約か世代1以上の方がいる中身の時だけ、確かめの答えを最大3秒待つ。
+           印を付けない時も、写しに紛れた印は必ず外して送る。DB・端末の控え・Google へ送る本文には入れない（Google へ流れる時は下の素通しの入口で必ず外す） */
+        let pl = payload;
+        if (payload.action === 'put' && payload.key === 'care_schedule_v2' && payload.data && typeof payload.data === 'object') {
+          const d0 = Object.assign({}, payload.data);
+          delete d0.csAppVer;
+          let stamp = false;
+          if (typeof CarePlanCalc !== 'undefined') {
+            const pr = csPlanGateProbe_();
+            stamp = csPlanGate_.yes;
+            if (!stamp && csPlanDataHasPlans_(d0)) stamp = await csPlanGateWait_(pr);
+          }
+          if (stamp) d0.csAppVer = CS_APP_VER;
+          pl = Object.assign({}, payload, { data: d0 });
+        } else if (typeof CarePlanCalc !== 'undefined') {
+          csPlanGateProbe_();   /* 起動の取得・巡回の時に裏で確かめを始めておく（答えを待たない） */
+        }
+        return SUKv.call(pl, (p) => {
+          if (p && p.data && typeof p.data === 'object' && Object.prototype.hasOwnProperty.call(p.data, 'csAppVer')) {
+            const d0 = Object.assign({}, p.data); delete d0.csAppVer; p = Object.assign({}, p, { data: d0 });
+          }
+          p.__raw = true; return this.gas(p);
+        }).then((j) => (typeof csStripAppVerResp_ === 'function' ? csStripAppVerResp_(j) : j));
+      }
     }
     const t = this.target();
     /* 接続先の無い端末から Google へは送らない（送る先が無い。今までどおりの「同期先が入っていません」） */
@@ -4412,7 +4637,7 @@ const SYNC = {
         /* 統合 0005（写しの期間・2026-09-26）: Google が返した版／受け付けた版を Supabase へ写す。
            事務所・管理者として Google でログインしている時だけ・合言葉は送らない・失敗しても同期に影響させない */
         if (window.SUKvShadow && !SIM_ON) SUKvShadow.fromGas(action, payload.key, json, body);
-        return json;
+        return (typeof csStripAppVerResp_ === 'function') ? csStripAppVerResp_(json) : json;
       }
       /* 診断ログ（URL・トークン・データは出さない）。クラスタ状の不良を後から追えるようにする。 */
       const why = (kind === 'notfound') ? '404'
@@ -4448,7 +4673,7 @@ const SYNC = {
   // リモート(data:DBオブジェクト)をローカルへ採用（事業所情報は欠落時ローカル維持）
   adopt(data, rev) {
     if (SIM_ON) return false;   /* 試算盤面をサーバー版で差し替えない */
-    const remote = data;
+    const remote = (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'csAppVer')) ? csStripAppVerResp_({ data: data }).data : data;   /* 版の印は持ち込まない */
     if (!remote || typeof remote !== 'object') return false;
     /* ★上書き保護: ローカルが実データで、リモートが空/サンプル「あ」なら採用しない（実利用者を守る）。
        force push は使わない（別端末の正当な削除を巻き戻さない）。rev は進めない（後続の正当更新を
@@ -4476,7 +4701,15 @@ const SYNC = {
     else if (localRM && (Number(localRM.rev) || 0) > (Number(remoteRM.rev) || 0)) preservedRM = localRM;
     const sigBefore = rateMasterSignature_(localRM);
 
+    const planGensBefore_ = (typeof csPlanGens_ === 'function') ? csPlanGens_() : null;   /* 計画の版（2026-11-27）: 取り込みで世代が進んだかを見る */
     DB = { ...DB, ...remote };
+    /* サーバー（定時の仕事・ほかの端末）で計画が切り替わった版を受け取った時は、Google への写し返しを1回予約する（Google を読む画面に新しい計画を届ける） */
+    if (planGensBefore_ && typeof csPlanScheduleMirror_ === 'function') {
+      try {
+        const after_ = csPlanGens_();
+        if (Object.keys(after_).some(id => planGensBefore_[id] !== undefined && after_[id] > planGensBefore_[id])) csPlanScheduleMirror_();
+      } catch (e) { csNote_('計画の切替の写し返し', e); }
+    }
     if (preservedOffice) DB.office = preservedOffice;
     if (preservedRM) DB.rateMaster = preservedRM;
     /* 採用直後に単位数の表を展開する。戻り値は「既定で補った項目」＝リモートのマスタが壊れていた
@@ -4690,6 +4923,15 @@ const SYNC = {
 
   async push(force) {
     if (SIM_ON) { this.log('🧪 試算モード中は送信しません'); return false; }
+    /* 古い版と断られた後は送り直さない（未送信は端末に残す・2026-11-27） */
+    if (this._oldApp) { if (typeof csAppBand_ === 'function') csAppBand_('この画面は古い版です。読み込み直してください'); return false; }
+    /* 計画の版の部品が読めない端末で、版の項目を持つデータは送らない（古い統合で今の計画に前の計画の予定が混ざるため・2026-11-27） */
+    if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(DB)) {
+      csAppBand_('計画の部品を読めませんでした。読み込み直してください');
+      this.log('❌ 計画の部品を読めなかったため、送信を止めました（変更はこの端末に残っています）');
+      this.markDirty(); this.updateStatusUI('未同期…');
+      return false;
+    }
     if (!this.hasTarget()) { this.log('❌ ' + CS_NO_TARGET_MSG); return false; }
     if (this._busy) { return false; }
     /* 画面の中の窓が出ている間は送信を始めない（2026-11-12・仮置き）。送信の頭の取り込み（他タブの書き込みの取り込み）が
@@ -4729,6 +4971,14 @@ const SYNC = {
            対するもので、切替先の本物のサーバーとは一度も比べていない。force のまま送ると版数照合と一括消失の拒否を
            通らず、この端末の古い内容でクラウドを丸ごと上書きしうる。通常送信なら、ずれていれば競合の取り込みに、
            大きく減る時はサーバーの実数つきの確認に乗る。 */
+      if (j && j.error === 'oldapp') {
+        /* 共通 DB の門が「印の無い古い版の画面」と断った（新しい画面では起きないはず）。送り直さず、未送信は端末に残す */
+        this._busy = false; this._oldApp = true;
+        this.markDirty(); this.updateStatusUI('未同期…');
+        this.log('❌ この画面は古い版です。読み込み直してください（変更はこの端末に残っています）');
+        if (typeof csAppBand_ === 'function') csAppBand_('この画面は古い版です。読み込み直してください');
+        return false;
+      }
       if (!j.ok && this.isWrongEndpointErr(j.error) && !this._healPushing && await this.healStaleTarget()) {
         this._busy = false;
         this._healPushing = true;
@@ -4759,14 +5009,30 @@ const SYNC = {
         this.log('❌ 同期先の Google の受け口が古い形のため同期できません。管理者に受け口の更新を頼むか、接続設定の「週間計画・ワースケ・シフト」を確かめてください');
         return false;
       }
-      if (j.conflict) {
+      /* planstale（2026-11-27）: 共通 DB が中身を確かめて「切り替えた後の計画を前の計画で戻す保存」を断った。競合と同じ道（取得 → 統合 → 1回だけ送り直す）に乗せる。
+         強制保存では上書きしない。送り直しも断られたら、それ以上送らずに帯を出す（未送信は端末に残す） */
+      if (j && j.error === 'planstale' && (force || this._rebasing)) {
+        this._busy = false; this.markDirty(); this.updateStatusUI('未同期…');
+        const msg_ = force ? CS_FORCE_STALE_MSG : 'ほかの端末で計画が切り替わっています。読み込み直してください';
+        this.log('❌ ' + msg_ + '（変更はこの端末に残っています）');
+        if (typeof csAppBand_ === 'function') csAppBand_(msg_);
+        if (force) { try { await SUDialog.alert(msg_); } catch (e) { csNote_('強制保存の断り', e); } }
+        return false;
+      }
+      if (j.conflict || (j && j.error === 'planstale')) {
         // 別端末の新しい更新あり → サーバー版を取得後、自分の編集を再適用して保存（編集を捨てない＝リバウンド防止）
         this._busy = false;
         this.updateStatusUI('競合');
         this.log('⚠️ クラウドに別端末の更新あり → 取得後に自分の編集を再適用して保存します');
         var mine = JSON.parse(JSON.stringify(DB));   // 編集済みローカルを退避（pullが上書きする前）
         await this.pull();                            // サーバー版採用＝rev前進・DB=server
+        if (typeof csPlanPartsMissing_ === 'function' && csPlanPartsMissing_(DB, mine)) {          /* 部品が無い端末は統合しない。自分の編集は端末に残す（2026-11-27） */
+          DB = mine; saveLocalOnly(); this.markDirty(); this.updateStatusUI('未同期…');
+          csAppBand_('計画の部品を読めませんでした。読み込み直してください');
+          return false;
+        }
         DB = csRebaseEdits(DB, mine);                 // サーバー土台に自分の編集をイベントid単位で再適用
+        if (typeof csPlanDroppedNotify_ === 'function' && csPlanDroppedNotify_()) this.updateStatusUI('要確認');   /* 計画が切り替わって載せなかった未送信の変更（2026-11-27） */
         try { csApplyDeviceSelection_(true); } catch (e) {}   // 土台=server版のため表示中の利用者も戻す
         /* この端末が触っていない項目でクラウド側の値を残した件数を記録に残す（2026-09-07 追加）。
            2026-09-07 の巻き戻り事故は、まさにこの経路が【古い端末の値で相手の保存を上書き】して
@@ -4963,12 +5229,97 @@ const SYNC = {
 /* 直近のリベースで「クラウド側の入浴あり」に戻した件数。0以外なら呼び出し元が必ず人に知らせる。
    黙って戻すと、自分がさっき外した入浴が入浴ありに復活したまま再送され、加算の過大計上になる。 */
 var csBathRestored_ = 0;
+/* 版の印（2026-11-27）: 新しい保存先へ送る週間計画の写しの最上位に付ける数。共通 DB の門が、予約か世代1以上の利用者がいるデータで
+   この印（2026112701 以上）の無い保存を断る（oldapp）。受け取ったデータに紛れていたら捨てる（DB に持ち込まない・送り返さない） */
+var CS_APP_VER = 2026112701;
+var CS_FORCE_STALE_MSG = '切り替えた後の計画を、前の計画で上書きすることはできません。読み込み直してから直してください';
+function csStripAppVerResp_(j) {
+  try {
+    if (j && typeof j === 'object' && j.data && typeof j.data === 'object' && Object.prototype.hasOwnProperty.call(j.data, 'csAppVer')) {
+      const d = Object.assign({}, j.data); delete d.csAppVer; return Object.assign({}, j, { data: d });
+    }
+  } catch (e) { csNote_('版の印を外す', e); }
+  return j;
+}
+/* 共通 DB の移行 0136 の有る無し（2026-11-27 反証 F1）。口 cs_plan_gate（引数なし・ログインしていれば役割を問わず {ok:true, minAppVer}）が
+   ok:true を返した時だけ「あり」と覚える（メモリだけ・このタブの間。あり は覚えたまま）。答えが「なし」・エラーの時は5分後に確かめ直す。
+   ログインの部品が無い・新しい保存先へ切り替えていない時は呼ばず、「まだ確かめていない」のまま（5分待たない・仮置き）。同時の確かめは1本にまとめる */
+var CS_PLAN_GATE_RECHECK_MS = 5 * 60 * 1000;
+var CS_PLAN_GATE_WAIT_MS = 3000;
+var csPlanGate_ = { yes: false, noAt: 0, p: null };
+function csPlanGateProbe_() {
+  try {
+    if (csPlanGate_.yes) return Promise.resolve(true);
+    if (csPlanGate_.p) return csPlanGate_.p;
+    if (csPlanGate_.noAt && Math.abs(Date.now() - csPlanGate_.noAt) < CS_PLAN_GATE_RECHECK_MS) return Promise.resolve(false);
+    if (!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed(LS_KEY))) return Promise.resolve(false);
+  } catch (e) { csNote_('新しい保存先の版の確かめ', e); return Promise.resolve(false); }
+  const p = csAuthLoad_().then(() => {
+    const sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
+    if (!sb || typeof sb.rpc !== 'function') return false;   /* 呼べない＝まだ確かめていないまま */
+    return Promise.resolve(sb.rpc('cs_plan_gate')).then((r) => {
+      if (r && !r.error && r.data && typeof r.data === 'object' && r.data.ok === true) { csPlanGate_.yes = true; return true; }
+      csPlanGate_.noAt = Date.now(); return false;
+    }, (e) => { csPlanGate_.noAt = Date.now(); csNote_('新しい保存先の版の確かめ', e); return false; });
+  }, (e) => { csNote_('新しい保存先の版の確かめ（ログインの部品）', e); return false; })
+    .then((v) => { csPlanGate_.p = null; return v === true; }, () => { csPlanGate_.p = null; return false; });
+  csPlanGate_.p = p;
+  return p;
+}
+/* 確かめの答えを最大3秒待つ（来なければ印なし＝false） */
+function csPlanGateWait_(pr) {
+  let tm = null;
+  const late = new Promise((ok) => { tm = setTimeout(() => ok(false), CS_PLAN_GATE_WAIT_MS); });
+  return Promise.race([Promise.resolve(pr).then((v) => v === true, () => false), late]).then((v) => { clearTimeout(tm); return v; });
+}
+/* 計画の版の項目を持つ利用者がいるか（世代1以上・予約が空でない） */
+function csPlanDataHasPlans_(db) {
+  return !!(db && Array.isArray(db.residents) && db.residents.some(r => r && ((typeof r.planGen === 'number' && r.planGen >= 1) || (Array.isArray(r.nextPlans) && r.nextPlans.length > 0))));
+}
+/* 相手（別タブの書いた中身）が、この端末より前の計画を持つ利用者を含むか（共通 DB の planstale と同じ3つの見方）。部品が無い時・版の項目が無い時は false */
+function csPlanOlderThanMine_(other, mine) {
+  if (typeof CarePlanCalc === 'undefined' || !other || !mine || !Array.isArray(other.residents) || !Array.isArray(mine.residents)) return false;
+  const byId = {};
+  mine.residents.forEach(r => { if (r && r.id !== undefined && !byId[r.id]) byId[r.id] = r; });
+  const pf = r => (r && r.planFrom != null) ? String(r.planFrom) : '';
+  return other.residents.some(o => {
+    const m = o && byId[o.id];
+    if (!m) return false;
+    const go = csPlanGenOf_(o), gm = csPlanGenOf_(m);
+    if (go < gm) return true;
+    if (go === gm && gm >= 1 && pf(o) !== pf(m)) return true;
+    const gone = new Set((Array.isArray(m.planGone) ? m.planGone : []).map(g => g && g.id));
+    return (Array.isArray(o.nextPlans) ? o.nextPlans : []).some(p => p && gone.has(p.id));
+  });
+}
+/* 部品が読めない端末で、版の項目を持つデータを統合・送信してはいけないか（2026-11-27）。版の項目を誰も持たないデータでは false＝今までどおり */
+function csPlanPartsMissing_(a, b) {
+  if (typeof CarePlanCalc !== 'undefined') return false;
+  return csPlanDataHasPlans_(a) || csPlanDataHasPlans_(b);
+}
+/* 送信を止めた理由の帯（古い版・部品が読めない）。画面だけ */
+function csAppBand_(msg) {
+  try { const el = document.getElementById('cs-app-warn'); if (el) { el.textContent = msg; el.style.display = msg ? '' : 'none'; } } catch (e) { csNote_('送信を止めた帯', e); }
+}
+/* 計画の版（2026-11-27・care-plan-calc.js の mergePlans）。
+   csPlanDropped_ … 直近の統合で、ほかの端末で計画が切り替わったため載せなかった【この端末の未送信の】予定の件数。0以外なら呼び出し元が必ず知らせる（csPlanDroppedNotify_）
+   csPlanTook_    … 直近の統合で利用者ごとにどちらの計画を採ったか（'server'|'mine'|'same'）。版の項目のある利用者だけ。csMergeEventsFrom_ が読む
+   版の項目（planFrom・planGen・planLevel・planNote・nextPlans・planGone）がどちらにも無い利用者は mergePlans を通さない＝今までと1バイトも同じ。
+   部品が読めない時（CarePlanCalc が無い時）も今までどおり（版の項目はサーバーのまま）。 */
+var csPlanDropped_ = 0;
+var csPlanTook_ = {};
 function csRebaseEdits(server, mine) {
   csBathRestored_ = 0;
   csFieldsKept_ = 0;
   csFieldChanges_ = [];
+  csPlanDropped_ = 0;
+  csPlanTook_ = {};
   if (!server || !mine || !Array.isArray(server.residents) || !Array.isArray(mine.residents)) return server;
+  var CPC_ = (typeof CarePlanCalc !== 'undefined' && CarePlanCalc && typeof CarePlanCalc.mergePlans === 'function') ? CarePlanCalc : null;
+  var PLAN_KEYS_ = ['planFrom', 'planGen', 'planLevel', 'planNote', 'nextPlans', 'planGone'];
+  var hasKey_ = function (o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); };
   var out = JSON.parse(JSON.stringify(server));
+  if (Object.prototype.hasOwnProperty.call(out, 'csAppVer')) delete out.csAppVer;   /* 土台に紛れた版の印は持ち回さない（反証 F1） */
   var byId = {}, i;
   for (i = 0; i < out.residents.length; i++) byId[out.residents[i].id] = out.residents[i];
   for (var m = 0; m < mine.residents.length; m++) {
@@ -4976,6 +5327,53 @@ function csRebaseEdits(server, mine) {
     if (!mr || mr.id === undefined) continue;
     var sr = byId[mr.id];
     if (!sr) { var add = JSON.parse(JSON.stringify(mr)); out.residents.push(add); byId[mr.id] = add; continue; }
+    /* ★計画の版（2026-11-27）: 世代（planGen）が違う・同じ世代で開始日（planFrom）が違う時は、別の計画どうし。
+       予定を id で混ぜず、mergePlans が決めた側の予定と版の項目を丸ごと採る（古い端末の未送信が、切り替えた後の計画を前の計画で上書きしないため）。
+       世代も開始日も同じ時は、予約（nextPlans・planGone）だけ mergePlans の和を入れ、予定は下の今までの id 単位の統合を通す。 */
+    if (CPC_ && PLAN_KEYS_.some(function (k) { return hasKey_(sr, k) || hasKey_(mr, k); })) {
+      var mp = CPC_.mergePlans(sr, mr);
+      csPlanTook_[mr.id] = mp.tookGen;
+      if (mp.tookGen === 'server' || mp.tookGen === 'mine') {
+        if (mp.tookGen === 'server') {
+          /* 載せなかった自分の予定のうち、この端末の未送信の変更（最後にサーバーと一致した時の土台と違う・土台に無い）だけを数える。
+             切り替わっただけの端末（自分は何も直していない）では数えない。土台を持たない端末は未送信の印（SYNC._dirty）で決める（仮置き） */
+          try {
+            /* 比べるのは diffEvents と同じ項目（CarePlanCalc.EV_FIELDS・入浴を含む）。足した・変えた・消した（相手にあって自分に無い）予定を候補にし、
+               最後にサーバーと一致した時の土台と比べて「この端末が直した」物だけを数える。入浴は土台に無いので、入浴だけの違いは未送信の印で決める（仮置き） */
+            var dEv = CPC_.diffEvents(sr.events, mr.events);
+            var baseAll = (typeof csFieldBaseLoad_ === 'function') ? csFieldBaseLoad_() : null;
+            var dirty_ = !!(typeof SYNC !== 'undefined' && SYNC && SYNC._dirty);
+            var cand = dEv.added.map(function (e) { return { ev: e, f: null }; })
+              .concat(dEv.changed.map(function (c) { return { ev: c.after, f: c.fields }; }))
+              .concat(dEv.removed.map(function (e) { return { ev: e, f: null, removed: true }; }));
+            for (k = 0; k < cand.length; k++) {
+              var ce = cand[k].ev;
+              if (!ce || ce.id === undefined) continue;
+              var unsent;
+              if (!baseAll) unsent = dirty_;
+              else {
+                var br = Object.prototype.hasOwnProperty.call(baseAll, ce.id) ? baseAll[ce.id] : null;
+                if (cand[k].removed) unsent = !!br;   /* 同期の時に持っていた予定を、この端末が消した */
+                else {
+                  unsent = !br || (typeof CS_MERGE_FIELDS !== 'undefined' ? CS_MERGE_FIELDS : []).some(function (f) {
+                    return br[f] !== undefined && String(ce[f] == null ? '' : ce[f]) !== String(br[f]);
+                  });
+                  if (!unsent && cand[k].f && cand[k].f.indexOf('bathing') >= 0) unsent = dirty_;
+                }
+              }
+              if (unsent) csPlanDropped_++;
+            }
+          } catch (ePd) { csNote_('計画の切替で捨てた件数', ePd); /* 数えられない時は知らせを出さないだけ（統合そのものは止めない） */ }
+        }
+        PLAN_KEYS_.concat(['events', 'careLevel']).forEach(function (k) {
+          if (hasKey_(mp.res, k)) sr[k] = mp.res[k]; else delete sr[k];
+        });
+        if (typeof csTakeNewerEdit_ === 'function') csTakeNewerEdit_(sr, mr);
+        continue;
+      }
+      if (hasKey_(mp.res, 'nextPlans')) sr.nextPlans = mp.res.nextPlans;
+      if (hasKey_(mp.res, 'planGone')) sr.planGone = mp.res.planGone;
+    }
     var sEvents = Array.isArray(sr.events) ? sr.events : [];
     var mEvents = Array.isArray(mr.events) ? mr.events : [];
     var merged = [], seen = {}, k, id;
@@ -5036,10 +5434,22 @@ function csRebaseEdits(server, mine) {
   return out;
 }
 
+/* 統合で「ほかの端末で計画が切り替わったため」載せなかったこの端末の未送信の変更を知らせる（2026-11-27・入浴の csBathRestored_ と同じ作法）。
+   黙って捨てない。知らせた時だけ true */
+function csPlanDroppedNotify_() {
+  const n = Number(csPlanDropped_) || 0;
+  if (n <= 0) return false;
+  const msg = 'ほかの端末で計画が切り替わったため、この端末の未送信の変更 ' + n + '件は反映していません';
+  try { showToast(msg); } catch (e) { csNote_('計画の切り替えの知らせ', e); }
+  try { SYNC.log('⚠ ' + msg); } catch (e) { csNote_('計画の切り替えの知らせ', e); }
+  return true;
+}
+
 // localStorage のみへ保存（クラウド同期トリガなし、pull時の循環防止用）
 function saveLocalOnly() {
   if (SIM_ON) { SIM.persist(); return; }
   try {
+    if (DB && typeof DB === 'object' && Object.prototype.hasOwnProperty.call(DB, 'csAppVer')) delete DB.csAppVer;   /* 端末の控えに版の印を書かない（反証 F1） */
     const json = JSON.stringify(DB);
     try { csStampWriter_(); } catch(e){ csNote_('書き手の印', e); }   /* saveDB と同じ＝どちらの経路で書いても版を名乗る */
     localStorage.setItem(LS_KEY, json);
@@ -5317,6 +5727,15 @@ async function syncForcePush() {
       SYNC.updateStatusUI('確認中…');   // GAS への往復は数秒かかる。無反応に見せない
       const j = await SYNC.gas({ action: 'get', key: 'care_schedule_v2' });
       if (j && j.ok && j.data) {
+        /* 計画の版（2026-11-27）: サーバーより計画の世代が小さい方がいれば、切り替えた後の計画を前の計画で上書きすることになる */
+        /* 共通 DB が断る（planstale）ので、サーバーより計画の世代が小さい方がいる時は強制保存を行わない（2026-11-27 門まわりの反証 3回目） */
+        let older = 0;
+        try {
+          const sg = {};
+          (Array.isArray(j.data.residents) ? j.data.residents : []).forEach(r => { if (r && r.id !== undefined) sg[r.id] = csPlanGenOf_(r); });
+          older = (DB.residents || []).filter(r => r && sg[r.id] !== undefined && csPlanGenOf_(r) < sg[r.id]).length;
+        } catch (e) { csNote_('強制保存の計画の確かめ', e); }
+        if (older > 0) { await SUDialog.alert(CS_FORCE_STALE_MSG); return; }
         const sv = csCountBathing(j.data), lc = csCountBathing(DB);
         if (sv > lc) {
           if (!(await SUDialog.confirm('⚠ 通所の入浴（加算）が減ります\n\nクラウド: ' + sv + ' 件\nこの端末: ' + lc + ' 件\n\n' +
@@ -5407,6 +5826,8 @@ function csApplyMasterNameCut(tgt, c, allowDelete){
    extData: stateRev連携（凍結仕様S4）が getRoster 直取得から組み立てた su_residents_common 相当
    （{residents:[...]}・メモリ内でのマージ専用）。共有名簿(LS)へは書かない＝唯一の書き手は resident-master。
    引数なしの既存呼び出し（起動時・adopt）は従来どおり共有名簿(LS)を読む。 */
+/* 入居者マスタの取り込みで決まった介護度の知らせ（利用者id → resolveLevel の notice・hold／mismatch）。保存しない・メモリだけ（2026-11-27） */
+var csPlanLvNotice_ = Object.create(null);
 function mergeCommonSchedule(extData){
   if (SIM_ON) return;   /* 試算中はマスタ取込をしない（利用者が勝手に増減し、試算盤面が壊れる） */
   var data = null;
@@ -5463,7 +5884,17 @@ function mergeCommonSchedule(extData){
       /* 介護度は入居者マスタを正にする（居室と同じ扱い・代表者の決定 2026-11-02「マスタを正にする」）。
          入居者マスタとつながっている方は週間計画の中で介護度を直せない（介護情報の窓・一括編集で止めている）ので、
          週間計画で直した値を巻き戻すことは無い。マスタが空の時は今の値を残す */
-      if (c.careLevel && tgt.careLevel !== c.careLevel){ tgt.careLevel = c.careLevel; changed++; }
+      /* ★計画の版（2026-11-27）: 決まりは care-plan-calc.js の resolveLevel の1つ。予約の無い方は今と同じ（マスタが入っていればマスタ）。
+         次の予約の介護度にマスタが先に変わっていても、切替日までは今の介護度で計算する（hold）。知らせ（hold・mismatch）は保存せず、メモリだけに控えて帯に出す */
+      var CPC_ = (typeof CarePlanCalc !== 'undefined' && CarePlanCalc && typeof CarePlanCalc.resolveLevel === 'function') ? CarePlanCalc : null;
+      if (CPC_ && typeof c.careLevel === 'string') {   /* 文字でない介護度は直す前と同じ代入（2026-11-27） */
+        var lvR = CPC_.resolveLevel({ cur: tgt.careLevel, master: c.careLevel, planLevel: tgt.planLevel, planFrom: tgt.planFrom,
+                                      next: tgt.nextPlans, today: CPC_.todayJst(Date.now()) });
+        if (c.careLevel && lvR.level && tgt.careLevel !== lvR.level){ tgt.careLevel = lvR.level; changed++; }
+        if (typeof csPlanLvNotice_ !== 'undefined' && tgt.id !== undefined) {
+          if (lvR.notice) csPlanLvNotice_[tgt.id] = lvR.notice; else delete csPlanLvNotice_[tgt.id];
+        }
+      } else if (c.careLevel && tgt.careLevel !== c.careLevel){ tgt.careLevel = c.careLevel; changed++; }
       if (c.room && tgt.room !== c.room){ tgt.room = c.room; changed++; }
       if (c.kana && !tgt.kana){ tgt.kana = c.kana; changed++; }   /* ふりがなは空欄補完のみ＝アプリ側の一括編集を巻き戻さない(careLevel同型・空欄のみ補完/master常勝のroomとは別) */
       if (tS !== undefined && tgt.targetSchedule === undefined){ tgt.targetSchedule = tS; changed++; }   /* 空(未設定)のみ補完＝一括編集の週間計画対象をマスタ由来su_residents_commonで巻き戻さない */
@@ -5772,6 +6203,7 @@ function csStartupPullComing_() {
   try { return !SIM_ON && SYNC.hasTarget() && suGetDeviceRole() !== 'field'; } catch (e) { return false; }
 }
 function csApplyMasterIdParam(isRetry) {
+  if (typeof SIM !== 'undefined' && SIM_ON && (SIM.kind === 'plan' || SIM.kind === 'view')) return;   /* 予約の編集・過去の計画を見る間は選び直さない（2026-11-27） */
   var mid = isRetry ? null : csReadMasterIdParam();
   if (!isRetry && !mid) return;
   if (!isRetry) csClearMasterIdParam();   // URLから即座に落とす（リロード・設定保存で開き直さない）
@@ -6319,6 +6751,7 @@ function renderSummaryBar(res) {
   if (noteEl) noteEl.textContent = '※ ' + RATE_DISCLAIMER;
   const edEl = $('#cs-edited-note');
   if (edEl) edEl.textContent = csEditedText_(res);
+  try { if (typeof csPlanRenderBar_ === 'function') csPlanRenderBar_(res); } catch (e) { csNote_('計画の版の表示', e); }   /* 計画の版（2026-11-27） */
 
   /* 特定施設は区分支給限度基準額の管理対象外。限度額と使用率を「—」で放置すると
      「まだ入力していない」のか「対象外」なのか読み取れないので、欄ごと下げて理由を出す。 */
@@ -6588,6 +7021,7 @@ function csApplyBoardLock_() {
     : '押すと盤面をロックします（枠の移動・時間の伸縮・空き枠からの追加・長押しメニューを止めます）';
 }
 function toggleBoardLock() {
+  if (typeof SIM !== 'undefined' && SIM_ON && SIM.kind === 'view') { try { showToast('過去の計画は見るだけです（盤面は動かせません）'); } catch (e) { csNote_('計画の版の表示', e); } return; }   /* 2026-11-27 */
   BOARD_LOCKED = !BOARD_LOCKED;
   try { localStorage.setItem(CS_LOCK_KEY, BOARD_LOCKED ? '1' : '0'); } catch (e) {}
   csApplyBoardLock_();
@@ -7222,9 +7656,16 @@ function openCareInfoModal() {
   if (!res) { showToast('利用者を選択してください'); return; }
   $('#care-info-name').textContent = '対象: ' + res.name;
   $('#ci-level').value      = res.careLevel      || '';
-  /* 入居者マスタとつながっている方は介護度を直せない（マスタを正にする・次の同期でマスタの値に戻るため） */
-  $('#ci-level').disabled = csIsMasterLinked_(res);
-  $('#ci-level-note').hidden = !csIsMasterLinked_(res);
+  /* 入居者マスタとつながっている方は介護度を直せない（マスタを正にする・次の同期でマスタの値に戻るため）。
+     予約の編集の中だけは、その計画だけの介護度を選べる（2026-11-27） */
+  const planEd = (typeof csPlanMode_ === 'function' && csPlanMode_() === 'plan');
+  $('#ci-level').disabled = csIsMasterLinked_(res) && !planEd;
+  $('#ci-level-note').hidden = !csIsMasterLinked_(res) || planEd;
+  const pn = $('#ci-level-plan-note');
+  if (pn) {
+    pn.hidden = !planEd;
+    pn.textContent = planEd ? ('この計画だけの介護度です。' + csPlanMd_(SIM.plan.from) + 'からは入居者マスタの介護度に合わせます') : '';
+  }
   $('#ci-copay').value      = res.copayRate       || 1;
   // 旧フィールド welfareEquipCost(円) → 新 welfareEquipUnits(単位) へ移行
   $('#ci-welfare').value    = (res.welfareEquipUnits != null) ? res.welfareEquipUnits : '';
@@ -7259,8 +7700,9 @@ async function saveCareInfo() {
   const res = currentResident();
   if (!res) return;
   const rid = res.id;
+  const planEd = (typeof csPlanMode_ === 'function' && csPlanMode_() === 'plan');
   const patch = {
-    careLevel: csIsMasterLinked_(res) ? (res.careLevel || '') : $('#ci-level').value,   /* マスタとつながっている方は変えない */
+    careLevel: (csIsMasterLinked_(res) && !planEd) ? (res.careLevel || '') : $('#ci-level').value,   /* マスタとつながっている方は変えない（予約の編集の中だけは変えられる・2026-11-27） */
     copayRate: Number($('#ci-copay').value) || 1,
     welfareEquipUnits: Math.max(0, Number($('#ci-welfare').value) || 0)
   };
@@ -7270,7 +7712,7 @@ async function saveCareInfo() {
     const r = DB.residents.find(x => String(x.id) === String(rid));
     if (!r) return false;
     let changed = false;
-    if (!csIsMasterLinked_(r) && r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
+    if ((!csIsMasterLinked_(r) || planEd) && r.careLevel !== patch.careLevel) { r.careLevel = patch.careLevel; changed = true; }
     if (Number(r.copayRate) !== patch.copayRate) { r.copayRate = patch.copayRate; changed = true; }
     if (Math.max(0, Number(r.welfareEquipUnits) || 0) !== patch.welfareEquipUnits) { r.welfareEquipUnits = patch.welfareEquipUnits; changed = true; }
     if (r.welfareEquipCost !== undefined) { delete r.welfareEquipCost; changed = true; }  // 旧フィールド除去
@@ -8952,7 +9394,8 @@ function printWeeklySheetGated_() {
 
 /* 印刷の入口。既存の利用者一覧A3印刷と同じ作法（body クラス＋@page 動的注入＋afterprint で必ず後始末）。 */
 function printWeeklySheet() {
-  if (SIM_ON) { showToast('試算中は印刷できません（試算を終了してからお使いください）'); return; }
+  /* 予約の編集・過去の計画を見る間は刷れる（紙の形・色・文は変えない・2026-11-27）。止めるのは試算だけ */
+  if (SIM_ON) { if (SIM.kind === 'sim') { showToast('試算中は印刷できません（試算を終了してからお使いください）'); return; } }
   const res = currentResident();
   if (!res) { showToast('利用者が選択されていません'); return; }
   const box = $('#wk-sheet');
@@ -9143,7 +9586,7 @@ function pushUndo() {
   const res = currentResident();
   if (!res) return;
   // 利用者IDを併記する: 利用者切替後の Undo が別利用者の計画を丸ごと差し替える事故を防ぐ
-  pushUndoEntry_({ kind: 'events', rid: res.id, snap: JSON.stringify(res.events) });
+  pushUndoEntry_({ kind: 'events', rid: res.id, snap: JSON.stringify(res.events), pg: csPlanGenOf_(res), pf: String(res.planFrom == null ? '' : res.planFrom) });
 }
 /* 一括取込の逆操作を積む。1件も書いていなければ積まない（空の履歴を作らない）。 */
 function pushUndoBulk_(addedEvents, createdResidents) {
@@ -9184,6 +9627,12 @@ function undo() {
   let i = undoStack.length - 1;
   while (i >= 0 && !(undoStack[i].kind !== 'bulk' && undoStack[i].rid === res.id)) i--;
   if (i < 0) { showToast('この利用者の取り消し履歴はありません'); return; }
+  /* 計画の版（2026-11-27）: 取り消しの控えを取った後に計画が切り替わっていたら、前の計画の予定を今の計画へ戻さない（文は仮置き） */
+  if (undoStack[i].pg !== undefined && (undoStack[i].pg !== csPlanGenOf_(res) || undoStack[i].pf !== String(res.planFrom == null ? '' : res.planFrom))) {
+    undoStack.splice(i, 1);
+    showToast('この間に計画が切り替わったため、元に戻せません');
+    return;
+  }
   res.events = JSON.parse(undoStack[i].snap);
   undoStack.splice(i, 1);
   saveDB(); renderAll();
@@ -9398,6 +9847,8 @@ document.addEventListener('keydown', e => {
     /* 影響プレビューは事業所情報の上に重なる。手前にあるものから閉じる。 */
     if ($('#mk-rm-preview').classList.contains('open')) { closeRmPreview(); return; }
     if ($('#mk-sim-apply').classList.contains('open')) { SIM.closeApply(); return; }
+    { const f = document.getElementById('mk-plan-form'); if (f && f.classList.contains('open')) { f.classList.remove('open'); return; } }   /* 計画の版（2026-11-27） */
+    { const y = document.getElementById('mk-plan'); if (y && y.classList.contains('open')) { csPlanCloseYear_(); return; } }
     if ($('#mk-care-info').classList.contains('open')) { closeCareInfoModal(); return; }
     /* 予定の窓の Esc は、書きかけの時に画面の中の窓（su-dialog.js・2026-11-12）で確かめる。この Esc の既定の動き（閉じる求め）を止めないと、
        今開いた確かめの窓を同じ Esc がすぐに「キャンセル」で閉じ、確かめが見えないまま何も起きない（実測）。止めるのはこの道の Esc だけ */
@@ -9455,6 +9906,7 @@ $('#f-detail').addEventListener('input', () => { if ($('#care-chips-row').style.
              読み直す。試算中に同じ端末のワークスケジュールが care_schedule_v2 を
              書き換えている可能性があり、退避版を書き戻すとその更新を潰すため。
    applyGo(): 試算の内容を実データへ反映する唯一の出口。
+   savePlan(): 予約の編集（kind 'plan'・2026-11-27）の出口。砂場を閉じて本物の DB の nextPlans にだけ入れる（本物の events・careLevel は変えない）。
    ★ガードを増やすときは、必ず exit() の復元処理と対で書くこと。
    ══════════════════════════════════════════════════════════════════════ */
 const SIM_KEY = 'cs_sim_v1';   /* 試算の一時保存。care_schedule_v2 とは別キー・同期対象外 */
@@ -9462,26 +9914,46 @@ const SIM_KEY = 'cs_sim_v1';   /* 試算の一時保存。care_schedule_v2 と�
 const SIM = {
   saved: null,     // 試算開始時に退避した実データ側の状態
   baseId: null,    // 試算の土台にした利用者ID
+  /* 砂場の種類（2026-11-27 計画の版）: 'sim'＝試算／'plan'＝次の計画（予約）の編集／'view'＝過去の計画を見るだけ。
+     どれも SIM_ON の守り（本物のキーへ書かない・送らない・取り込まない）がそのまま効く。違うのは見た目・ボタン・出口だけ。
+     plan … { resId, planId（新しい時は ''）, from, careLevel, note, isNew }（予定は砂場の DB にだけ持つ）
+     view … { resId, from, to, careLevel } */
+  kind: 'sim',
+  plan: null,
+  viewSnap: null,  // 見るモードに入った時の砂場の写し（変えられたら戻す）
+  startSig: '',    // 予約の編集に入った時のその方の予定・介護度の指紋（閉じる時に変えたかを確かめる）
 
   /* ── 永続化（試算中の再読み込みで続きから戻れるように） ── */
   persist() {
-    try { localStorage.setItem(SIM_KEY, JSON.stringify({ at: Date.now(), baseId: this.baseId, db: DB })); }
+    try {
+      const o = { at: Date.now(), baseId: this.baseId, db: DB };
+      if (this.kind !== 'sim') { o.kind = this.kind; o.plan = this.plan; o.startSig = this.startSig; }   /* 試算の控えの形は今までと同じ（古い控えは kind 'sim'） */
+      localStorage.setItem(SIM_KEY, JSON.stringify(o));
+    }
     catch (e) { /* 容量超過でも試算自体は続行できる（復元できなくなるだけ） */ }
   },
   clearPersist() { try { localStorage.removeItem(SIM_KEY); } catch (e) {} },
 
   syncButtons() {
     const show = (id, on) => { const b = $('#' + id); if (b) b.style.display = on ? '' : 'none'; };
-    show('btnSimStart', !SIM_ON); show('btnSimApply', SIM_ON); show('btnSimExit', SIM_ON);
+    const k = SIM_ON ? this.kind : '';
+    show('btnSimStart', !SIM_ON); show('btnSimApply', SIM_ON && k === 'sim'); show('btnSimExit', SIM_ON && k === 'sim');
+    /* 計画の版（2026-11-27）: 予約の編集・過去の計画を見る間のボタン。試算の「✅ 実装」は出さない */
+    show('btnPlanSave', k === 'plan'); show('btnPlanMeta', k === 'plan'); show('btnPlanCopy', k === 'view'); show('btnPlanClose', k === 'plan' || k === 'view');
+    try { csPlanSyncModeUi_(); } catch (e) { csNote_('計画の版の表示', e); }
     /* 外へ出るボタンは見た目でも押せなくする（関数側にも同じガードがある＝二重防御） */
     const save = $('#btnSave'), sync = $('#sync-btn');
     if (save) save.disabled = SIM_ON;
     if (sync) sync.disabled = SIM_ON;
   },
 
-  /* ── 開始 ── */
-  enter(restoredDb) {
+  /* ── 開始 ──
+     opts（2026-11-27）: { kind:'plan'|'view', plan:{…}, events:[…] } … 予約の編集・過去の計画を見る。無ければ今までどおりの試算 */
+  enter(restoredDb, opts) {
     if (SIM_ON) return;
+    if (restoredDb && restoredDb.kind && restoredDb.kind !== 'sim' && restoredDb.plan) { this.kind = restoredDb.kind; this.plan = restoredDb.plan; this.startSig = restoredDb.startSig || ''; }
+    else if (!restoredDb && opts && (opts.kind === 'plan' || opts.kind === 'view') && opts.plan) { this.kind = opts.kind; this.plan = opts.plan; }
+    else { this.kind = 'sim'; this.plan = null; }
     /* 印刷の残留状態を先に落とす。PRINT_MAP が残ったまま再描画すると盤面が圧縮座標のままになり、
        そこでドラッグすると誤った時刻が書き込まれる（既存コードにも同趣旨の警告あり）。 */
     try { restoreWeekPrint_(); } catch (e) {}
@@ -9494,7 +9966,7 @@ const SIM = {
     undoStack.length = 0;   /* 試算の操作が実データへ Undo されないよう履歴を分ける */
 
     SIM_ON = true;
-    document.body.classList.add('sim-mode');
+    document.body.classList.add(this.kind === 'plan' ? 'plan-mode' : (this.kind === 'view' ? 'view-mode' : 'sim-mode'));
     if (restoredDb) {
       DB = restoredDb.db;
       this.baseId = restoredDb.baseId || DB.currentResidentId;
@@ -9504,22 +9976,65 @@ const SIM = {
     } else {
       DB = JSON.parse(JSON.stringify(DB));   /* 実DBには一切触れない完全なコピー */
       this.baseId = DB.currentResidentId;
+      if (this.kind !== 'sim') {
+        /* 砂場のその方の予定・介護度を、予約（または過去の計画）の物に差し替えて単位を計算し直す（本物の DB には触れない） */
+        const r = (DB.residents || []).find(x => x && x.id === this.plan.resId);
+        if (r) {
+          r.events = JSON.parse(JSON.stringify(Array.isArray(opts.events) ? opts.events : []));
+          r.careLevel = this.plan.careLevel || '';
+          DB.currentResidentId = r.id; this.baseId = r.id;
+        }
+        try { recalcAllEventUnits(); } catch (e) { csNote_('計画の版の単位', e); }
+        this.startSig = this.planSig_();
+      }
       this.persist();
+    }
+    if (this.kind === 'view') {
+      this.viewSnap = JSON.stringify(DB);
+      BOARD_LOCKED = true;   /* 盤面を動かせない（端末には残さない＝閉じたら端末の設定へ戻す） */
+      try { csApplyBoardLock_(); } catch (e) { csNote_('計画の版の表示', e); }
     }
     try { refreshRateMasterUI_(); } catch (e) {}   /* 選択肢・注記を試算中のマスタに合わせる */
     this.syncButtons();
     try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) {}
-    showToast(restoredDb ? '試算モードで復元しました（どこにも反映されていません）'
+    if (this.kind === 'plan') showToast(restoredDb ? '次の計画（予約）の編集に戻りました（まだ保存していません）'
+                                                   : '次の計画（予約）を編集します。「💾 予約を保存」を押すまで、どこにも反映されません');
+    else if (this.kind === 'view') showToast('過去の計画を見ています（見るだけです）');
+    else showToast(restoredDb ? '試算モードで復元しました（どこにも反映されていません）'
                          : '試算モードです。ここでの変更はどこにも反映されません');
+  },
+  /* 予約の編集の砂場のその方の予定・介護度の指紋（閉じる時に変えたかを見る） */
+  planSig_() {
+    const r = this.plan ? (DB.residents || []).find(x => x && x.id === this.plan.resId) : null;
+    if (!r) return '';
+    const evs = (r.events || []).map(ev => { const e = {}; for (const k in ev) if (k !== 'units') e[k] = ev[k]; return e; });
+    return JSON.stringify([evs, r.careLevel || '', this.plan.from, this.plan.note || '']);
+  },
+  /* 見るモードで盤面や介護情報が変えられたら、入った時の姿へ戻す（保存も送信もしない・2026-11-27） */
+  revertView() {
+    if (!SIM_ON || this.kind !== 'view' || !this.viewSnap) return;
+    try { DB = JSON.parse(this.viewSnap); } catch (e) { csNote_('過去の計画を戻す', e); return; }
+    try { renderAll(); } catch (e) { csNote_('計画の版の表示', e); }
+    showToast('過去の計画は見るだけです（変えた所は元に戻しました）');
   },
 
   /* ── 終了（破棄） ── */
   async exit(silent) {
     if (!SIM_ON) return;
-    if (!silent && !(await SUDialog.confirm('試算を破棄して通常モードへ戻ります。よろしいですか。'))) return;
+    if (!silent) {
+      if (this.kind === 'plan') {
+        /* 変えていない時は確かめずに閉じる（2026-11-27・文は仮置き） */
+        if (this.planSig_() !== this.startSig && !(await SUDialog.confirm('次の計画（予約）の変更を保存せずに閉じます。よろしいですか。'))) return;
+      } else if (this.kind !== 'view') {
+        if (!(await SUDialog.confirm('試算を破棄して通常モードへ戻ります。よろしいですか。'))) return;
+      }
+    }
     try { restoreWeekPrint_(); } catch (e) {}
+    const wasKind = this.kind;
     SIM_ON = false;
-    document.body.classList.remove('sim-mode');
+    document.body.classList.remove('sim-mode', 'plan-mode', 'view-mode');
+    this.kind = 'sim'; this.plan = null; this.viewSnap = null; this.startSig = '';
+    if (wasKind === 'view') { try { csLoadBoardLock_(); } catch (e) { csNote_('計画の版の表示', e); } }   /* 端末のロックの設定へ戻す */
     this.clearPersist();
     /* 先に試算のコピーを確実に手放す。loadDB は「読めたときだけ差し替える」ため、
        実キーが消えている・壊れている端末では試算のコピーが実DBとして生き残り、
@@ -9543,7 +10058,7 @@ const SIM = {
     try { SYNC.startPolling(); } catch (e) {}
     this.syncButtons();
     try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) {}
-    if (!silent) showToast('通常モードへ戻りました');
+    if (!silent) showToast(wasKind === 'sim' ? '通常モードへ戻りました' : '今の計画に戻りました');
   },
 
   /* ── 差分の算出（予定はID一致で突き合わせる） ── */
@@ -9679,6 +10194,71 @@ const SIM = {
     showToast(okMsg);
   },
 
+  /* ── 予約の保存（2026-11-27）: 砂場を閉じて本物の DB を読み直し、その方の nextPlans に入れて送る。本物の events・careLevel は変えない ── */
+  async savePlan() {
+    if (!SIM_ON || this.kind !== 'plan' || !this.plan) return;
+    const C = csPlanCalc_();
+    if (!C) { showToast('計画の版の部品を読めませんでした。画面を読み込み直してください'); return; }
+    if (suGetDeviceRole() === 'field') { showToast('この端末（現場用）からは保存できません'); return; }
+    const pl = this.plan;
+    const simRes = (DB.residents || []).find(r => r && r.id === pl.resId);
+    if (!simRes) { showToast('この計画の方が見つかりません'); return; }
+    const events = JSON.parse(JSON.stringify(simRes.events || []));
+    const careLevel = simRes.careLevel || '';
+    /* 閉じる前に本物の控えで確かめる（閉じてから止めると編集が消える）。だめなら砂場に留まる */
+    let realRes = null;
+    try {
+      const real = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (real && Array.isArray(real.residents)) realRes = real.residents.find(r => r && r.id === pl.resId) || null;
+    } catch (e) { csNote_('予約の保存の読み直し', e); realRes = null; }
+    const why = csPlanSaveBlock_(realRes, pl, careLevel);
+    if (why) { await SUDialog.alert(why); return; }
+    /* 砂場の間は取得が止まっている。保存の前にサーバーの今の姿でも確かめる（ほかの端末が同じ日の予約を作った・取り消した・切り替わった）。
+       読むだけ（get）は砂場でも通る。届かない時は端末の控えの確かめだけで進む（仮置き） */
+    const srvRes = await csPlanServerRes_(pl.resId);
+    if (srvRes.ok) {
+      const whyS = csPlanSaveBlock_(srvRes.res, pl, careLevel);
+      if (whyS) { await SUDialog.alert(whyS); return; }
+    }
+    await this.exit(true);   /* 本物の DB へ戻す（localStorage の最新を読み直す） */
+    /* 未送信が無ければ、サーバーの今の姿を取り込んでから予約を入れる（古い姿に入れて送ると、切替の後の統合で予約が消えるため） */
+    if (srvRes.ok && !SYNC._dirty && SYNC.hasTarget()) { try { await SYNC.pull(); } catch (e) { csNote_('予約の保存の前の取得', e); } }
+    const r = (DB.residents || []).find(x => x && x.id === pl.resId);
+    const why2 = csPlanSaveBlock_(r, pl, careLevel);
+    if (why2) { await SUDialog.alert(why2 + '\n\n編集していた内容は保存されていません。'); return; }
+    const now = new Date().toISOString(), who = csWho_();
+    if (!Array.isArray(r.nextPlans)) r.nextPlans = [];
+    if (pl.isNew) {
+      r.nextPlans.push({ id: csPlanNewId_(), from: pl.from, careLevel: careLevel, baseLevel: r.careLevel || '', events: events,
+                         note: String(pl.note || '').slice(0, C.NOTE_MAX), createdAt: now, createdBy: who, updatedAt: now, updatedBy: who });
+    } else {
+      const p = r.nextPlans.find(x => x && x.id === pl.planId);
+      p.from = pl.from; p.careLevel = careLevel; p.events = events; p.note = String(pl.note || '').slice(0, C.NOTE_MAX);
+      p.updatedAt = now; p.updatedBy = who;
+    }
+    r.nextPlans = C.sortPlans(r.nextPlans);
+    csPlanCommit_('予約を保存');
+    try { csSetSelection_(r.id); } catch (e) { csNote_('計画の版の表示', e); }
+    try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) { csNote_('計画の版の表示', e); }
+    showToast(csPlanYmdJa_(pl.from) + 'からの計画（予約）を保存しました。その日から今の計画になります');
+  },
+  /* 予約の編集の中で、開始日・介護度・メモを変える */
+  editPlanMeta() {
+    if (!SIM_ON || this.kind !== 'plan' || !this.plan) return;
+    const simRes = (DB.residents || []).find(r => r && r.id === this.plan.resId);
+    csPlanOpenForm_({ mode: 'meta-sandbox', resId: this.plan.resId, planId: this.plan.isNew ? '' : this.plan.planId,
+                      from: this.plan.from, careLevel: simRes ? (simRes.careLevel || '') : this.plan.careLevel, note: this.plan.note || '' });
+  },
+  /* 見るモードの過去の計画を写して、次の計画を作る */
+  copyViewToPlan() {
+    if (!SIM_ON || this.kind !== 'view' || !this.plan) return;
+    const r = (DB.residents || []).find(x => x && x.id === this.plan.resId);
+    const evs = r ? JSON.parse(JSON.stringify(r.events || [])) : [];
+    const lv = this.plan.careLevel || '';
+    const rid = this.plan.resId;
+    this.exit(true).then(() => { csPlanOpenForm_({ mode: 'new', resId: rid, sourceEvents: evs, sourceLabel: '過去の計画', careLevel: lv }); });
+  },
+
   /* ── 起動時の復元 ── */
   restore() {
     let saved = null;
@@ -9687,6 +10267,772 @@ const SIM = {
     this.enter(saved);
   },
 };
+
+/* ══════════════════════════════════════════════════════════════════════
+   計画の版（履歴・予約・版ごとの介護度・2026-11-27 代表者の依頼・設計 Work/週間計画_版管理/ROOT.md）
+   ─────────────────────────────────────────────────────────────────────
+   ・決まりは care-plan-calc.js（CarePlanCalc）の純関数だけ。部品が読めない時は版の機能を全部出さず、今までどおり動く
+   ・盤面はいつも本物の events（現行）を出す。予約は nextPlans にだけ入る。ワークスケジュールは、開いた日が切替日以降ならこの計画で盤面を作る
+     （切替の前でも）。今日の盤面は切替日から
+   ・切替の正は共通 DB の関数 cs_plan_switch（定時の仕事とこの画面の呼び出し）。口が無い・断られた時だけ帯と［今すぐ切り替える］
+     （人が押す・今ある保存の道）。黙って端末で切り替えない
+   ・予約の編集・過去の計画を見るのは試算モードの砂場（SIM.kind 'plan'・'view'）。本物のキーへは書かない・送らない
+   ・変更の記録は共通 DB の cs_plan_log_list で読むだけ。読めない時はその区画に理由を1行出し、ほかは動く
+   ・画面に入れる値は textContent（DOM を組む）で入れ、innerHTML に外からの値を入れない
+   ・文言・位置は仮置き（2026-11-27）
+   ══════════════════════════════════════════════════════════════════════ */
+function csPlanCalc_() {
+  return (typeof CarePlanCalc !== 'undefined' && CarePlanCalc && typeof CarePlanCalc.applyDue === 'function'
+          && typeof CarePlanCalc.planSummary === 'function') ? CarePlanCalc : null;
+}
+function csPlanToday_() { const C = csPlanCalc_(); return C ? C.todayJst(Date.now()) : ''; }
+const CS_PLAN_DOW = ['日', '月', '火', '水', '木', '金', '土'];
+function csPlanParts_(ymd) {
+  const C = csPlanCalc_();
+  if (!C || !C.isYmd(ymd)) return null;
+  return { y: +ymd.slice(0, 4), m: +ymd.slice(5, 7), d: +ymd.slice(8, 10) };
+}
+/* '2026年12月1日（火）'（曜日つき）／'2026年12月1日' */
+function csPlanYmdJa_(ymd, withDow) {
+  const p = csPlanParts_(ymd);
+  if (!p) return '';
+  let s = p.y + '年' + p.m + '月' + p.d + '日';
+  if (withDow) s += '（' + CS_PLAN_DOW[new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] + '）';
+  return s;
+}
+function csPlanMd_(ymd) { const p = csPlanParts_(ymd); return p ? (p.m + '月' + p.d + '日') : ''; }
+function csPlanShort_(ymd) { const p = csPlanParts_(ymd); return p ? (p.m + '/' + p.d) : ''; }
+function csPlanPrevDay_(ymd) {
+  const p = csPlanParts_(ymd);
+  if (!p) return '';
+  const d = new Date(Date.UTC(p.y, p.m - 1, p.d) - 86400000);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
+}
+/* 日本時間の「11月27日 10:42」 */
+function csPlanAtJa_(iso, withYear) {
+  const t = Date.parse(String(iso == null ? '' : iso));
+  if (isNaN(t)) return '';
+  const d = new Date(t + 9 * 3600000);
+  return (withYear ? d.getUTCFullYear() + '年' : '') + (d.getUTCMonth() + 1) + '月' + d.getUTCDate() + '日 ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
+/* 翌月1日（日本時間） */
+function csPlanNextMonth1_() {
+  const p = csPlanParts_(csPlanToday_());
+  if (!p) return '';
+  const y = p.m === 12 ? p.y + 1 : p.y, m = p.m === 12 ? 1 : p.m + 1;
+  return y + '-' + String(m).padStart(2, '0') + '-01';
+}
+function csPlanNewId_() { return 'pl_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function csPlanEvLabel_(ev) { try { return SIM.evLabel(ev || {}); } catch (e) { return ''; } }
+function csPlanWeekUnits_(events, res) {
+  try { return kaigoWeekUnits_(Array.isArray(events) ? events : [], res || {}); } catch (e) { return 0; }
+}
+/* 小さな DOM の道具（外からの値は textContent でだけ入れる） */
+function csPlanEl_(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = String(text);
+  return e;
+}
+function csPlanBtn_(label, cls, fn) {
+  const b = csPlanEl_('button', 'btn ' + (cls || 'btn-line'), label);
+  b.type = 'button';
+  b.addEventListener('click', function (e) { e.preventDefault(); try { fn(); } catch (err) { csNote_('計画の版の操作', err); } });
+  return b;
+}
+/* 本物の利用者（砂場の最中は localStorage の本物の控えから読む） */
+function csPlanRealRes_(rid) {
+  if (!SIM_ON) return (DB.residents || []).find(r => r && r.id === rid) || null;
+  try {
+    const real = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    return (real && Array.isArray(real.residents)) ? (real.residents.find(r => r && r.id === rid) || null) : null;
+  } catch (e) { return null; }
+}
+/* サーバーの今のその方（読むだけ・砂場でも通る）。{ ok, res } */
+async function csPlanServerRes_(rid) {
+  try {
+    if (!SYNC.hasTarget()) return { ok: false };
+    const j = await SYNC.gas({ action: 'get', key: 'care_schedule_v2' });
+    if (!j || !j.ok || !j.data || !Array.isArray(j.data.residents)) return { ok: false };
+    return { ok: true, res: j.data.residents.find(r => r && r.id === rid) || null };
+  } catch (e) { csNote_('予約の保存の前の確かめ', e); return { ok: false }; }
+}
+/* 予約を保存してよいか（だめなら職員に分かる理由の文） */
+function csPlanSaveBlock_(realRes, pl, careLevel) {
+  const C = csPlanCalc_();
+  if (!C) return '計画の版の部品を読めませんでした。画面を読み込み直してください';
+  if (!realRes) return 'この方が見つかりません（ほかの端末で削除された可能性があります）';
+  if (!pl.isNew && !(Array.isArray(realRes.nextPlans) && realRes.nextPlans.some(p => p && p.id === pl.planId))) {
+    return 'この予約は、ほかの端末で取り消されたか、もう今の計画に切り替わっています。保存できません';
+  }
+  const v = C.validatePlanInput({ id: pl.isNew ? undefined : pl.planId, from: pl.from, careLevel: careLevel }, realRes, C.todayJst(Date.now()));
+  if (!v.ok) return v.errors.map(e => e.msg).join('\n');
+  return '';
+}
+/* 本物の DB を保存してすぐ送る（一括編集の作法と同じ）。送るのは今ある保存の道だけ */
+function csPlanCommit_(what) {
+  recalcAllEventUnits();
+  const ok = saveDB();
+  if (!ok) { showToast('保存に失敗しました（' + what + '）。画面の内容を確かめてください'); return false; }
+  if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+  if (SYNC.hasTarget()) { try { SYNC.push(); } catch (e) { SYNC.scheduleAutoPush(); } }
+  return true;
+}
+/* 予約の編集・見るモードの間か（その方だけ切り替えを止める・介護度を選べる） */
+function csPlanMode_() { return (SIM_ON && SIM.plan && (SIM.kind === 'plan' || SIM.kind === 'view')) ? SIM.kind : ''; }
+
+/* ── 見出し・集計の段・帯 ── */
+function csPlanSyncModeUi_() {
+  const k = csPlanMode_();
+  const tag = $('#cs-plan-tag');
+  if (tag) {
+    tag.textContent = '';
+    if (k) {
+      const long = k === 'plan' ? (csPlanYmdJa_(SIM.plan.from) + 'からの計画（予約）')
+                 : ('過去の計画（' + csPlanYmdJa_(SIM.plan.from) + (SIM.plan.to ? '〜' + csPlanYmdJa_(SIM.plan.to) : '') + '）');
+      const short = k === 'plan' ? ('予約 ' + csPlanShort_(SIM.plan.from) + '〜') : ('過去 ' + csPlanShort_(SIM.plan.from) + '〜');
+      if (k === 'view') tag.appendChild(csPlanEl_('span', 'pt-only', '見るだけ'));
+      tag.appendChild(csPlanEl_('span', 'pt-long', long));
+      tag.appendChild(csPlanEl_('span', 'pt-short', short));
+    }
+  }
+}
+function csPlanRenderBar_(res) {
+  const C = csPlanCalc_();
+  const btn = $('#cs-plan-btn'), badge = $('#cs-plan-badge'), cur = $('#cs-plan-cur');
+  const warn = $('#cs-plan-warn'), note = $('#cs-plan-mode-note');
+  if (!C) { if (btn) btn.hidden = true; if (warn) warn.hidden = true; if (note) note.hidden = true; if (cur) cur.textContent = ''; return; }
+  if (btn) btn.hidden = false;
+  const k = csPlanMode_();
+  const today = csPlanToday_();
+  /* 1段目: 今の計画の開始日（記録がある時だけ）。予約の編集の間はその計画の開始日 */
+  if (cur) {
+    if (k === 'plan') cur.textContent = csPlanShort_(SIM.plan.from) + '〜（予約）';
+    else if (k === 'view') cur.textContent = csPlanShort_(SIM.plan.from) + '〜（過去）';
+    else cur.textContent = (res && C.isYmd(res.planFrom)) ? ('現行 ' + csPlanShort_(res.planFrom) + '〜') : '';
+  }
+  const realRes = res ? (k ? csPlanRealRes_(res.id) : res) : null;
+  const sum = realRes ? C.planSummary(realRes, today) : null;
+  if (badge) badge.textContent = (sum && sum.nextFrom) ? ('次の計画 ' + csPlanShort_(sum.nextFrom) + '〜') : '';
+  /* 注記の段: モードの1行 */
+  if (note) {
+    if (k === 'plan') { note.textContent = 'この内容は ' + csPlanMd_(SIM.plan.from) + ' から今の計画になります。ワークスケジュールは ' + csPlanMd_(SIM.plan.from) + ' 以降の日からこの内容で出ます'; note.hidden = false; }
+    else if (k === 'view') { note.textContent = '過去の計画を見ています。盤面は動かせません（保存もしません）'; note.hidden = false; }
+    else { note.textContent = ''; note.hidden = true; }
+  }
+  /* 帯（1行・押すと年表）: 切替待ち（予備の時）→ hold → mismatch の順に1つだけ */
+  if (warn) {
+    let text = '', ng = false;
+    if (!k && res) {
+      const dueRes = csPlanDueResidents_();
+      if (dueRes.length && csPlanSw_.fallback) {
+        const pick = dueRes.find(r => r.id === res.id) || dueRes[0];
+        const ps = C.planSummary(pick, today);
+        const p = ps.next.find(x => x.due);
+        /* 文だけ（実行はしない）。押すと年表の窓が開き、窓の中の［今すぐ切り替える］（44px 以上）で切り替える＝注記の段の高さは変えない */
+        text = (pick.name || '') + 'さんの ' + csPlanMd_(p ? p.from : '') + 'からの計画が、まだ切り替わっていません'
+             + (dueRes.length > 1 ? '（ほか ' + (dueRes.length - 1) + '名）' : '') + ' ›';
+        ng = true;
+      } else {
+        const n = csPlanLvNotice_[res.id];
+        if (n && n.kind === 'hold') {
+          text = '入居者マスタは' + n.master + 'に変わっています。この計画は ' + csPlanMd_(n.from) + ' の切替まで ' + (res.careLevel || '未設定') + ' で計算します';
+        } else if (n && n.kind === 'mismatch' && res.planLevel) {
+          text = 'この計画は ' + n.planned + ' で作られています。入居者マスタは ' + n.master + ' です ›';
+          ng = true;
+        }
+      }
+    }
+    warn.textContent = text;
+    warn.hidden = !text;
+    warn.classList.toggle('ng', ng);
+  }
+}
+
+/* ── 切替（B）: サーバーに任せる。予備は人が押す ── */
+const csPlanSw_ = { busy: false, lastAt: 0, fallback: false, mirrorTimer: null, quietSig: '', quietUntil: 0 };
+/* 本物の DB で、切替日（日本時間の今日）を過ぎた予約がある方 */
+function csPlanDueResidents_() {
+  const C = csPlanCalc_();
+  if (!C || SIM_ON) return [];
+  const today = csPlanToday_();
+  return (Array.isArray(DB.residents) ? DB.residents : []).filter(r => {
+    if (!r || typeof r !== 'object' || !Array.isArray(r.nextPlans) || !r.nextPlans.length) return false;
+    try { return C.planSummary(r, today).dueCount > 0; } catch (e) { return false; }
+  });
+}
+/* 期日を過ぎた予約の組の印（利用者 id と予約 id。同じ組に頼み直す間を空けるため） */
+function csPlanDueSig_() {
+  const C = csPlanCalc_();
+  if (!C) return '';
+  const today = csPlanToday_();
+  return csPlanDueResidents_().map(r => String(r.id) + ':' + C.planSummary(r, today).next.filter(p => p.due).map(p => p.id).join('+')).sort().join('|');
+}
+function csPlanGens_() {
+  const m = Object.create(null);
+  (Array.isArray(DB.residents) ? DB.residents : []).forEach(r => { if (r && r.id !== undefined) m[r.id] = csPlanGenOf_(r); });
+  return m;
+}
+/* 起動の取得の後・30秒ごと・画面が見えた時に呼ぶ。事務所の端末で、砂場でなく、切替日を過ぎた予約がある時だけサーバーの切替を呼ぶ
+   （同時に1本・1分に1回まで・未送信があれば先に送る）。切り替わったら取得し直し、世代の進んだ方がいれば Google への写し返しを1回予約する */
+async function csPlanSwitchTick_() {
+  try {
+    const C = csPlanCalc_();
+    if (!C || SIM_ON || suGetDeviceRole() === 'field' || document.hidden) return;
+    const due = csPlanDueResidents_();
+    if (!due.length) { if (csPlanSw_.fallback) { csPlanSw_.fallback = false; csPlanRefreshBar_(); } return; }
+    if (csPlanSw_.busy || Date.now() - csPlanSw_.lastAt < 60000) return;
+    if (csPlanSw_.quietSig && csPlanSw_.quietSig === csPlanDueSig_() && Date.now() < csPlanSw_.quietUntil) return;
+    /* 予定の窓・利用者の窓・ドラッグの最中は取り込みを次回へ回す（30秒ごとの取得と同じ基準） */
+    const mkE = $('#mk-event'), mkR = $('#mk-resident');
+    if ((typeof _csBusyEditing === 'function' && _csBusyEditing()) || (mkE && mkE.classList.contains('open')) || (mkR && mkR.classList.contains('open'))) return;
+    let routed = false;
+    try { routed = !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed('care_schedule_v2')); } catch (e) { routed = false; }
+    const sb = (routed && window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
+    if (!sb || typeof sb.rpc !== 'function') { csPlanSw_.fallback = true; csPlanRefreshBar_(); return; }
+    /* 使い始めのスイッチが切の間は、切替の見張りをしない（帯も出さない・2026-11-27） */
+    if (!(await csPlanEnabled_(false))) { if (csPlanSw_.fallback) { csPlanSw_.fallback = false; csPlanRefreshBar_(); } return; }
+    csPlanSw_.busy = true; csPlanSw_.lastAt = Date.now();
+    try {
+      if (SYNC._dirty) {
+        if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+        await SYNC.push();
+        if (SYNC._dirty) return;   /* 送れなかった＝先に送れるまで切替を頼まない（次の機会に） */
+      }
+      let r = null;
+      try { r = await sb.rpc('cs_plan_switch'); } catch (e) { csNote_('計画の切替の呼び出し', e); r = null; }
+      const d = r && !r.error ? r.data : null;
+      if (!d || d.ok !== true || !(Number(d.switched) >= 0)) { csPlanSw_.fallback = true; return; }   /* 口が無い・断られた・ログインしていない＝予備の帯 */
+      /* 取り直しは30秒ごとの取得と同じ道（pollIfNeeded）で。往復の間に入れた未送信・予定の窓・ドラッグの最中は取り込みを次へ回す
+         （直接 pull すると、往復の間の未送信の編集をサーバーの版で消すため・反証レビュー B1）。世代の進んだ方がいれば、取り込み（adopt）が写し返しを予約する */
+      await SYNC.pollIfNeeded();
+      if (Number(d.switched) === 0 && csPlanDueResidents_().length) {
+        /* サーバーが切り替えなかったのに期日を過ぎた予約が残る＝予備の帯。同じ予約の組には10分は頼み直さない */
+        csPlanSw_.fallback = true;
+        csPlanSw_.quietSig = csPlanDueSig_(); csPlanSw_.quietUntil = Date.now() + 10 * 60000;
+      } else if (Number(d.switched) > 0) csPlanSw_.fallback = false;
+    } finally {
+      csPlanSw_.busy = false;
+      csPlanRefreshBar_();
+    }
+  } catch (e) { csPlanSw_.busy = false; csNote_('計画の切替', e); }
+}
+function csPlanRefreshBar_() { try { if (!SIM_ON) csPlanRenderBar_(currentResident()); } catch (e) { csNote_('計画の版の表示', e); } }
+/* Google への写し返しを1回（su-kv.js の写し返しと同じ形・同じ道。su-kv.js は別の正本から配る画面も読むので触らない）。
+   20秒待ってから、本番（スイッチが入・共通 DB の mode が live）の時だけ、最新の中身を Google へ写す。失敗しても本番に影響させない */
+/* 写し返しの予定は端末に控える（キーと時刻だけ・中身は持たない。su-kv.js の su_kv_mirror_pending と同じ考え方の別のキー）。
+   画面を隠した・閉じる時は待たずに流し、次に開いた時に控えが残っていれば流す */
+const CS_PLAN_MIRROR_KEY = 'cs_plan_mirror_pending_v1';
+function csPlanMirrorPending_() { try { const o = JSON.parse(localStorage.getItem(CS_PLAN_MIRROR_KEY) || 'null'); return (o && typeof o.at === 'number') ? o : null; } catch (e) { return null; } }
+function csPlanScheduleMirror_() {
+  try { localStorage.setItem(CS_PLAN_MIRROR_KEY, JSON.stringify({ key: 'care_schedule_v2', at: Date.now() })); } catch (e) { csNote_('計画の切替の写し返しの控え', e); }
+  if (csPlanSw_.mirrorTimer) return;
+  csPlanSw_.mirrorTimer = setTimeout(csPlanRunMirror_, 20000);
+}
+function csPlanRunMirror_() {
+  if (csPlanSw_.mirrorTimer) { clearTimeout(csPlanSw_.mirrorTimer); csPlanSw_.mirrorTimer = null; }
+  const pend = csPlanMirrorPending_();
+  if (!pend || csPlanSw_.mirrorBusy) return;
+  try {
+    if (!(window.SUKv && SUKv.routed('care_schedule_v2'))) { try { localStorage.removeItem(CS_PLAN_MIRROR_KEY); } catch (e2) { csNote_('計画の切替の写し返しの控え', e2); } return; }   /* 本番でない＝写さずに控えを捨てる */
+    if (Date.now() - pend.at > 7 * 86400000) { localStorage.removeItem(CS_PLAN_MIRROR_KEY); return; }
+    const sb = window.SUAuth && SUAuth.client && SUAuth.client();
+    if (!sb || !SYNC.target().endpoint) return;   /* 控えを残す（次の機会に） */
+    csPlanSw_.mirrorBusy = true;
+    sb.rpc('kv_get', { p_key: 'care_schedule_v2' }).then(function (r) {
+      if (!r || r.error || !r.data) return;
+      if (r.data.mode !== 'live') { localStorage.removeItem(CS_PLAN_MIRROR_KEY); return; }
+      const d = r.data.data;
+      if (d == null || typeof d !== 'object') return;
+      return SYNC.gas({ action: 'put', key: 'care_schedule_v2', rev: 0, data: d, force: true, mirror: true, __raw: true }).then(function (g) {
+        if (g && g.ok) { const now = csPlanMirrorPending_(); if (now && now.at <= pend.at) localStorage.removeItem(CS_PLAN_MIRROR_KEY); }
+      });
+    }).catch(function (e) { csNote_('計画の切替の写し返し', e); }).then(function () { csPlanSw_.mirrorBusy = false; });
+  } catch (e) { csPlanSw_.mirrorBusy = false; csNote_('計画の切替の写し返し', e); }
+}
+/* 隠した・閉じる時は待たずに流す。開いた時に控えが残っていれば少し後に流す */
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden' && csPlanMirrorPending_()) csPlanRunMirror_(); });
+window.addEventListener('pagehide', function () { if (csPlanMirrorPending_()) csPlanRunMirror_(); });
+setTimeout(function () { if (csPlanMirrorPending_() && !csPlanSw_.mirrorTimer) csPlanSw_.mirrorTimer = setTimeout(csPlanRunMirror_, 5000); }, 0);
+/* 予備: 人が押して切り替える（確かめの窓 → applyDue を本物の DB に当てて保存 → すぐ送る。件数減りの断りは今ある窓の道） */
+async function csPlanSwitchNow_() {
+  const C = csPlanCalc_();
+  if (!C) return;
+  if (!(await csPlanRefreshCan_())) { showToast(csPlanCanMsg_()); return; }
+  if (SIM_ON) { showToast('予約の編集・試算の間は切り替えられません'); return; }
+  if (suGetDeviceRole() === 'field') { showToast('この端末（現場用）からは切り替えられません'); return; }
+  const due = csPlanDueResidents_();
+  if (!due.length) { showToast('切り替える計画はありません'); csPlanRefreshBar_(); return; }
+  const today = csPlanToday_();
+  const names = due.map(r => (r.name || '') + 'さん').join('、');
+  if (!(await SUDialog.confirm(names + ' の計画を、予約の内容に切り替えます。\n切り替えた計画は、すぐにワークスケジュールに出ます。\n\nよろしいですか。'))) return;
+  const nowIso = new Date().toISOString();
+  let n = 0;
+  DB.residents = DB.residents.map(r => {
+    if (!due.some(x => x === r)) return r;
+    const a = C.applyDue(r, today, nowIso);
+    if (a.changed) { n++; return a.res; }
+    return r;
+  });
+  if (!n) return;
+  if (csPlanCommit_('計画の切り替え')) {
+    csPlanSw_.fallback = false;
+    try { populateResidentSelect(); renderResidentList(); renderAll(); } catch (e) { csNote_('計画の版の表示', e); }
+    showToast(n + '名の計画を切り替えました');
+  }
+}
+
+/* ── 年表の窓（C-2） ── */
+let csPlanYearRid_ = null;
+let csPlanLogRows_ = [];
+let csPlanLogMore_ = false;
+let csPlanLogState_ = '';   // '' 読み込み中 / 'ok' / 理由の文
+function csPlanModal_(id, labelId) {
+  let mk = document.getElementById(id);
+  if (mk) return mk;
+  mk = csPlanEl_('div', 'mk');
+  mk.id = id;
+  mk.setAttribute('role', 'dialog'); mk.setAttribute('aria-modal', 'true'); mk.setAttribute('aria-labelledby', labelId);
+  const md = csPlanEl_('div', 'md');
+  mk.appendChild(md);
+  mk.addEventListener('click', function (e) { if (e.target === mk) mk.classList.remove('open'); });
+  document.body.appendChild(mk);
+  return mk;
+}
+/* 予約の機能を使えるか（新しい保存先の本番の道・事務所の端末・事務所か管理者としてログイン・使い始めのスイッチ cs_plan_enabled が入）。開くたびに確かめ直す。
+   why: 'login'（ログイン・道・端末の条件を満たさない）／'off'（スイッチが切・読めない・口が無い） */
+const csPlanCan_ = { known: false, ok: false, why: '' };
+/* 使い始めのスイッチ（共通 DB の cs_plan_status・事務所・管理者だけ読める）。5分は控えを使う。読めない・口が無い時は切 */
+const csPlanStatus_ = { at: 0, enabled: false };
+function csPlanCanMsg_() { return csPlanCan_.why === 'off' ? 'この機能はまだ使い始めていません（準備ができたら使えるようになります）' : 'この機能は、ログインしている事務所の端末で使えます'; }
+async function csPlanEnabled_(fresh) {
+  if (!fresh && csPlanStatus_.at && Date.now() - csPlanStatus_.at < 5 * 60000) return csPlanStatus_.enabled;
+  let en = false;
+  try {
+    const sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
+    if (sb && typeof sb.rpc === 'function') {
+      const r = await sb.rpc('cs_plan_status');
+      en = !!(r && !r.error && r.data && r.data.ok === true && r.data.enabled === true);
+    }
+  } catch (e) { csNote_('計画の版の使い始めの確かめ', e); en = false; }
+  csPlanStatus_.at = Date.now(); csPlanStatus_.enabled = en;
+  return en;
+}
+async function csPlanRefreshCan_() {
+  let ok = false, why = 'login';
+  try {
+    const routed = !!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed('care_schedule_v2'));
+    if (routed && suGetDeviceRole() !== 'field' && window.SUAuth && typeof SUAuth.check === 'function') {
+      const st = await SUAuth.check();
+      ok = !!(st && SUAuth.STATUS && st.status === SUAuth.STATUS.OK && (st.role === 'office' || st.role === 'admin'));
+      if (ok && !(await csPlanEnabled_(true))) { ok = false; why = 'off'; }
+    }
+  } catch (e) { csNote_('予約の機能の確かめ', e); ok = false; }
+  csPlanCan_.known = true; csPlanCan_.ok = ok; csPlanCan_.why = ok ? '' : why;
+  return ok;
+}
+function csPlanOpenYear_() {
+  const C = csPlanCalc_();
+  if (!C) return;
+  if (csPlanMode_()) { csPlanOpenModeMenu_(); return; }   /* 予約の編集・見る間は、保存・閉じるの窓（見出しのボタンに届かない狭い画面の出口） */
+  if (SIM_ON) { showToast('試算中は使えません（試算を終了してからお使いください）'); return; }
+  const res = currentResident();
+  if (!res) { showToast('利用者を選択してください'); return; }
+  csPlanYearRid_ = res.id;
+  csPlanLogRows_ = []; csPlanLogMore_ = false; csPlanLogState_ = '';
+  csPlanCan_.known = false; csPlanCan_.ok = false;
+  csPlanRenderYear_();
+  csPlanModal_('mk-plan', 'mk-plan-h').classList.add('open');
+  csPlanRefreshCan_().then(function () { const mk = document.getElementById('mk-plan'); if (mk && mk.classList.contains('open') && csPlanYearRid_ != null && !csPlanMode_()) csPlanRenderYear_(); });
+  csPlanLoadLog_(null);
+}
+/* 予約の編集・過去の計画を見る間の操作の窓（見出しのボタンと同じ操作。iPhone など見出しのボタンが画面に収まらない時の出口） */
+function csPlanOpenModeMenu_() {
+  const k = csPlanMode_();
+  if (!k) return;
+  const mk = csPlanModal_('mk-plan', 'mk-plan-h');
+  const md = mk.querySelector('.md');
+  md.textContent = '';
+  const hd = csPlanEl_('div', 'md-hd');
+  const h2 = csPlanEl_('h2', '', k === 'plan' ? (csPlanYmdJa_(SIM.plan.from) + 'からの計画（予約）') : '過去の計画（見るだけ）');
+  h2.id = 'mk-plan-h';
+  const x = csPlanEl_('button', 'md-close', '✕');
+  x.type = 'button'; x.setAttribute('aria-label', '閉じる'); x.title = '閉じる';
+  x.addEventListener('click', csPlanCloseYear_);
+  hd.appendChild(h2); hd.appendChild(x); md.appendChild(hd);
+  md.appendChild(csPlanEl_('p', 'cs-pl-meta', k === 'plan'
+    ? 'この内容は ' + csPlanMd_(SIM.plan.from) + ' から今の計画になります（ワークスケジュールは ' + csPlanMd_(SIM.plan.from) + ' 以降の日からこの内容で出ます）。「予約を保存」を押すまで、どこにも届きません。'
+    : '過去の計画を見ています。盤面は動かせません。'));
+  const bs = csPlanEl_('div', 'cs-pl-btns');
+  if (k === 'plan') {
+    bs.appendChild(csPlanBtn_('💾 予約を保存', 'btn-ink', function () { csPlanCloseYear_(); SIM.savePlan(); }));
+    bs.appendChild(csPlanBtn_('開始日・介護度', 'btn-line', function () { csPlanCloseYear_(); SIM.editPlanMeta(); }));
+  } else {
+    bs.appendChild(csPlanBtn_('この計画をもとに次の計画を作る', 'btn-line', function () { csPlanCloseYear_(); SIM.copyViewToPlan(); }));
+  }
+  bs.appendChild(csPlanBtn_('✕ 閉じて今の計画へ戻る', 'btn-line', function () { csPlanCloseYear_(); SIM.exit(); }));
+  md.appendChild(bs);
+  mk.classList.add('open');
+}
+function csPlanCloseYear_() { const mk = document.getElementById('mk-plan'); if (mk) mk.classList.remove('open'); }
+async function csPlanLoadLog_(before) {
+  const rid = csPlanYearRid_;
+  let sb = null;
+  try { sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null; } catch (e) { sb = null; }
+  if (!sb || typeof sb.rpc !== 'function') { csPlanLogState_ = '記録を読めません（ログインすると出ます）'; csPlanRenderYear_(); return; }
+  let r = null;
+  try { r = await sb.rpc('cs_plan_log_list', { p_resident: String(rid), p_limit: 20, p_before: before == null ? null : before }); }
+  catch (e) { csNote_('計画の記録の読み取り', e); r = null; }
+  if (rid !== csPlanYearRid_) return;   /* 遅れて届いた別の方の答えは捨てる */
+  const d = r && !r.error ? r.data : null;
+  if (!d || d.ok !== true || !Array.isArray(d.rows)) {
+    const code = r && r.error ? String(r.error.code || '') : '';
+    csPlanLogState_ = code === '42501' ? '記録を読めません（事務所・管理者としてログインすると出ます）'
+                    : '記録を読めません（まだ記録の仕組みが入っていないか、つながりません）';
+    csPlanRenderYear_(); return;
+  }
+  csPlanLogRows_ = csPlanLogRows_.concat(d.rows.filter(x => x && typeof x === 'object'));
+  csPlanLogMore_ = d.more === true;
+  csPlanLogState_ = 'ok';
+  csPlanRenderYear_();
+}
+function csPlanCard_(cls) { return csPlanEl_('div', 'cs-pl-card' + (cls ? ' ' + cls : '')); }
+function csPlanLvText_(lv) { return lv ? String(lv) : '介護度なし'; }
+function csPlanRenderYear_() {
+  const C = csPlanCalc_();
+  const mk = csPlanModal_('mk-plan', 'mk-plan-h');
+  const md = mk.querySelector('.md');
+  md.textContent = '';
+  const res = (DB.residents || []).find(r => r && r.id === csPlanYearRid_);
+  const hd = csPlanEl_('div', 'md-hd');
+  const h2 = csPlanEl_('h2', '', '計画の履歴・予約' + (res ? ' — ' + (res.name || '') + 'さん' : ''));
+  h2.id = 'mk-plan-h';
+  const x = csPlanEl_('button', 'md-close', '✕');
+  x.type = 'button'; x.setAttribute('aria-label', '計画の履歴・予約を閉じる'); x.title = '閉じる';
+  x.addEventListener('click', csPlanCloseYear_);
+  hd.appendChild(h2); hd.appendChild(x); md.appendChild(hd);
+  if (!res || !C) { md.appendChild(csPlanEl_('p', 'cs-pl-empty', 'この方が見つかりません')); return; }
+  const today = csPlanToday_();
+  const sum = C.planSummary(res, today);
+
+  /* 知らせ（切替待ち・食い違い・保ち） */
+  const dueRows = sum.next.filter(p => p.due);
+  if (dueRows.length) {
+    const card = csPlanCard_('alert');
+    card.appendChild(csPlanEl_('div', 'cs-pl-ttl', csPlanMd_(dueRows[dueRows.length - 1].from) + 'からの計画が、まだ切り替わっていません'));
+    card.appendChild(csPlanEl_('div', 'cs-pl-meta', csPlanSw_.fallback
+      ? '自動の切り替えが届いていません。下のボタンで、この画面から切り替えられます（ほかの端末にも届きます）'
+      : '自動の切り替えを待っています。しばらくしても変わらない時は、下のボタンで切り替えてください'));
+    if (csPlanCan_.ok) {
+      const bs = csPlanEl_('div', 'cs-pl-btns');
+      bs.appendChild(csPlanBtn_('今すぐ切り替える', 'btn-ink', function () { csPlanCloseYear_(); csPlanSwitchNow_(); }));
+      card.appendChild(bs);
+    }
+    md.appendChild(card);
+  }
+  /* 予約の機能（作る・直す・開始日を変える・取り消す・今すぐ切り替える）は、新しい保存先の事務所の端末で事務所・管理者としてログインしている時だけ。
+     それ以外は見るだけ（Google の道では切替の記録が残らないため・2026-11-27） */
+  if (!csPlanCan_.ok) md.appendChild(csPlanEl_('p', 'cs-pl-err', !csPlanCan_.known ? 'ログインを確かめています…'
+    : (csPlanCan_.why === 'off' ? 'この機能はまだ使い始めていません（準備ができたら使えるようになります）'
+       : 'この機能は、ログインしている事務所の端末で使えます（今ある予約と今の計画は見るだけです）')));
+  const lvN = csPlanLvNotice_[res.id];
+  if (lvN && lvN.kind === 'mismatch' && res.planLevel) {
+    const card = csPlanCard_('alert');
+    card.appendChild(csPlanEl_('div', 'cs-pl-ttl', 'この計画は ' + lvN.planned + ' で作られています。入居者マスタは ' + lvN.master + ' です'));
+    card.appendChild(csPlanEl_('div', 'cs-pl-meta', '単位は入居者マスタの ' + lvN.master + ' で計算しています。計画の見直しが要るか確かめてください'));
+    const bs = csPlanEl_('div', 'cs-pl-btns');
+    if (res.masterId != null && res.masterId !== '') {
+      bs.appendChild(csPlanBtn_('入居者マスタを開く', 'btn-line', function () { window.open('resident-master.html?id=' + encodeURIComponent(String(res.masterId)), '_blank'); }));
+    }
+    bs.appendChild(csPlanBtn_('今の介護度のままでよい', 'btn-line', function () { csPlanAcceptLevel_(res.id); }));
+    card.appendChild(bs);
+    md.appendChild(card);
+  } else if (lvN && lvN.kind === 'hold') {
+    const card = csPlanCard_('alert');
+    card.appendChild(csPlanEl_('div', 'cs-pl-meta', '入居者マスタは' + lvN.master + 'に変わっています。この計画は ' + csPlanMd_(lvN.from) + ' の切替まで ' + (res.careLevel || '未設定') + ' で計算します'));
+    md.appendChild(card);
+  }
+
+  /* 予約（これからの計画） */
+  const sNext = csPlanEl_('section', 'cs-pl-sec');
+  sNext.appendChild(csPlanEl_('h3', '', '予約（これからの計画）'));
+  const later = sum.next;
+  if (!later.length) sNext.appendChild(csPlanEl_('p', 'cs-pl-empty', '予約はありません'));
+  later.forEach(p => {
+    const plan = (res.nextPlans || []).find(q => q && q.id === p.id);
+    const card = csPlanCard_('next');
+    const row = csPlanEl_('div', 'cs-pl-row');
+    row.appendChild(csPlanEl_('span', 'cs-pl-chip next', '予約'));
+    row.appendChild(csPlanEl_('span', 'cs-pl-ttl', csPlanYmdJa_(p.from, true) + 'から'));
+    card.appendChild(row);
+    const lv = p.careLevel ? (p.careLevel !== (res.careLevel || '') ? (csPlanLvText_(res.careLevel) + ' → ' + p.careLevel) : p.careLevel) : (csPlanLvText_(res.careLevel) + '（変えない）');
+    card.appendChild(csPlanEl_('div', 'cs-pl-meta', '介護度 ' + lv + '　予定 ' + p.count + '件・週 ' + csPlanWeekUnits_(plan && plan.events, Object.assign({}, res, { careLevel: p.careLevel || res.careLevel })).toLocaleString() + '単位'));
+    if (p.note) card.appendChild(csPlanEl_('div', 'cs-pl-note', p.note));
+    const upd = csPlanAtJa_(p.updatedAt || p.createdAt);
+    if (upd) card.appendChild(csPlanEl_('div', 'cs-pl-meta', '最後に直した日時 ' + upd + (p.updatedBy || p.createdBy ? '・' + (p.updatedBy || p.createdBy) : '')));
+    if (csPlanCan_.ok) {
+      const bs = csPlanEl_('div', 'cs-pl-btns');
+      bs.appendChild(csPlanBtn_('開いて直す', 'btn-ink', function () { csPlanEnterEdit_(res.id, p.id); }));
+      bs.appendChild(csPlanBtn_('開始日・介護度を変える', 'btn-line', function () {
+        csPlanOpenForm_({ mode: 'meta-real', resId: res.id, planId: p.id, from: p.from, careLevel: p.careLevel, note: p.note });
+      }));
+      bs.appendChild(csPlanBtn_('取り消す', 'btn-ng-line', function () { csPlanCancel_(res.id, p.id); }));
+      card.appendChild(bs);
+    }
+    sNext.appendChild(card);
+  });
+  if (csPlanCan_.ok) {
+    const addRow = csPlanEl_('div', 'cs-pl-btns');
+    addRow.appendChild(csPlanBtn_('＋ 次の計画を作る', 'btn-line', function () { csPlanOpenForm_({ mode: 'new', resId: res.id }); }));
+    sNext.appendChild(addRow);
+  }
+  if (sum.dropped) sNext.appendChild(csPlanEl_('p', 'cs-pl-meta', '形の崩れた予約 ' + sum.dropped + '件は使っていません（消してはいません）'));
+  md.appendChild(sNext);
+
+  /* 現行 */
+  const sCur = csPlanEl_('section', 'cs-pl-sec');
+  sCur.appendChild(csPlanEl_('h3', '', '今の計画（現行）'));
+  const cc = csPlanCard_('cur');
+  const crow = csPlanEl_('div', 'cs-pl-row');
+  crow.appendChild(csPlanEl_('span', 'cs-pl-chip', '現行'));
+  crow.appendChild(csPlanEl_('span', 'cs-pl-ttl', C.isYmd(sum.current.from) ? (csPlanYmdJa_(sum.current.from, true) + 'から') : '開始日の記録なし'));
+  cc.appendChild(crow);
+  cc.appendChild(csPlanEl_('div', 'cs-pl-meta', '介護度 ' + csPlanLvText_(sum.current.careLevel) + '　予定 ' + sum.current.count + '件・週 ' + csPlanWeekUnits_(res.events, res).toLocaleString() + '単位'));
+  if (sum.current.note) cc.appendChild(csPlanEl_('div', 'cs-pl-note', sum.current.note));
+  sCur.appendChild(cc);
+  md.appendChild(sCur);
+
+  /* 過去の計画（記録の切替から） */
+  const sPast = csPlanEl_('section', 'cs-pl-sec');
+  sPast.appendChild(csPlanEl_('h3', '', '過去の計画'));
+  const sLog = csPlanEl_('section', 'cs-pl-sec');
+  sLog.appendChild(csPlanEl_('h3', '', '変更の記録'));
+  if (csPlanLogState_ !== 'ok') {
+    const msg = csPlanLogState_ || '記録を読み込んでいます…';
+    sPast.appendChild(csPlanEl_('p', csPlanLogState_ ? 'cs-pl-err' : 'cs-pl-empty', msg));
+    sLog.appendChild(csPlanEl_('p', csPlanLogState_ ? 'cs-pl-err' : 'cs-pl-empty', msg));
+  } else {
+    const sw = csPlanLogRows_.filter(r => r.kind === 'switch' && r.detail && typeof r.detail === 'object');
+    if (!sw.length) sPast.appendChild(csPlanEl_('p', 'cs-pl-empty', '過去の計画の記録はありません'));
+    sw.forEach(r => {
+      const d = r.detail;
+      const evs = Array.isArray(d.prevEvents) ? d.prevEvents : [];
+      const to = csPlanPrevDay_(String(d.from || ''));
+      const card = csPlanCard_('past');
+      const row = csPlanEl_('div', 'cs-pl-row');
+      row.appendChild(csPlanEl_('span', 'cs-pl-chip old', '過去'));
+      row.appendChild(csPlanEl_('span', 'cs-pl-ttl', (C.isYmd(String(d.prevFrom || '')) ? csPlanYmdJa_(String(d.prevFrom)) : '開始日の記録なし') + '〜' + (to ? csPlanYmdJa_(to) : '')));
+      card.appendChild(row);
+      card.appendChild(csPlanEl_('div', 'cs-pl-meta', '介護度 ' + csPlanLvText_(d.prevLevel) + '　予定 ' + evs.length + '件'));
+      const bs = csPlanEl_('div', 'cs-pl-btns');
+      bs.appendChild(csPlanBtn_('この計画を見る', 'btn-line', function () { csPlanEnterView_(res.id, String(d.prevFrom || ''), to, String(d.prevLevel || ''), evs); }));
+      if (csPlanCan_.ok) bs.appendChild(csPlanBtn_('この計画をもとに次の計画を作る', 'btn-line', function () {
+        csPlanOpenForm_({ mode: 'new', resId: res.id, sourceEvents: evs, sourceLabel: '過去の計画', careLevel: String(d.prevLevel || '') });
+      }));
+      card.appendChild(bs);
+      sPast.appendChild(card);
+    });
+    /* 変更の記録（新しい順） */
+    if (!csPlanLogRows_.length) sLog.appendChild(csPlanEl_('p', 'cs-pl-empty', '記録はありません'));
+    else {
+      const ul = csPlanEl_('ul', 'cs-pl-log');
+      csPlanLogRows_.forEach(r => ul.appendChild(csPlanLogItem_(r)));
+      sLog.appendChild(ul);
+    }
+    if (csPlanLogMore_) {
+      const bs = csPlanEl_('div', 'cs-pl-btns');
+      bs.appendChild(csPlanBtn_('もっと見る', 'btn-line', function () {
+        const last = csPlanLogRows_[csPlanLogRows_.length - 1];
+        csPlanLoadLog_(last && Number(last.id) > 0 ? Number(last.id) : null);
+      }));
+      sLog.appendChild(bs);
+    }
+  }
+  md.appendChild(sPast);
+  md.appendChild(sLog);
+  const foot = csPlanEl_('div', 'btn-row');
+  foot.appendChild(csPlanBtn_('閉じる', 'btn-line', csPlanCloseYear_));
+  md.appendChild(foot);
+}
+/* 記録の1行（日時・人・何を）。予定の変わり方は CarePlanCalc.diffEvents の行 */
+function csPlanLogItem_(r) {
+  const C = csPlanCalc_();
+  const li = csPlanEl_('li');
+  const head = csPlanEl_('div');
+  /* 1行目＝日時（年つき）と人（「週間計画で最後に直した人」と同じ出し方・切替の仕事は「自動（切替）」）、2行目から内容 */
+  head.appendChild(csPlanEl_('span', 'when', csPlanAtJa_(r.at, true) || '日時不明'));
+  head.appendChild(csPlanEl_('span', 'who', r.by === 'system' ? '自動（切替）' : String(r.by || '不明').slice(0, 60)));
+  li.appendChild(head);
+  const d = (r.detail && typeof r.detail === 'object') ? r.detail : {};
+  const lines = (before, after) => {
+    if (!C) return;
+    const df = C.diffEvents(Array.isArray(before) ? before : [], Array.isArray(after) ? after : []);
+    df.added.forEach(ev => li.appendChild(csPlanEl_('div', 'ln', '＋ ' + csPlanEvLabel_(ev))));
+    df.changed.forEach(c => li.appendChild(csPlanEl_('div', 'ln', '→ ' + csPlanEvLabel_(c.before) + ' ⇒ ' + csPlanEvLabel_(c.after))));
+    df.removed.forEach(ev => li.appendChild(csPlanEl_('div', 'ln', '－ ' + csPlanEvLabel_(ev))));
+  };
+  let what = '';
+  if (r.kind === 'edit') { what = '今の計画の予定を変えました'; li.appendChild(csPlanEl_('div', 'what', what)); lines(d.before, d.after); return li; }
+  if (r.kind === 'switch') { what = '計画が切り替わりました（' + csPlanMd_(String(d.from || '')) + 'から・介護度 ' + csPlanLvText_(d.level) + '）'; }
+  else if (r.kind === 'level') { what = '介護度を変えました（' + csPlanLvText_(d.from) + ' → ' + csPlanLvText_(d.to) + '）'; }
+  else if (r.kind === 'reserve') {
+    const f = csPlanMd_(String(d.from || ''));
+    if (d.op === 'add') what = '予約を作りました（' + f + 'から・介護度 ' + csPlanLvText_(d.careLevel) + '）';
+    else if (d.op === 'cancel') what = '予約を取り消しました（' + f + 'から）';
+    else what = '予約を直しました（' + f + 'から・介護度 ' + csPlanLvText_(d.careLevel) + '）';
+    li.appendChild(csPlanEl_('div', 'what', what));
+    if (d.op === 'update' || d.op === 'add') lines(d.op === 'add' ? [] : d.before, d.after);
+    return li;
+  } else { what = '記録'; }
+  li.appendChild(csPlanEl_('div', 'what', what));
+  return li;
+}
+
+/* ── 予約を作る・開始日と介護度を変える小さな窓 ── */
+function csPlanLevelOptions_() {
+  const sel = $('#ci-level');
+  const out = [];
+  if (sel && sel.options) for (let i = 0; i < sel.options.length; i++) out.push([sel.options[i].value, sel.options[i].value ? sel.options[i].textContent : '介護度なし']);
+  return out.length ? out : [['', '介護度なし']];
+}
+/* o.mode: 'new'（新しく作る）／'meta-real'（予約の開始日・介護度・メモを本物の DB で変える）／'meta-sandbox'（編集中の予約の開始日・介護度・メモ） */
+function csPlanOpenForm_(o) {
+  const C = csPlanCalc_();
+  if (!C) return;
+  if (o.mode !== 'meta-sandbox' && !csPlanCan_.ok) { showToast(csPlanCanMsg_()); return; }
+  const realRes = csPlanRealRes_(o.resId);
+  if (!realRes) { showToast('この方が見つかりません'); return; }
+  const mk = csPlanModal_('mk-plan-form', 'mk-plan-form-h');
+  const md = mk.querySelector('.md');
+  md.textContent = '';
+  const hd = csPlanEl_('div', 'md-hd');
+  const h2 = csPlanEl_('h2', '', o.mode === 'new' ? '次の計画を作る' : '開始日・介護度を変える');
+  h2.id = 'mk-plan-form-h';
+  const x = csPlanEl_('button', 'md-close', '✕');
+  x.type = 'button'; x.setAttribute('aria-label', '閉じる'); x.title = '閉じる';
+  x.addEventListener('click', function () { mk.classList.remove('open'); });
+  hd.appendChild(h2); hd.appendChild(x); md.appendChild(hd);
+  md.appendChild(csPlanEl_('p', 'cs-pl-meta', '対象: ' + (realRes.name || '') + 'さん'));
+  const row = (label, input, id) => {
+    const r = csPlanEl_('div', 'cs-pl-form-row');
+    const l = csPlanEl_('label', '', label); l.htmlFor = id; input.id = id;
+    r.appendChild(l); r.appendChild(input); md.appendChild(r); return r;
+  };
+  const fFrom = csPlanEl_('input', 'inp'); fFrom.type = 'date'; fFrom.value = o.from || csPlanNextMonth1_();
+  row('適用開始日（この日から今の計画になります）', fFrom, 'cs-pl-f-from');
+  const fLv = csPlanEl_('select', 'inp');
+  csPlanLevelOptions_().forEach(([v, t]) => { const op = csPlanEl_('option', '', t); op.value = v; fLv.appendChild(op); });
+  fLv.value = o.careLevel != null ? o.careLevel : (realRes.careLevel || '');
+  row('この計画の介護度', fLv, 'cs-pl-f-lv');
+  const fNote = csPlanEl_('input', 'inp'); fNote.type = 'text'; fNote.maxLength = C.NOTE_MAX; fNote.value = o.note || '';
+  fNote.placeholder = '例: 区分変更の申請中（' + C.NOTE_MAX + '字まで）';
+  row('メモ', fNote, 'cs-pl-f-note');
+  let fSrc = null;
+  if (o.mode === 'new') {
+    const r = csPlanEl_('div', 'cs-pl-form-row');
+    r.appendChild(csPlanEl_('div', 'lbl', '予定の始め方'));
+    const box = csPlanEl_('div', 'cs-pl-radio'); box.setAttribute('role', 'radiogroup');
+    const mkR = (val, text, on) => {
+      const l = csPlanEl_('label');
+      const i = csPlanEl_('input'); i.type = 'radio'; i.name = 'cs-pl-src'; i.value = val; i.checked = !!on;
+      l.appendChild(i); l.appendChild(document.createTextNode(text)); box.appendChild(l); return i;
+    };
+    const a = mkR('copy', o.sourceEvents ? ((o.sourceLabel || '過去の計画') + 'をもとに始める') : '今の計画をもとに始める', true);
+    mkR('empty', '空から始める', false);
+    r.appendChild(box); md.appendChild(r);
+    fSrc = () => (a.checked ? 'copy' : 'empty');
+  }
+  const hint = csPlanEl_('p', 'cs-pl-hint', '月の途中で介護度が変わる月は、単位は日ごと・支給限度額は重い方の介護度で数えます（この画面の月合計は目安です）');
+  md.appendChild(hint);
+  const errs = csPlanEl_('div', 'cs-pl-errs'); errs.setAttribute('role', 'alert'); md.appendChild(errs);
+  const sync = () => { const p = csPlanParts_(fFrom.value); hint.hidden = !(p && p.d !== 1); };
+  fFrom.addEventListener('input', sync); fFrom.addEventListener('change', sync); sync();
+  const bs = csPlanEl_('div', 'btn-row');
+  bs.appendChild(csPlanBtn_('やめる', 'btn-line', function () { mk.classList.remove('open'); }));
+  bs.appendChild(csPlanBtn_(o.mode === 'new' ? '作って開く' : '変える', 'btn-ink', function () {
+    const input = { id: o.planId || undefined, from: fFrom.value, careLevel: fLv.value };
+    const res2 = csPlanRealRes_(o.resId);
+    const v = C.validatePlanInput(input, res2, csPlanToday_());
+    if (!v.ok) { errs.textContent = v.errors.map(e => e.msg).join('　'); return; }
+    errs.textContent = '';
+    mk.classList.remove('open');
+    const note = String(fNote.value || '').slice(0, C.NOTE_MAX);
+    if (o.mode === 'new') {
+      const evs = fSrc() === 'empty' ? [] : JSON.parse(JSON.stringify(o.sourceEvents || res2.events || []));
+      csPlanCloseYear_();
+      SIM.enter(null, { kind: 'plan', plan: { resId: o.resId, planId: '', from: input.from, careLevel: fLv.value, note: note, isNew: true }, events: evs });
+    } else if (o.mode === 'meta-sandbox') {
+      if (!(SIM_ON && SIM.kind === 'plan' && SIM.plan)) return;
+      SIM.plan.from = input.from; SIM.plan.note = note; SIM.plan.careLevel = fLv.value;
+      const sr = (DB.residents || []).find(r => r && r.id === SIM.plan.resId);
+      if (sr) sr.careLevel = fLv.value;
+      try { recalcAllEventUnits(); } catch (e) { csNote_('計画の版の単位', e); }
+      SIM.persist(); SIM.syncButtons(); renderAll();
+      showToast('開始日・介護度を変えました（まだ保存していません）');
+    } else {
+      csPlanUpdateMeta_(o.resId, o.planId, input.from, fLv.value, note);
+    }
+  }));
+  md.appendChild(bs);
+  mk.classList.add('open');
+  try { fFrom.focus(); } catch (e) { /* 焦点を当てられない端末でも窓は使える（何も失わない） */ }
+}
+function csPlanUpdateMeta_(rid, planId, from, careLevel, note) {
+  const C = csPlanCalc_();
+  const r = (DB.residents || []).find(x => x && x.id === rid);
+  const p = r && Array.isArray(r.nextPlans) ? r.nextPlans.find(q => q && q.id === planId) : null;
+  if (!p) { showToast('この予約は、ほかの端末で取り消されたか、もう今の計画に切り替わっています'); return; }
+  p.from = from; p.careLevel = careLevel; p.note = note; p.updatedAt = new Date().toISOString(); p.updatedBy = csWho_();
+  r.nextPlans = C.sortPlans(r.nextPlans);
+  if (csPlanCommit_('予約の開始日・介護度')) { csPlanRefreshBar_(); if (document.getElementById('mk-plan') && document.getElementById('mk-plan').classList.contains('open')) csPlanRenderYear_(); showToast('予約の開始日・介護度を変えました'); }
+}
+async function csPlanCancel_(rid, planId) {
+  const C = csPlanCalc_();
+  if (!csPlanCan_.ok) { showToast(csPlanCanMsg_()); return; }
+  const r = (DB.residents || []).find(x => x && x.id === rid);
+  const p = r && Array.isArray(r.nextPlans) ? r.nextPlans.find(q => q && q.id === planId) : null;
+  if (!p) { showToast('この予約は見つかりません'); return; }
+  if (!(await SUDialog.confirm(csPlanYmdJa_(p.from) + 'からの予約を取り消します。取り消すと元に戻せません。'))) return;
+  const r2 = (DB.residents || []).find(x => x && x.id === rid);   /* 窓の間に取り込みで差し替わっていても id で引き直す */
+  if (!r2 || !Array.isArray(r2.nextPlans)) return;
+  r2.nextPlans = r2.nextPlans.filter(q => !(q && q.id === planId));
+  const gone = Array.isArray(r2.planGone) ? r2.planGone.slice() : [];
+  gone.push({ id: planId, at: new Date().toISOString() });
+  r2.planGone = gone.slice(-C.GONE_MAX);
+  if (csPlanCommit_('予約の取り消し')) { csPlanRefreshBar_(); csPlanRenderYear_(); showToast('予約を取り消しました'); }
+}
+/* 「今の介護度のままでよい」: 現行の計画の介護度の印（planLevel）を空にして帯を消す。競合で戻された時は焼き直す（介護情報の窓と同じ作法） */
+async function csPlanAcceptLevel_(rid) {
+  const apply = () => { const r = (DB.residents || []).find(x => x && x.id === rid); if (!r || !r.planLevel) return false; r.planLevel = ''; return true; };
+  if (!apply()) return;
+  delete csPlanLvNotice_[rid];
+  const ok = saveDB();
+  csPlanRefreshBar_(); csPlanRenderYear_();
+  showToast('今の介護度のまま使います');
+  /* 送信の完了を待ってから焼き直す（競合の取り込みで戻された時に、自分の直しだけを主張し直す・介護情報の窓と同じ作法） */
+  if (ok && SYNC.hasTarget()) {
+    if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+    try {
+      await SYNC.push();
+      if (apply()) { saveDB(); renderAll(); }
+    } catch (e) { csNote_('介護度の確かめ', e); }
+  }
+}
+/* 予約の編集に入る（既存の予約） */
+function csPlanEnterEdit_(rid, planId) {
+  if (!csPlanCan_.ok) { showToast(csPlanCanMsg_()); return; }
+  const r = (DB.residents || []).find(x => x && x.id === rid);
+  const p = r && Array.isArray(r.nextPlans) ? r.nextPlans.find(q => q && q.id === planId) : null;
+  if (!p) { showToast('この予約は見つかりません'); return; }
+  csPlanCloseYear_();
+  SIM.enter(null, { kind: 'plan', plan: { resId: rid, planId: planId, from: p.from, careLevel: p.careLevel || r.careLevel || '', note: p.note || '', isNew: false },
+                    events: Array.isArray(p.events) ? p.events : [] });
+}
+/* 過去の計画を見る（読むだけ） */
+function csPlanEnterView_(rid, from, to, level, events) {
+  csPlanCloseYear_();
+  SIM.enter(null, { kind: 'view', plan: { resId: rid, from: from, to: to, careLevel: level || '' }, events: events });
+}
 
 // ── Init ──
 loadDB();
@@ -9750,6 +11096,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
       /* 起動時に手元の名簿で見つからなかった指定は、ここで決める（取得で読めて居なければ知らせる） */
       try { csFinishMasterIdPending_(pulled); } catch (e5) {}
       try { SYNC.startPolling(); } catch (e3) {}
+      try { csPlanSwitchTick_(); } catch (e6) { csNote_('計画の切替', e6); }   /* 切替日を過ぎた予約（2026-11-27） */
     };
     SYNC.startupPull().then(afterPull, afterPull);   // 成否に関わらず採用後にクリア（未送信編集があれば無条件採用しない＝BE-01根治）
   }, 0);   /* 起動の処理（下の見張りの登録まで）を終えたすぐ後に取りに行く。決まった時間は待たない
@@ -9779,6 +11126,7 @@ function csProbeLive_() {
         try { csApplyMasterIdParam(true); } catch (e4) {}
         try { csFinishMasterIdPending_(pulled); } catch (e5) {}
         try { SYNC.startPolling(); } catch (e3) {}
+        try { csPlanSwitchTick_(); } catch (e6) { csNote_('計画の切替', e6); }   /* 切替日を過ぎた予約（2026-11-27） */
       };
       SYNC.startupPull().then(afterPull, afterPull);
       return true;
@@ -9792,7 +11140,10 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && SYNC.hasTarget()) {
     SYNC.pollIfNeeded();
   }
+  if (!document.hidden) { try { csPlanSwitchTick_(); } catch (e) { csNote_('計画の切替', e); } }   /* 切替日を過ぎた予約（2026-11-27） */
 });
+/* 切替日を過ぎた予約を30秒ごとに見る（日付は時計で決まるため、取得の版が変わらなくても見る・2026-11-27）。呼ぶのは1分に1回まで */
+setInterval(function () { try { csPlanSwitchTick_(); } catch (e) { csNote_('計画の切替', e); } }, POLL_INTERVAL_MS);
 // stateRev 連携（凍結仕様S4）: マスタの状態変化（入院/在籍）を60〜90秒で鏡映する。
 // rmaster_cfg（url）のある端末だけ実質動作。無い端末・未対応GASは現状動作のまま（無音フォールバック）。
 // 起動直後に1回だけ基準revを確定（名簿は取らない）＝直後の変化を次tickで拾えるようにする。
@@ -9862,6 +11213,27 @@ function csScheduleStorageAdopt_(delay) {
       } catch (err) {}
       return;
     }
+    /* ★計画の版（2026-11-27 門まわりの反証 3回目）: 別タブ（古い版の週間計画など）が、この端末より前の計画（世代が小さい・同じ世代で開始日が違う・
+       使った予約が戻っている）の中身を書いた時は、丸ごと読み込まず、統合（csAbsorbForeignWrite_＝mergePlans）で取り込む。
+       丸ごと読むと前の計画が自分の DB になり、次の保存で共通 DB に断られて（planstale）自分の直しまで捨てることになるため。
+       版の項目を誰も持たないデータでは今までどおり丸ごと読む */
+    try {
+      const raw_ = localStorage.getItem(LS_KEY);
+      const other_ = raw_ ? JSON.parse(raw_) : null;
+      if (other_ && typeof other_ === 'object' && Object.prototype.hasOwnProperty.call(other_, 'csAppVer')) delete other_.csAppVer;   /* 別タブの書いた中身に版の印が紛れていても持ち込まない（反証 F1） */
+      if (typeof csPlanOlderThanMine_ === 'function' && csPlanOlderThanMine_(other_, DB)) {
+        /* 書き手の指紋（CS_LOCAL_FP_KEY）はタブの間で共有なので、別タブが書いた後も「自分が書いた」と見える。指紋に頼らず、ここで直接統合する */
+        const before_ = JSON.stringify(DB);
+        DB = csMergeEventsFrom_(other_, DB);
+        if (typeof csPlanDroppedNotify_ === 'function') csPlanDroppedNotify_();
+        if (JSON.stringify(DB) !== before_) {
+          try { recalcAllEventUnits(); } catch (e2) { csNote_('別タブの取り込みの単位', e2); }
+          saveLocalOnly(); populateResidentSelect(); csRenderOrDefer_();
+          try { showToast('別タブの更新を取り込みました（前の計画のままの方は、今の計画を保ちました）'); } catch (e3) { csNote_('別タブの取り込みの知らせ', e3); }
+        }
+        return;
+      }
+    } catch (err) { csNote_('別タブの取り込み', err); }
     /* loadDB 内で csApplyDeviceSelection_(false) が走る。ここでは通知ありで呼び直し、
        他タブ・他端末で削除された場合に理由が分かるようにする（表示は自タブの選択のまま）。 */
     try { loadDB(); csApplyDeviceSelection_(true); populateResidentSelect(); csRenderOrDefer_(); } catch (err) {}   // 別タブの書き込みは裏でも届く＝裏なら見えた時に描く
@@ -9928,6 +11300,10 @@ const CS_ACTIONS = {
   'SIM.exit': (a) => SIM.exit(...a),
   'SIM.onTargetChange': (a) => SIM.onTargetChange(...a),
   'SIM.openApply': (a) => SIM.openApply(...a),
+  'SIM.savePlan': (a) => SIM.savePlan(...a),
+  'SIM.editPlanMeta': (a) => SIM.editPlanMeta(...a),
+  'SIM.copyViewToPlan': (a) => SIM.copyViewToPlan(...a),
+  'csPlanOpenYear_': (a) => csPlanOpenYear_(...a),
   'addResident': (a) => addResident(...a),
   'applyBulkImport': (a) => applyBulkImport(...a),
   'autoCalcUnits': (a) => autoCalcUnits(...a),

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme="keep-font">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-4S/ciHz/NJ53+S8SvP55TjZc1QAlJHETAZfQeaWjLzU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ZcPoLCJRDerwqaVk+DEUOQsQjvmB+6D/aFYZCcGhHuY='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
@@ -828,6 +828,7 @@ function loadLocal() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, 'csAppVer')) delete obj.csAppVer;   /* 版の印は持ち込まない（反証 F1） */
     return (obj && Array.isArray(obj.residents)) ? obj : null;
   } catch (e) {
     return null;
@@ -875,6 +876,48 @@ function syncTarget() {
    ★action で名前付き契約（kvGet / kvPut）へ振り分ける。逃げ道の kvRaw に主経路を通したままだと、
      rev 楽観ロックの契約がデータ層を一度も通らず、バックエンドを差し替える時に結局ここを
      もう一度書き直すことになる（＝Phase 0 の目的が果たせない）。 */
+var DCR_APP_VER = 2026112701;   /* 週間計画の画面の CS_APP_VER と同じ数 */
+function dcrStripAppVer_(j) {
+  try {
+    if (j && typeof j === 'object' && j.data && typeof j.data === 'object' && Object.prototype.hasOwnProperty.call(j.data, 'csAppVer')) { var d = Object.assign({}, j.data); delete d.csAppVer; return Object.assign({}, j, { data: d }); }
+  } catch (e) { try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note('版の印を外す', e, 'daycare-roster'); } catch (x) { /* 記録できなくても続ける */ } }
+  return j;
+}
+/* 共通 DB の移行 0136 の有る無し（2026-11-27 反証 F1・週間計画の画面の csPlanGateProbe_ と同じ決まり）。
+   口 cs_plan_gate が ok:true を返した時だけ「あり」と覚える（メモリだけ・このタブの間・あり は覚えたまま）。答えが「なし」・エラーは5分後に確かめ直す。
+   新しい保存先へ切り替えていない・ログインの部品が無い時は呼ばず「まだ確かめていない」のまま。同時の確かめは1本にまとめる */
+var DCR_GATE_RECHECK_MS = 5 * 60 * 1000;
+var DCR_GATE_WAIT_MS = 3000;
+var dcrGate_ = { yes: false, noAt: 0, p: null };
+function dcrGateNote_(where, e) { try { if (window.SUErrors && typeof SUErrors.note === 'function') SUErrors.note(where, e, 'daycare-roster'); } catch (x) { /* 記録できなくても続ける */ } }
+function dcrGateProbe_() {
+  try {
+    if (dcrGate_.yes) return Promise.resolve(true);
+    if (dcrGate_.p) return dcrGate_.p;
+    if (dcrGate_.noAt && Math.abs(Date.now() - dcrGate_.noAt) < DCR_GATE_RECHECK_MS) return Promise.resolve(false);
+    if (!(window.SUKv && typeof SUKv.routed === 'function' && SUKv.routed(LS_KEY))) return Promise.resolve(false);
+  } catch (e) { dcrGateNote_('新しい保存先の版の確かめ', e); return Promise.resolve(false); }
+  var p = dcrAuthLoad_().then(function () {
+    var sb = (window.SUAuth && typeof SUAuth.client === 'function') ? SUAuth.client() : null;
+    if (!sb || typeof sb.rpc !== 'function') return false;   /* 呼べない＝まだ確かめていないまま */
+    return Promise.resolve(sb.rpc('cs_plan_gate')).then(function (r) {
+      if (r && !r.error && r.data && typeof r.data === 'object' && r.data.ok === true) { dcrGate_.yes = true; return true; }
+      dcrGate_.noAt = Date.now(); return false;
+    }, function (e) { dcrGate_.noAt = Date.now(); dcrGateNote_('新しい保存先の版の確かめ', e); return false; });
+  }, function (e) { dcrGateNote_('新しい保存先の版の確かめ（ログインの部品）', e); return false; })
+    .then(function (v) { dcrGate_.p = null; return v === true; }, function () { dcrGate_.p = null; return false; });
+  dcrGate_.p = p;
+  return p;
+}
+function dcrGateWait_(pr) {
+  var tm = null;
+  var late = new Promise(function (ok) { tm = setTimeout(function () { ok(false); }, DCR_GATE_WAIT_MS); });
+  return Promise.race([Promise.resolve(pr).then(function (v) { return v === true; }, function () { return false; }), late]).then(function (v) { clearTimeout(tm); return v; });
+}
+/* 予約（nextPlans が空でない）か世代1以上の利用者がいるか（週間計画の画面の csPlanDataHasPlans_ と同じ） */
+function dcrPlanInUse_(d) {
+  return !!(d && Array.isArray(d.residents) && d.residents.some(function (r) { return r && ((typeof r.planGen === 'number' && r.planGen >= 1) || (Array.isArray(r.nextPlans) && r.nextPlans.length > 0)); }));
+}
 async function gasCall(payload) {
   var p = payload || {};
   /* 統合 0005（2026-09-26）: 保存先を切り替えたキー（週間計画 care_schedule_v2）は su-kv.js が Supabase で読み書きする。
@@ -882,9 +925,29 @@ async function gasCall(payload) {
      （kvPut は force を運ばないため）。__raw は su-kv.js からの素通しの印 */
   if (p.__raw) delete p.__raw;
   else if (window.SUKv && SUKv.handles(p)) {
-    return SUKv.call(p, function (q) { if (q.force) return SU.data.kvRaw(q); q.__raw = true; return gasCall(q); });
+    /* 版の印（2026-11-27 週間計画の計画の版・データ保護の反証レビュー・反証 F1）: 週間計画を新しい保存先へ送る写しにだけ、最上位に csAppVer を足す。
+       共通 DB の門は、予約か世代1以上の利用者がいるデータで印の無い保存を断る（この画面は予定を id で混ぜず、取り直した全体に自分の印だけを足して送る）。
+       付けるのは共通 DB の口 cs_plan_gate が答えた（移行 0136 がある）と分かっている時だけ。0136 より前の共通 DB は印を除かずに保存するため。
+       まだ確かめていない・確かめられない時は印なし（＝今までと同じ本文）。予約か世代1以上の方がいる中身の時だけ答えを最大3秒待つ。
+       印を付けない時も写しに紛れた印は外す。Google へ流れる時は下の入口で必ず外す。受け取ったデータに紛れていたら捨てる */
+    var pq = p;
+    if (p.action === 'put' && p.key === 'care_schedule_v2' && p.data && typeof p.data === 'object') {
+      var dq = Object.assign({}, p.data);
+      delete dq.csAppVer;
+      var prq = dcrGateProbe_();
+      var stampQ = dcrGate_.yes;
+      if (!stampQ && dcrPlanInUse_(dq)) stampQ = await dcrGateWait_(prq);
+      if (stampQ) dq.csAppVer = DCR_APP_VER;
+      pq = Object.assign({}, p, { data: dq });
+    } else {
+      dcrGateProbe_();   /* 取得・巡回の時に裏で確かめを始めておく（答えを待たない） */
+    }
+    return SUKv.call(pq, function (q) {
+      if (q && q.data && typeof q.data === 'object' && Object.prototype.hasOwnProperty.call(q.data, 'csAppVer')) { var d0 = Object.assign({}, q.data); delete d0.csAppVer; q = Object.assign({}, q, { data: d0 }); }
+      if (q.force) return SU.data.kvRaw(q); q.__raw = true; return gasCall(q);
+    }).then(dcrStripAppVer_);
   }
-  if (p.action === 'get') return SU.data.kvGet(p.key);
+  if (p.action === 'get') return dcrStripAppVer_(await SU.data.kvGet(p.key));
   if (p.action === 'put') return SU.data.kvPut(p.key, p.data, p.rev);
   return SU.data.kvRaw(p);          // それ以外は従来どおりそのまま通す
 }
@@ -916,7 +979,7 @@ async function fetchRemote(silent) {
   const t = syncTarget();
   if (!t.endpoint) {
     const wasLive = DCR_LIVE;
-    const v = await dcrLiveRead_();
+    let v = await dcrLiveRead_();
     if (!v) {
       /* 使えていた端末で一度読み損なった（遅い回線の時間切れ等）だけでは「使える」を外さない＝取得の失敗として知らせる。
          外すと、次にチェックを押した時に「接続先を入れてください」と、端末に設定を入れる逆の手順を案内してしまう（反証レビュー 2026-11-08）。
@@ -929,6 +992,7 @@ async function fetchRemote(silent) {
     dcrQuietCfgHint_();
     // 初めて使えると分かった時に、入院・往診・居室の重ね読みも1回行う（起動の時は DCR_LIVE が偽で見送っている）
     if (!wasLive) setTimeout(function () { dcrFetchMasterHosp(true).then(function (ok) { if (ok && DB) renderAll(DB); }, function () {}); }, 0);
+    v = dcrStripAppVer_(v);   /* 取得した写しに版の印が紛れていても持ち回さない（反証 F1） */
     return (v.data && Array.isArray(v.data.residents)) ? { data: v.data, rev: Number(v.rev) || 0 } : null;
   }
   const j = await gasCall({ action: 'get', key: LS_KEY });
@@ -1190,6 +1254,7 @@ function dcrSaveErrText_(raw) {
 function dcrSaveErrWords_(e) {
   var m = String((e && e.message) || (typeof e === 'string' ? e : '') || '');
   if (/badtoken/.test(m)) return '合言葉が合っていません。接続設定の「週間計画・ワースケ・シフト」を確かめてください';
+  if (/^oldapp$/.test(m)) return 'この画面は古い版です。読み込み直してください';   /* 共通 DB の版の印の門の断り（2026-11-27） */
   if (/[぀-ヿ一-鿿]/.test(m)) {
     var j = m.replace(/[（(][^（）()]*\.(?:m?js|gs|json|html)[）)]/g, '').trim();
     if (j) return j;
@@ -1208,7 +1273,7 @@ async function runSaver() {
   saverRunning = true;
   if (saverRetry_) { clearTimeout(saverRetry_); saverRetry_ = null; }
   setSyncState('保存中…');
-  let notFound = 0, lastLabel = '設定';
+  let notFound = 0, lastLabel = '設定', planStale = 0;
   try {
     // 取得(refresh)進行中はDB差し替えと競合するので終わるまで待つ（最大3秒）。
     let w = 0; while (busy && w++ < 300) await new Promise(r => setTimeout(r, 10));
@@ -1237,7 +1302,10 @@ async function runSaver() {
           cur.prev = sa.value;
           cur.logs = (cur.logs || []).filter(x => sa.ids.indexOf(x.id) < 0);
         });
-      } else if (res && res.conflict) {
+      } else if (res && (res.conflict || res.error === 'planstale')) {
+        /* planstale（2026-11-27）: 共通 DB が「切り替えた後の計画を前の計画で戻す保存」を断った。競合と同じく取り直して自分の印だけ足し直す。
+           繰り返し断られたら止めて知らせる（未確定の印はメモリに残る） */
+        if (res.error === 'planstale' && ++planStale > 2) throw new Error('ほかの端末で計画が切り替わっています。読み込み直してください');
         const f = await getRemoteWithRev();             // read-freshフォールバック（他端末の更新を取り込む）
         if (!f.data || !Array.isArray(f.data.residents) || !f.data.residents.length) throw new Error('クラウドが空');
         for (const p of pendingFlags.values()) applyPendingFlag_(f.data.residents, p);   // 他端末の記録は残し、自分の分だけ足す

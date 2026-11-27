@@ -1,0 +1,2366 @@
+{
+ "note": "週間計画の計画の版: care-plan-calc.js の applyDue と共通 DB の写し（SQL）の答えをそろえる材料（2026-11-27・架空データ）。作り直しは check/unit/care_plan_calc_test.js の冒頭の手順",
+ "cases": [
+  {
+   "name": "予約なし",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": ""
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": ""
+   }
+  },
+  {
+   "name": "切替日の前日",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-11-30",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   }
+  },
+  {
+   "name": "切替日の当日",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護3",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "切替日の翌日",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-02",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護3",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "予約2つが両方とも期日",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_b",
+      "from": "2026-12-10",
+      "careLevel": "",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_b",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-15",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_b",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-10",
+    "planGen": 3,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     },
+     {
+      "id": "pl_b",
+      "at": "2026-12-10"
+     }
+    ]
+   }
+  },
+  {
+   "name": "予約2つのうち1つだけ期日・残りの並び",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_c",
+      "from": "2027-02-01",
+      "careLevel": "要介護4",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_c",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_b",
+      "from": "2027-01-10",
+      "careLevel": "",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_b",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-05",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護3",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_b",
+      "from": "2027-01-10",
+      "careLevel": "",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_b",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_c",
+      "from": "2027-02-01",
+      "careLevel": "要介護4",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_c",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "同じ開始日の予約2つ（updatedAt の新しい方が勝つ）",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_x",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_x",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_y",
+      "from": "2026-12-01",
+      "careLevel": "要介護4",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_y",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-20T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護4",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_y",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護4",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_x",
+      "at": "2026-12-01"
+     },
+     {
+      "id": "pl_y",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "同じ開始日・同じ updatedAt は id の大きい方",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_x",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_x",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_y",
+      "from": "2026-12-01",
+      "careLevel": "要介護4",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_y",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護4",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_y",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護4",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_x",
+      "at": "2026-12-01"
+     },
+     {
+      "id": "pl_y",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "planGone にある予約は効かない",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-11-15T00:00:00.000Z"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-11-15T00:00:00.000Z"
+     }
+    ]
+   }
+  },
+  {
+   "name": "崩れた予約（日付でない・events が配列でない）は残す",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_bad",
+      "from": "2026-13-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_bad",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_bad2",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": "x",
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護4",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護4",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護4",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_bad2",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": "x",
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     },
+     {
+      "id": "pl_bad",
+      "from": "2026-13-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_bad",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "介護度が文字でない・メモが文字でない",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": 3,
+      "baseLevel": "要介護2",
+      "note": {
+       "a": 1
+      },
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "メモが81字（絵文字）",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護1",
+      "baseLevel": "要介護2",
+      "note": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護1",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護1",
+    "planNote": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "介護度が空（変えない）",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "planGone が20件ある時の切替",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": 1,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ],
+    "planGone": [
+     {
+      "id": "g0",
+      "at": "2026-01-10T00:00:00.000Z"
+     },
+     {
+      "id": "g1",
+      "at": "2026-02-11T00:00:00.000Z"
+     },
+     {
+      "id": "g2",
+      "at": "2026-03-12T00:00:00.000Z"
+     },
+     {
+      "id": "g3",
+      "at": "2026-04-13T00:00:00.000Z"
+     },
+     {
+      "id": "g4",
+      "at": "2026-05-14T00:00:00.000Z"
+     },
+     {
+      "id": "g5",
+      "at": "2026-06-15T00:00:00.000Z"
+     },
+     {
+      "id": "g6",
+      "at": "2026-07-16T00:00:00.000Z"
+     },
+     {
+      "id": "g7",
+      "at": "2026-08-17T00:00:00.000Z"
+     },
+     {
+      "id": "g8",
+      "at": "2026-09-18T00:00:00.000Z"
+     },
+     {
+      "id": "g9",
+      "at": "2026-01-19T00:00:00.000Z"
+     },
+     {
+      "id": "g10",
+      "at": "2026-02-20T00:00:00.000Z"
+     },
+     {
+      "id": "g11",
+      "at": "2026-03-21T00:00:00.000Z"
+     },
+     {
+      "id": "g12",
+      "at": "2026-04-22T00:00:00.000Z"
+     },
+     {
+      "id": "g13",
+      "at": "2026-05-23T00:00:00.000Z"
+     },
+     {
+      "id": "g14",
+      "at": "2026-06-24T00:00:00.000Z"
+     },
+     {
+      "id": "g15",
+      "at": "2026-07-25T00:00:00.000Z"
+     },
+     {
+      "id": "g16",
+      "at": "2026-08-26T00:00:00.000Z"
+     },
+     {
+      "id": "g17",
+      "at": "2026-09-27T00:00:00.000Z"
+     },
+     {
+      "id": "g18",
+      "at": "2026-01-28T00:00:00.000Z"
+     },
+     {
+      "id": "g19",
+      "at": "2026-02-29T00:00:00.000Z"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 2,
+    "planLevel": "要介護3",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "g9",
+      "at": "2026-01-19T00:00:00.000Z"
+     },
+     {
+      "id": "g18",
+      "at": "2026-01-28T00:00:00.000Z"
+     },
+     {
+      "id": "g1",
+      "at": "2026-02-11T00:00:00.000Z"
+     },
+     {
+      "id": "g10",
+      "at": "2026-02-20T00:00:00.000Z"
+     },
+     {
+      "id": "g19",
+      "at": "2026-02-29T00:00:00.000Z"
+     },
+     {
+      "id": "g2",
+      "at": "2026-03-12T00:00:00.000Z"
+     },
+     {
+      "id": "g11",
+      "at": "2026-03-21T00:00:00.000Z"
+     },
+     {
+      "id": "g3",
+      "at": "2026-04-13T00:00:00.000Z"
+     },
+     {
+      "id": "g12",
+      "at": "2026-04-22T00:00:00.000Z"
+     },
+     {
+      "id": "g4",
+      "at": "2026-05-14T00:00:00.000Z"
+     },
+     {
+      "id": "g13",
+      "at": "2026-05-23T00:00:00.000Z"
+     },
+     {
+      "id": "g5",
+      "at": "2026-06-15T00:00:00.000Z"
+     },
+     {
+      "id": "g14",
+      "at": "2026-06-24T00:00:00.000Z"
+     },
+     {
+      "id": "g6",
+      "at": "2026-07-16T00:00:00.000Z"
+     },
+     {
+      "id": "g15",
+      "at": "2026-07-25T00:00:00.000Z"
+     },
+     {
+      "id": "g7",
+      "at": "2026-08-17T00:00:00.000Z"
+     },
+     {
+      "id": "g16",
+      "at": "2026-08-26T00:00:00.000Z"
+     },
+     {
+      "id": "g8",
+      "at": "2026-09-18T00:00:00.000Z"
+     },
+     {
+      "id": "g17",
+      "at": "2026-09-27T00:00:00.000Z"
+     },
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  },
+  {
+   "name": "planGen が無い・負の数",
+   "input": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護2",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "09:00",
+      "endTime": "09:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "e2",
+      "dayOfWeek": 2,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "14:00",
+      "endTime": "14:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-04-01",
+    "planGen": -2,
+    "planLevel": "",
+    "planNote": "",
+    "nextPlans": [
+     {
+      "id": "pl_a",
+      "from": "2026-12-01",
+      "careLevel": "要介護3",
+      "baseLevel": "要介護2",
+      "note": "",
+      "events": [
+       {
+        "id": "e1",
+        "dayOfWeek": 0,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       },
+       {
+        "id": "n_pl_a",
+        "dayOfWeek": 4,
+        "serviceType": "visit",
+        "category": "身体１",
+        "startTime": "11:00",
+        "endTime": "11:30",
+        "detail": "架空の支援",
+        "notes": "",
+        "units": 0,
+        "bathing": false
+       }
+      ],
+      "createdAt": "2026-11-01T00:00:00.000Z",
+      "createdBy": "check",
+      "updatedAt": "2026-11-01T00:00:00.000Z",
+      "updatedBy": "check"
+     }
+    ]
+   },
+   "today": "2026-12-01",
+   "expected": {
+    "id": "r1",
+    "name": "架空 一郎",
+    "careLevel": "要介護3",
+    "events": [
+     {
+      "id": "e1",
+      "dayOfWeek": 0,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "10:00",
+      "endTime": "10:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     },
+     {
+      "id": "n_pl_a",
+      "dayOfWeek": 4,
+      "serviceType": "visit",
+      "category": "身体１",
+      "startTime": "11:00",
+      "endTime": "11:30",
+      "detail": "架空の支援",
+      "notes": "",
+      "units": 0,
+      "bathing": false
+     }
+    ],
+    "planFrom": "2026-12-01",
+    "planGen": 1,
+    "planLevel": "要介護3",
+    "planNote": "",
+    "nextPlans": [],
+    "planGone": [
+     {
+      "id": "pl_a",
+      "at": "2026-12-01"
+     }
+    ]
+   }
+  }
+ ]
+}

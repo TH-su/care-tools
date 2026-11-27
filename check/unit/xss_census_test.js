@@ -245,6 +245,7 @@ const CENSUS = {
     [E, "d.innerHTML='<div class=\"dlg-in\"><h2 id=\"a-dlg-h\">'+esc(o.title)+'</h2>'+(o.lines||[]).map(function(l){ return '<p>'+esc(l)+'</p>'; }).join('')+(o.bodyHtml||'')+ '<div class=\"dlg-btns\"><button type=\"button\" class=\"btn\" data-dlg=\"no\">やめる</button>'+(o.alt?'<button type=\"button\" class=\"btn ng\" data-dlg=\"alt\">'+esc(o.alt)+'</button>':'')+'<button type=\"button\" class=\"btn '+(o.danger?'ngf':'pri')+'\" data-dlg=\"ok\">'+esc(o.ok)+'</button></div></div>'"]
   ],
   "care-meeting-calc.js": [],
+  "care-plan-calc.js": [],
   "care-meeting.html": [
     [F, "if(el) el.innerHTML=''"],
     [F, "if(g) g.innerHTML='<p>担当者会議の記録は事務所PCだけで使えます</p>'"],
