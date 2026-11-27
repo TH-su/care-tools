@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-mzKzNApkmj/2rxLWHdzdofEx5QDm0eLLqcU/wxlLNUA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CBqoLBZIzEOBUEbnp6TWq1W4OXICJpwo7IJqZizE7io='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -410,7 +410,7 @@ body.sur-has-fab main{padding-bottom:96px}
 <script>
 'use strict';
 /* 事故報告書（2026-11-28 本人指示）。
-   ・保存先は共通 DB だけ（統合 0138 の acc_*）。Google（GAS）は使わない。入居者の名簿と1人分の基本の欄は入居者マスタから
+   ・保存先は共通 DB だけ（統合 0141 の acc_*）。Google（GAS）は使わない。入居者の名簿と1人分の基本の欄は入居者マスタから
      SUResRead で読む（新しい保存先へ切り替えた後・事務所・管理者のログイン）。読んだ中身は端末に残さない
    ・端末に残すのは狭い幅の「入力／紙の見た目」の切り替えだけ（acc_pane・決まった値だけ）
    ・入居者を切り替えた瞬間に世代（gen）を上げ、遅れて届いた応答は捨てる（取り違えの守り・CLAUDE.md §2-5）

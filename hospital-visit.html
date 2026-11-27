@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AzCXNSOI2beuzN31gFx8DwYK7W2EACIn7HgUCk2zqDo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G6QCT1zOBL31/Ti+RmJMYJXtrsNSL38eRW4377zR67c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,18 +18,19 @@
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="hospital-visit-calc.js?v=2026-11-27"></script>
+<script src="hospital-visit-calc.js?v=2026-11-28.2"></script>
 <style>
-/* 受診連絡（2026-11-27 本人指示「グレージュの地に蛍光グリーンやショッキングピンク、蛍光オレンジのボタン」）。ライト固定。
-   蛍光の3色はボタンの地だけに使い、字はどれも濃い色（コントラスト 5:1 以上を計算で確かめた）。役割は1色1つ:
-   蛍光グリーン＝保存する／ショッキングピンク＝紙に刷る／蛍光オレンジ＝新しく始める・差し込む。
+/* 受診連絡（2026-11-27 本人指示）。色は勤怠管理・給与の画面と同じ「グレージュ＋ピンク」（2026-11-28 本人指示「勤怠管理・給与アプリの色に合わせよ」・
+   値は勤怠管理・給与の見た目の部品（明るい表示）の値と同じ・その部品は読まずに値だけを写す）。ライト固定。
+   面はグレージュ。濃いピンクに白い字は「次に押す塗り（保存する）・選んだタブ・押した病院」だけ。淡いピンクの面は使わない。
+   ほかのボタンは白地に枠（手紙を印刷はピンクの字と枠）。字と地の差はどれも 7:1 以上。
    文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。印刷は手紙の紙（A4 縦・SUPrint の 'letter'）だけ */
 :root{
-  --bg:#D9D2C6; --bg2:#CFC7B9; --surf:#F6F3EE; --surf2:#ECE7DF; --line:#B3AA9B; --line2:#D5CEC2;
-  --ink:#1E1B17; --ink2:#4A443C; --ink3:#5E574D;
-  --go:#39FF14; --pink:#FF1493; --orange:#FF7A00; --on-neon:#111;
-  --ng:#9E1B12; --ng-l:#FBE9E6; --hdr:#2A2621; --hdr-ink:#F6F3EE;
-  --r:10px; --focus:#1E1B17;
+  --bg:#f4f0eb; --bg2:#ece6df; --surf:#ffffff; --surf2:#f3efea; --line:#c9beb2; --line2:#e6dfd7;
+  --ink:#2a221f; --ink2:#493f3a; --ink3:#544a44;
+  --fill:#72264a; --fill-tx:#ffffff; --fill-hover:#5c1d3b; --warn:#6b4100;
+  --ng:#8a1020; --ng-l:#fde8eb; --hdr:#ece6df; --hdr-ink:#2a221f; --hdr-hover:#e8e2dc;
+  --r:10px; --focus:#72264a;
 }
 :focus-visible{outline:3px solid var(--focus); outline-offset:2px}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
@@ -44,29 +45,29 @@ a{color:var(--ink)}
 h1,h2,h3{text-wrap:pretty}
 
 /* ── 見出し ── */
-.hdr{position:sticky; top:0; z-index:50; background:var(--hdr); color:var(--hdr-ink); padding:8px 16px;
+.hdr{position:sticky; top:0; z-index:50; background:var(--hdr); color:var(--hdr-ink); padding:8px 16px; border-bottom:1px solid var(--line2);
   display:flex; align-items:center; gap:12px; flex-wrap:wrap}
 .hdr h1{font-size:1.375rem; margin:0; font-weight:700; letter-spacing:.04em; flex:1; white-space:nowrap}
-.hdr-btn{display:inline-flex; align-items:center; min-height:44px; background:transparent; border:1px solid rgba(246,243,238,.55);
+.hdr-btn{display:inline-flex; align-items:center; min-height:44px; background:var(--surf); border:1px solid var(--line);
   color:var(--hdr-ink); border-radius:8px; padding:6px 12px; font-size:1rem; text-decoration:none; white-space:nowrap}
-.hdr-btn:hover{background:rgba(246,243,238,.12)}
-.hdr-btn:focus-visible{outline:3px solid var(--go); outline-offset:1px}
+.hdr-btn:hover{background:var(--hdr-hover)}
+.hdr-btn:focus-visible{outline:3px solid var(--focus); outline-offset:1px}
 .hdr .sync{font-size:.9375rem; color:var(--hdr-ink); opacity:.92; white-space:nowrap}
 .hdr .sync:empty{display:none}
 
 main{max-width:1680px; margin:0 auto; padding:14px 16px 72px}
 
-/* ── ボタン（蛍光は地だけ・字は濃い色） ── */
-.btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 16px; border-radius:999px;
-  border:1.5px solid var(--ink); background:var(--surf); color:var(--ink); font-weight:700; white-space:nowrap; text-decoration:none}
+/* ── ボタン（勤怠管理・給与と同じ: 次に押す物だけ濃いピンクの塗り・ほかは白地に枠） ── */
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:8px 16px; border-radius:8px;
+  border:1px solid var(--line); background:var(--surf); color:var(--ink); font-weight:700; white-space:nowrap; text-decoration:none}
 .btn:hover{background:var(--surf2)}
-.btn:disabled,.btn.go:disabled,.btn.pink:disabled,.btn.orange:disabled{background:var(--surf2); border-color:var(--line); color:var(--ink3); cursor:not-allowed; filter:none}
-.btn.go{background:var(--go); border-color:var(--go); color:var(--on-neon)}
-.btn.go:hover{filter:brightness(.94)}
-.btn.pink{background:var(--pink); border-color:var(--pink); color:var(--on-neon)}
-.btn.pink:hover{filter:brightness(.94)}
-.btn.orange{background:var(--orange); border-color:var(--orange); color:var(--on-neon)}
-.btn.orange:hover{filter:brightness(.94)}
+.btn:disabled,.btn.go:disabled,.btn.pink:disabled,.btn.orange:disabled{background:var(--surf2); border-color:var(--line2); color:var(--ink3); cursor:not-allowed}
+.btn.go{background:var(--fill); border-color:var(--fill); color:var(--fill-tx)}          /* 保存する＝次に押す塗り */
+.btn.go:hover{background:var(--fill-hover); border-color:var(--fill-hover)}
+.btn.pink{background:var(--surf); border-color:var(--fill); color:var(--fill)}           /* 手紙を印刷＝ピンクの字と枠 */
+.btn.pink:hover{background:var(--surf2)}
+.btn.orange{background:var(--surf); border-color:var(--line); color:var(--ink)}          /* 差し込む・書き始める＝白地に枠 */
+.btn.orange:hover{background:var(--surf2)}
 .btn.sm{min-height:44px; padding:6px 12px; font-size:.9375rem}
 .btn.quiet{border-color:transparent; background:transparent; text-decoration:underline; font-weight:600}
 .btn.quiet:hover{background:var(--surf2)}
@@ -106,7 +107,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--ink)}
 .recent .dt{color:var(--ink2); font-variant-numeric:tabular-nums}
 .recent .nm{font-weight:700}
 .recent .hp{display:block; color:var(--ink2); font-size:.9375rem; font-weight:400}
-.wait{display:inline-block; border:2px solid var(--orange); color:var(--ink); border-radius:999px; padding:0 10px; font-size:.9375rem; font-weight:700; white-space:nowrap}
+.wait{display:inline-block; border:2px solid var(--warn); color:var(--ink); border-radius:999px; padding:0 10px; font-size:.9375rem; font-weight:700; white-space:nowrap}
 .count{font-size:2rem; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums}
 
 /* ── 2列の作業（左＝見るだけ・右＝書く） ── */
@@ -115,7 +116,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--ink)}
 .desk{background:var(--surf); border-radius:var(--r); padding:16px; min-width:0}
 .tabs{display:flex; gap:4px; border-bottom:2px solid var(--line); margin:0 0 12px; flex-wrap:wrap}
 .tab{min-height:44px; padding:6px 14px; border:0; background:transparent; border-radius:8px 8px 0 0; font-weight:700; color:var(--ink2)}
-.tab[aria-selected=true]{background:var(--ink); color:var(--surf)}
+.tab[aria-selected=true]{background:var(--fill); color:var(--fill-tx)}
 .side h3,.desk h3{font-size:1rem; margin:14px 0 6px; color:var(--ink2)}
 .ro{white-space:pre-wrap; background:#fff; border:1px solid var(--line2); border-radius:8px; padding:10px 12px; min-height:2.5em; font-size:1rem}
 .ro.empty{color:var(--ink3)}
@@ -135,13 +136,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--ink)}
 .grid3{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 14px}
 .chips{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 0}
 .chip{min-height:44px; padding:6px 12px; border-radius:999px; border:1.5px solid var(--line); background:#fff; font-size:.9375rem}
-.chip[aria-pressed=true]{border-color:var(--ink); background:var(--ink); color:var(--surf)}
+.chip[aria-pressed=true]{border-color:var(--fill); background:var(--fill); color:var(--fill-tx)}
 .chip .src{color:var(--ink3); font-size:.8125rem; margin-left:4px}
 .chip[aria-pressed=true] .src{color:var(--surf2)}
 .radios{display:flex; gap:8px; flex-wrap:wrap}
 .radios label{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:4px 14px; border:1.5px solid var(--line); border-radius:999px; background:#fff; font-weight:700}
 .radios input{width:20px; height:20px}
-.diff{border-left:6px solid var(--pink); background:#fff; padding:8px 12px; margin:8px 0 0; border-radius:0 8px 8px 0; font-size:1rem}
+.diff{border-left:6px solid var(--fill); background:#fff; padding:8px 12px; margin:8px 0 0; border-radius:0 8px 8px 0; font-size:1rem}
 .diff b{display:block}
 .foot{position:sticky; bottom:0; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:flex-end;
   background:var(--surf); border-top:1px solid var(--line2); margin:16px -16px -16px; padding:12px 16px; border-radius:0 0 var(--r) var(--r)}
@@ -167,9 +168,9 @@ body.sur-has-fab .foot{padding-right:150px}
 .hl-to{display:flex; gap:2.2em; flex-wrap:wrap; font-size:1.12em; padding-left:1.5em; margin-bottom:1.8em !important}
 .hl-title{font-size:1.22em; font-weight:400; text-align:center; letter-spacing:.06em; margin:0 0 1.8em}
 .hl-open{display:flex; justify-content:space-between; gap:1em; flex-wrap:wrap; margin-bottom:.6em !important}
-.hl-box{border:1px solid #000; padding:1.4em 1.6em; min-height:30em; white-space:pre-wrap}
+.hl-box{border:1px solid #000; padding:1.4em 1.6em; min-height:30em; white-space:pre-wrap; tab-size:8}
 .hl-close{margin-top:1em !important; padding-left:1.5em}
-.hl-sign{margin:3em 0 0 auto; width:fit-content; min-width:40%}
+.hl-sign{margin:2.2em 0 0 auto; width:fit-content; min-width:40%}
 .hl-sign p + p{margin-top:1.2em}
 
 /* ── 窓（病院の台帳・設定） ── */
@@ -182,7 +183,7 @@ body.sur-has-fab .foot{padding-right:150px}
 .htbl th{color:var(--ink2); font-size:.9375rem}
 .htbl tr.off td{color:var(--ink3)}
 
-#toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--hdr); color:var(--hdr-ink); padding:10px 18px; border-radius:999px;
+#toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 18px; border-radius:999px;
   opacity:0; pointer-events:none; transition:opacity .2s; z-index:200; max-width:92vw}
 #toast.on{opacity:1}
 
@@ -215,7 +216,7 @@ body.sur-has-fab .foot{padding-right:150px}
   #toast,.dlg{display:none !important}
   body.su-print-letter{background:#fff !important}
   body.su-print-letter #h-print{display:block; font-size:var(--hl-fs,15px)}
-  #h-print .hl-box{min-height:28em}
+  #h-print .hl-box{min-height:44em}   /* 見本の手紙と同じく、枠が紙の約3分の2を占める（2026-11-28 見本との突き合わせ） */
   #h-print .hl-sheet{padding:0 2px}   /* 枠の右の罫線が紙の端の丸めで欠けないよう、わずかに内へ */
 }
 </style>
@@ -308,7 +309,8 @@ body.sur-has-fab .foot{padding-right:150px}
 /* 受診連絡（2026-11-27 本人指示）。
    ・保存先は共通 DB だけ（統合 0137 の hv_*）。Google（GAS）は使わない。入居者の名簿と医療の欄（病院・主治医・定期薬）は
      入居者マスタから SUResRead で読む（新しい保存先へ切り替えた後・事務所・管理者のログイン）。読んだ中身は端末に残さない
-   ・端末に残すのは開いていたタブ（左・右）だけ（hv_ltab・hv_rtab・決まった値だけ）
+   ・端末に残すのは開いていたタブ（左・右・hv_ltab・hv_rtab・決まった値だけ）と、メニューの札の件数（hv_menu_due・結果がまだの受診の件数と数えた日だけ・
+     氏名・利用者No・病院名は入れない・一覧を読めた時だけ書く・2026-11-28 本人「推奨」）
    ・入居者を切り替えた瞬間に世代（gen）を上げ、遅れて届いた応答は捨てる（取り違えの守り・CLAUDE.md §2-5）
    ・外部の AI へは何も送らない。手紙の文に自動の文言を足さない（定型文は設定が正） */
 var C=window.HospitalVisitCalc;
@@ -414,7 +416,7 @@ function loadHome_(){
   var pList=rpc_('hv_list',{p_resident:null}).then(function(d){
     if(my!==gen) return;
     if(!d||d.ok!==true) throw {hvText:'受診の一覧を読めませんでした。読み直してください。'};
-    recent=Array.isArray(d.visits)?d.visits:[]; takeShared_(d); dbState='ok';
+    recent=Array.isArray(d.visits)?d.visits:[]; takeShared_(d); dbState='ok'; writeMenuDue_();
   });
   var pRos=resRead_({action:'getRoster'}).then(function(d){
     if(my!==gen) return;
@@ -648,9 +650,9 @@ function paintRight_(){
     '<span class="sub" style="color:var(--ink2);font-size:.9375rem;align-self:center">本文が空の時だけ使えます。左の「前回の受診」「服薬中の薬」からも差し込めます。</span></div>';
   /* 受診の結果（見本1枚目の形） */
   $('rp-result').innerHTML=
-    '<div class="fi"><span class="lb">受診病院・受診科</span><div class="ro" style="min-height:44px;padding:8px 10px">'+esc([v.hospital_name,v.dept].filter(Boolean).join('　')||'（手紙のタブで選びます）')+'</div></div>'+
-    '<div class="grid2" style="margin-top:10px"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
+    '<div class="grid2"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
     '<div class="fi"><label for="f-visit_date2">受診日</label><input type="date" id="f-visit_date2" value="'+esc(v.visit_date)+'"></div></div>'+
+    '<div class="fi" style="margin-top:10px"><span class="lb">受診病院・受診科</span><div class="ro" style="min-height:44px;padding:8px 10px">'+esc([v.hospital_name,v.dept].filter(Boolean).join('　')||'（手紙のタブで選びます）')+'</div></div>'+
     '<div class="fi" style="margin-top:10px"><label for="f-result_body">診察内容</label><textarea id="f-result_body" rows="14" maxlength="8000">'+esc(v.result_body)+'</textarea></div>'+
     diffHtml_(v.result_body)+
     '<div class="acts"><button type="button" class="btn orange sm" data-act="result-start"'+(C.trim(v.result_body)||!medsOk_()?' disabled':'')+'>今の定期薬で書き始める</button></div>'+
@@ -728,7 +730,13 @@ function showConflict_(row){
 function clearConflict_(){ showConflict_.row=null; var rb=$('h-reload'); if(rb) rb.remove(); }
 function refreshRecent_(){
   var my=gen;
-  rpc_('hv_list',{p_resident:null}).then(function(d){ if(my!==gen||!d||d.ok!==true) return; recent=Array.isArray(d.visits)?d.visits:[]; }).catch(function(e){ note_('一覧の読み直し',e); });
+  rpc_('hv_list',{p_resident:null}).then(function(d){ if(!d||d.ok!==true) return; recent=Array.isArray(d.visits)?d.visits:[]; writeMenuDue_(); }).catch(function(e){ note_('一覧の読み直し',e); });
+}
+/* メニューのタイルの札（結果まだn）の件数を端末に残す。一覧を読めた時だけ（読めない時は前の件数を0件で上書きしない）・現場の端末では書かない */
+function writeMenuDue_(){
+  if(isField()) return;
+  var v=C.menuDue(recent,C.todayJST()); if(!v) return;
+  try{ if(localStorage.getItem(C.MENU_DUE_KEY)!==v) localStorage.setItem(C.MENU_DUE_KEY,v); }catch(e){ /* 私用モードなど・札が出ないだけ */ }
 }
 function cancelVisit_(){
   if(!draft||!draft.id) return;
@@ -892,8 +900,8 @@ document.addEventListener('click',function(ev){
     if(!(p&&/【[^】]*受診[前後]】/.test(String(p.result_body||'')))&&!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
     draft.letter_body=C.letterStarter(p,medical.medsRegular!=null?medical.medsRegular:''); paintRight_(); paintState_(); return; }
   if(a==='result-start'){ readForm_(); if(C.trim(draft.result_body)) return; if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } draft.result_body=C.resultStarter(medical.medsRegular,draft.visit_date); paintRight_(); paintState_(); return; }
-  if(a==='ins-prev'){ var pv=prevVisit_(); if(!pv) return; readForm_(); setRtab_('letter'); insertAt_('f-letter_body',String(pv.result_body||'').replace(/【受診前】/g,'【前回受診前】')); return; }
-  if(a==='ins-meds-letter'){ if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.medsBlock('現在の処方',medical&&medical.medsRegular)); return; }
+  if(a==='ins-prev'){ var pv=prevVisit_(); if(!pv) return; readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.letterIndent(String(pv.result_body||'').replace(/【受診前】/g,'【前回受診前】'))); return; }
+  if(a==='ins-meds-letter'){ if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.letterIndent(C.medsBlock('現在の処方',medical&&medical.medsRegular))); return; }
   if(a==='ins-meds-result'){
     if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
     readForm_(); setRtab_('result');

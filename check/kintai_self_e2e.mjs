@@ -84,14 +84,14 @@ const browser = await chromium.launch();
 
 async function openPage(st, start, ctxOpts = {}) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, ...ctxOpts });
-  await context.route('**/*', (route) => {
+  await context.route('**/*', async (route) => {
     const u = new URL(route.request().url());
     if (u.origin === srv.url) return route.continue();
     if (u.origin === SB && u.pathname === EP) {
       if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204 });
       const b = JSON.parse(route.request().postData() || '{}');
       st.bodies.push(b);
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(st.handle(b)) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(await st.handle(b)) });   /* 答えを遅らせる場面（M）のために待てる形 */
     }
     st.outside.push(u.origin + u.pathname);
     return route.abort();
@@ -414,6 +414,66 @@ try {
     t('予定も打刻も無い月: 合計の箱（0 の並び）を出さず「この月分の予定と打刻はまだありません。」の箱だけ', !emp.tot && /この月分の予定と打刻はまだありません。/.test(emp.txt) && emp.list === 0 && emp.need, emp);
     await shot(page, 'empty-month');
     t('K. 画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+  }
+  {
+    say('— L. 日の種類の札: 狭い幅・文字200%でも横にはみ出さない（反証レビュー 2026-11-28） —');
+    /* 1日: 半日の特別休暇＋半日の勤務（13〜18時・打刻あり）＝札「特別休暇 半日」と「実働 4:00」が同じ行に並ぶ日。
+       2日に入って3日に明ける夜勤・3日にまた入る夜勤と半日の有給＝札が3つ（明け・夜勤・有給 半日）と実働が並ぶ日 */
+    const d1 = YM + '-01', d2 = YM + '-02', d3 = YM + '-03', d4 = YM + '-04';
+    const p = (id, k, at) => ({ id, staff_id: SID, kind: k, at, source: 'tablet', created_at: at, voided_at: null });
+    const stL = fake({ month: (ym) => Object.assign(monthOf(ym), ym !== YM ? {} : {
+      schedule: [{ staff_id: SID, work_date: d1, seq: 0, office: 'facility', start_at: d1 + 'T13:00:00+09:00', end_at: d1 + 'T18:00:00+09:00', break_min: 0, kind: 'work', symbol: '13-18', paid_min: 0 },
+        { staff_id: SID, work_date: d2, seq: 0, office: 'facility', start_at: d2 + 'T21:00:00+09:00', end_at: d3 + 'T07:00:00+09:00', break_min: 120, kind: 'night', symbol: '(21', paid_min: 0 },
+        { staff_id: SID, work_date: d3, seq: 0, office: 'facility', start_at: d3 + 'T21:00:00+09:00', end_at: d4 + 'T07:00:00+09:00', break_min: 120, kind: 'night', symbol: '(21', paid_min: 0 }],
+      punches: [p('l1', 'in', d1 + 'T12:58:00+09:00'), p('l2', 'out', d1 + 'T18:02:00+09:00'), p('l3', 'in', d2 + 'T20:55:00+09:00'), p('l4', 'out', d3 + 'T07:03:00+09:00'),
+        p('l5', 'in', d3 + 'T20:56:00+09:00'), p('l6', 'out', d4 + 'T07:04:00+09:00')],
+      absences: [{ id: 'la1', date: d1, kind: 'special', minutes: 240, paid: true, type_code: 'keicho', link_date: null }],
+      leave_uses: [{ id: 'lu1', staff_id: SID, use_date: d3, days: 0.5, voided_at: null }] }) });
+    ({ context, page, errors } = await openPage(stL, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#days-list .day[data-date="' + d3 + '"] .kd', { timeout: 10000 });
+    const kinds = await page.evaluate((ds) => ds.map((d) => Array.from(document.querySelectorAll('#days-list .day[data-date="' + d + '"] .d .kd')).map((x) => x.textContent).join(',')
+      + '|' + (document.querySelector('#days-list .day[data-date="' + d + '"] .d .w') || {}).textContent), [d1, d3]);
+    t('札と実働が並ぶ日が出ている（1日: 特別休暇 半日と実働 5:00・3日: 明け・夜勤・有給 半日と実働）',
+      kinds[0] === '特別休暇 半日|実働 5:00' && /^明け,夜勤,有給 半日\|実働 \d+:\d\d$/.test(kinds[1]), kinds);
+    for (const w of [195, 320, 390]) {
+      for (const z of [100, 200]) {
+        await page.setViewportSize({ width: w, height: 844 });
+        await page.evaluate((zz) => document.documentElement.style.setProperty('font-size', zz + '%', 'important'), z);
+        await page.waitForTimeout(150);
+        const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth,
+          out: Array.from(document.querySelectorAll('#days-list .day .d, #days-list .day .d *')).filter((e) => { const r = e.getBoundingClientRect(), c = e.closest('.day').getBoundingClientRect(); return r.right > c.right + 0.5 || r.left < c.left - 0.5; }).length }));
+        t('幅' + w + '・文字' + z + '%: 横にはみ出さない（scrollWidth＝幅）・日付の行の札と実働が日の箱の中に収まる', m.sw === m.iw && m.out === 0, m);
+      }
+    }
+    await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+    t('L. 画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+  }
+  {
+    say('— M. 前の月分の答えが遅れて届いても、今月分の見出しで前の月の中身を描かない（反証レビュー 2026-11-28） —');
+    const PM = prevYm(YM);
+    const stM = fake();
+    const base = stM.handle;
+    stM.handle = (b) => (b.op === 'month' && b.ym === PM ? new Promise((r) => setTimeout(() => r(base(b)), 1500)) : base(b));
+    ({ context, page, errors } = await openPage(stM, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#days-list .day', { timeout: 10000 });
+    await page.click('#b-prev');
+    await page.waitForTimeout(100);
+    await page.click('#b-cur');
+    await page.waitForTimeout(2500);   /* 前の月分の答え（1.5秒遅れ）が届いた後 */
+    const mv = await page.evaluate(() => ({ h: (document.querySelector('#days-head h2') || {}).textContent || '', dates: Array.from(document.querySelectorAll('#days-list .day')).map((x) => x.getAttribute('data-date')),
+      cur: document.getElementById('b-cur').getAttribute('aria-pressed') }));
+    t('前の月分を聞いた（答えは遅れて届いた）', stM.bodies.some((b) => b.op === 'month' && b.ym === PM));
+    t('今月分を押した後は、遅れて届いた前の月分で描き直さない（見出しも日の箱も今月分のまま）',
+      mv.cur === 'true' && mv.h.indexOf(YM.slice(0, 4) + '年' + (+YM.slice(5, 7)) + '月分') === 0 && mv.dates.length > 0 && mv.dates.every((d) => d.slice(0, 7) === YM), mv);
+    t('M. 画面のエラーなし', errors.length === 0, errors);
     await context.close();
   }
 } finally {

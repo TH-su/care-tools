@@ -115,12 +115,17 @@
   /* 2 ログインしていない端末（この7日）。sum = device_seen_summary の data。返す: 台数 か null（分からない）。
    * この7日に1台も届いていなければ（ログイン中の端末も0台）、送るのが止まっている＝分からない。
    * kind が 'hb'（排泄ケア記録）の時は hb の欄（統合 0062）を数える */
+  var FULL_NEAR = 450;   // 端末の記録の上限（500行）の近く
   function unlogged(sum, kind) {
     var key = kind === 'hb' ? 'hb' : 'rows';
     var rows = sum && Array.isArray(sum[key]) ? sum[key] : null;
     if (!rows || !rows.length) return null;
     var seen = rows.reduce(function (n, x) { return n + (Number(x && x.d7) || 0); }, 0);
     if (!(seen > 0)) return null;
+    /* 端末の記録は1施設500行まで。上限の近くまで埋まっている時は、新しく来た端末が記録されず数え漏れうる（ログインなしの受け口へ偽の印を
+     * 送って埋める場面を含む）ので、分からない（押せない側）に倒す。今の施設は数十台で、普段は効かない（反証レビュー 2026-11-28・しきい値は仮置き） */
+    var all30 = rows.reduce(function (n, x) { return n + (Number(x && x.d30) || 0); }, 0);
+    if (all30 >= FULL_NEAR) return null;
     return rows.reduce(function (n, x) { return n + (x && x.login === false ? (Number(x.d7) || 0) : 0); }, 0);
   }
 
