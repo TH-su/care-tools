@@ -83,3 +83,47 @@ jobs:
           path: check/out/flow/
           retention-days: 14
           if-no-files-found: ignore
+
+  # 週間計画の計画の版（履歴・予約・切替・版の印の守り）の通し試験（2026-11-27 登録）。時間がかかるので別の仕事に分ける。
+  # 予約なしの同一性（check/care_plan_nochange_e2e.mjs）は「直す前の画面」と比べる試験で、比べる元をその PR ごとに渡す必要があるため、
+  # ここでは回さない（週間計画・デイ利用表を直す時に手元で回す）。
+  care-plan:
+    name: 計画の版の通し試験
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: リポジトリを取り出す（古い版の画面と比べるので履歴ごと）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: ブラウザの道具を入れる
+        working-directory: check
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: 計画の版（予約・切替・年表・版の印の送り直し）を通す（check/care_plan_e2e.mjs）
+        run: node check/care_plan_e2e.mjs --shots check/out/care-plan
+
+      - name: デイ利用表が週間計画を送る時の版の印を通す（check/care_plan_daycare_e2e.mjs）
+        if: success() || failure()
+        run: node check/care_plan_daycare_e2e.mjs
+
+      - name: 古い版のタブと新しい版のタブが同じ端末にある時の守りを通す（check/care_plan_oldtab_e2e.mjs）
+        if: success() || failure()
+        run: node check/care_plan_oldtab_e2e.mjs
+
+      - name: 画面の写し（架空データ）を成果物として残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: care-plan-shots
+          path: check/out/care-plan/
+          retention-days: 14
+          if-no-files-found: ignore
