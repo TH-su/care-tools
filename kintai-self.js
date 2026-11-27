@@ -211,12 +211,13 @@
   async function loadDays(ym) {
     var my = gen, today = S.todayOf(Date.now());
     if (!(await ensureCur(my, today))) return;
-    viewYm = ym || curYm;
+    var want = ym || curYm;   /* 問い合わせを出した時の月分（答えが遅れて届いた時に、別の月分の見出しで描かない・反証レビュー 2026-11-28） */
+    viewYm = want;
     $('b-cur').setAttribute('aria-pressed', viewYm === curYm ? 'true' : 'false');
     $('b-prev').setAttribute('aria-pressed', viewYm !== curYm ? 'true' : 'false');
-    var d = await getMonth(viewYm, my);
-    if (!d || my !== gen) return;
-    paintDays(d, viewYm, today);
+    var d = await getMonth(want, my);
+    if (!d || my !== gen || viewYm !== want) return;   /* 待つ間に別の月分へ切り替えた時は捨てる */
+    paintDays(d, want, today);
   }
   /* 確かめが要る日（2026-11-27）: 日の札（S.dayRows の flags）のうち、計算の部品の要確認（C.REVIEW）の札がある日。確認済みの札がある日は数えない。
      札の名前は計算の部品の FLAG_LABEL をそのまま使う（判定を2つに分けない）。返す: [{ date, label }] */
