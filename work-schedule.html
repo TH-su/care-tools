@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tqFvb80dmW3LZF7d03NFsHVjKhsXKCo/qTxZp5m0GS0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-hid0DiLnKZ2usKKGQvhTOe0UVMJ5Lhi6MgInhSp7NT0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -12375,21 +12375,22 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * {ok:true, minAppVer} を返す）が答えた時だけ「あり」。0136 より前の本番の kv_put は印を除かずに保存する＝開いたままの古い版の画面が
    * 取り込んで送り返し、サーバーの門（oldapp）が効かなくなるため、口が答えない間は印なしで送る（改修前と同じ本文）。
    * 覚えるのはメモリだけ。「あり」は覚えたまま、「なし」・エラーは5分たってから確かめ直す。ログインの部品がまだ無い時は確かめず覚えない */
-  var CS_GATE_RETRY_MS = 5 * 60 * 1000, CS_GATE_WAIT_MS = 3000, CS_GATE_CAP_MS = 15000;
+  var CS_GATE_RETRY_MS = 5 * 60 * 1000, CS_GATE_WAIT_MS = 3000, CS_GATE_CAP_MS = 15000, CS_GATE_RECHECK_MS = 10000;
   var csGate_ = { ok: false, at: 0, busy: null };
   function csGateKnown_() { return csGate_.ok === true; }
   /* 口に聞く（聞いている途中なら同じ答えを待つ）。cb(true/false) を必ず1回だけ呼ぶ。例外を外に出さない。
    * waitMs: ログインの部品（SUAuth）がまだ読み込まれていない時に、その間だけ待つ（su-kv.js の送信も部品を待ってから送るため・
-   * 予約のある週間計画を送る時だけ使う）。待っても無ければ「確かめられない」で false（覚えない） */
-  function csGateCheck_(cb, waitMs) {
+   * 予約のある週間計画を送る時だけ使う）。待っても無ければ「確かめられない」で false（覚えない）
+   * force: 「なし」を覚えた5分の間でも聞き直す（印なしの送信を oldapp で断られた時の確かめ直しだけ・2026-11-27） */
+  function csGateCheck_(cb, waitMs, force) {
     var done = typeof cb === 'function' ? cb : function () {};
     if (csGate_.ok) { done(true); return; }
     if (csGate_.busy) { csGate_.busy.push(done); return; }
-    if (csGate_.at && Date.now() - csGate_.at < CS_GATE_RETRY_MS) { done(false); return; }
+    if (!force && csGate_.at && Date.now() - csGate_.at < CS_GATE_RETRY_MS) { done(false); return; }
     var c = null;
     try { if (window.SUAuth && typeof window.SUAuth.client === 'function') c = window.SUAuth.client() || null; } catch (e) { c = null; }
     if (!c || typeof c.rpc !== 'function') {
-      if (typeof waitMs === 'number' && waitMs > 0) { setTimeout(function () { csGateCheck_(done, waitMs - 200); }, 200); return; }
+      if (typeof waitMs === 'number' && waitMs > 0) { setTimeout(function () { csGateCheck_(done, waitMs - 200, force); }, 200); return; }
       done(false); return;
     }
     var waiters = [done], settled = false, tm = null;
@@ -12422,6 +12423,15 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (r.planGen !== null && r.planGen !== undefined && Number(r.planGen) >= 1) return true;   /* 数の文字でも数える（待つ側に倒す） */
     }
     return false;
+  }
+  /* 起動の取得の時に、口の確かめを裏で始めておく（反証レビュー 2026-11-27）。送信の中だけで始めると、起動直後の送信が3秒の待ちに
+   * 間に合わないことがあるため。待たない・答えは覚えるだけ（送信が使う）。Google へ送ると決まっている時は聞かない */
+  function csGatePrime_() {
+    try {
+      if (typeof csGateCheck_ !== 'function') return;
+      if (typeof kvRoute_ === 'function' && kvRoute_(CARE_KEY) === 'gas') return;
+      csGateCheck_(null, (typeof CS_GATE_WAIT_MS === 'number') ? CS_GATE_WAIT_MS : 3000);
+    } catch (e) { wsNote_('careGate.prime', e); }
   }
   /* serviceDict(サービスコード辞書・書き手=care-schedule)の適用メモ化シグネチャ。
    * 同一辞書(v+codes)の再適用（renderAll毎の loadCareDb 等）を抑止＝無駄な extendSvc 呼びを避ける。 */
@@ -19941,6 +19951,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try { data = JSON.parse(raw); } catch (e) { return; }
     if (typeof careStripAppVer_ === 'function') careStripAppVer_(data);
     var opsMax = careOpsMaxSeq_();   /* 送信時点までのcare編集op＝成功でジャーナルから除去 */
+    var careVerRetried = false;   /* この送信で印つきの送り直しをしたか（1回まで・2026-11-27） */
     carePushBusy_ = true;
     try { updateSyncBadge_(); } catch (eSb) {}
     /* 版の印は、共通 DB の口 cs_plan_gate が答えた時だけ付ける（反証レビュー 2026-11-27）。確かめていない・なし・エラーは印なし＝改修前と同じ本文。
@@ -20010,6 +20021,14 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           pullCareNow(true);   /* 版が同じでもサーバーを丸ごと採る→控えの再適用（計画の版の門つき）は今までどおり */
         }
       } else if (j && j.error === 'oldapp') {
+        /* 印なしで送って断られ、送った時は口が「あり」と分かっていなかった＝口の答えが間に合わなかっただけかもしれない（反証レビュー 2026-11-27）。
+         * 口を確かめ直し（最大10秒）、「あり」なら送るその時の中身・版・控えの番号で印つきで1回だけ送り直す。送り直す間は1本ずつの守りを持ったまま */
+        if (!withVer && !careVerRetried && !toGas && typeof csGateCheck_ === 'function') {   /* Google へ送った時は口に聞かない */
+          careVerRetried = true;
+          carePushBusy_ = true;
+          careRecheck_();
+          return;
+        }
         /* 古い版の画面の書き込みをサーバーが断った（2026-11-27）。送り直さず、日データと同じ知らせ（読み込み直し）に乗せる。未送信の控えは残す */
         if (typeof careOldApp_ !== 'undefined') careOldApp_ = true;
         if (typeof handleOldAppReject_ === 'function') handleOldAppReject_(null);
@@ -20020,6 +20039,37 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
     });
     }   /* careSend_ の終わり */
+    /* 印なしの送信を oldapp で断られた後の口の確かめ直し（1回の送信につき1回だけ・2026-11-27）。
+     * 「あり」なら送るその時の手元の中身・版・控えの番号で印つきで送る。「なし」・10秒で答えない時は今までどおり止めて読み込み直しを案内する */
+    function careRecheck_() {
+      var settled2 = false, wt2 = null;
+      function release() {
+        carePushBusy_ = false;
+        try { updateSyncBadge_(); } catch (eSb3) { wsNote_('pushCare.recheckBadge', eSb3); }
+        if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
+      }
+      function afterRecheck(v) {
+        if (settled2) return;
+        settled2 = true;
+        if (wt2) clearTimeout(wt2);
+        if (!v) {
+          if (typeof careOldApp_ !== 'undefined') careOldApp_ = true;
+          if (typeof handleOldAppReject_ === 'function') handleOldAppReject_(null);
+          release(); return;
+        }
+        if (!syncOn()) { release(); return; }
+        var raw3 = '', data3 = null;
+        try { raw3 = localStorage.getItem(CARE_KEY) || ''; } catch (eR3) { wsNote_('pushCare.recheckRead', eR3); }
+        if (raw3) { try { data3 = JSON.parse(raw3); } catch (eP3) { data3 = null; } }
+        if (!data3 || raw3 === lastPushed.care) { release(); return; }   /* 消えた・壊れた・もう送る物が無い */
+        if (typeof careStripAppVer_ === 'function') careStripAppVer_(data3);
+        raw = raw3; data = data3; opsMax = careOpsMaxSeq_();
+        careSend_(true);
+      }
+      var lim = (typeof CS_GATE_RECHECK_MS === 'number') ? CS_GATE_RECHECK_MS : 10000;
+      wt2 = setTimeout(function () { afterRecheck(false); }, lim);
+      csGateCheck_(afterRecheck, lim, true);
+    }
   }
   /* ══ 週間計画の未送信編集を踏まない（2026-08-31 追加）══════════════════════════
      事故: 週間計画で入力した支援が消える／変更が全部元に戻る、が現場で続いた。
@@ -20158,6 +20208,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     if (!syncOn()) { fin(); return; }
     if (printing_()) { fin(); return; }   /* 印刷中は取込しない（§10保護・done は必ず呼ぶ） */
     var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(CARE_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
+    if (typeof csGatePrime_ === 'function') csGatePrime_();   /* 版の口の確かめを裏で始めておく（待たない・Google の道では聞かない・2026-11-27） */
     gas({ action: 'get', key: CARE_KEY }, function (j) {
       if (!j || !j.ok) { scheduleRetry_(); markCareInit(); fin(); return; }
       if (j.data && typeof careStripAppVer_ === 'function') careStripAppVer_(j.data);   /* 紛れた版の印は捨てる（2026-11-27） */
@@ -20377,6 +20428,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       });
     }
     if (!masterLight) pullMasterNow();
+    if (careLight && typeof csGatePrime_ === 'function') csGatePrime_();   /* 軽い道は pullCareNow を通らない＝ここで版の口の確かめを裏で始める（2026-11-27） */
     if (!careLight) pullCareNow(false, afterCare);
     if (!masterLight && !careLight) return;
     var hk = [];
@@ -21991,7 +22043,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261127202500';
+  var WS_BUILD = '20261127204704';
   var WS_APP_VER = 2026112701;   /* 2026-11-27 週間計画の予約した次の計画（nextPlans）で先の日の盤面を作るようにした。前の版の画面が先の日の盤面を現行の予定で作り直し、
                                   * 予約の予定の札を消して送らないよう上げた（サーバーの下限は配信の後でチーフが決める）
                                   * （2026102701: 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
