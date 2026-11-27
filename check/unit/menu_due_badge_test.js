@@ -109,13 +109,19 @@ const withDue = tiles.filter((x) => x.due);
    「事務所専用のタイルだけ」の決まりを「事務所専用か、管理者だけに出す札か」に広げた */
 /* 2026-11-14: 未送信の一覧のタイルに、一覧の画面が残した件数の札を足した（代表者の決定）。未送信の一覧は現場端末でも出すタイルだが、
    札は件数と数えた日だけの鍵で、ほかの札と同じく現場端末では読まない（dueBadge）ので、入居者マスタと同じく「事務所専用」の決まりの外に置く */
-t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録と担当者会議の記録（2026-11-13）と未送信の一覧（2026-11-14）のタイルだけ',
-  withDue.length === 6 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due')
+t('札を出すのは個別機能訓練計画書と採用管理（2026-10-29）と入居者マスタ（2026-11-11・管理者だけの札）と設備・修繕の記録と担当者会議の記録（2026-11-13）と未送信の一覧（2026-11-14）と受診連絡（2026-11-28）のタイルだけ',
+  withDue.length === 7 && withDue.some((x) => x.href === 'equip-log.html' && x.due === 'eql_menu_due')
+  && withDue.some((x) => x.href === 'hospital-visit.html' && x.due === 'hv_menu_due')
   && withDue.some((x) => x.href === 'unsent.html' && x.due === 'unsent_menu_due')
   && withDue.some((x) => x.href === 'care-meeting.html' && x.due === 'cm_menu_due') && withDue.filter((x) => x.href !== 'resident-master.html' && x.href !== 'unsent.html').every((x) => x.officeOnly === true)
   && withDue.some((x) => x.href === 'training-plan.html' && x.due === 'tp_menu_due')
   && withDue.some((x) => x.href === 'ats.html' && x.due === 'ats_menu_due' && x.adminOnly === true)
   && withDue.some((x) => x.href === 'resident-master.html' && x.due === 'rm_yjrev_due'), withDue);
+/* 受診連絡（2026-11-28 本人「推奨」）: 結果がまだの受診の件数と数えた日だけ。0件は出さない・形が違えば出さない */
+const hv = (o) => JSON.stringify(Object.assign({ v: 1, at: '2026-10-24', hv: true, wait: 2 }, o));
+t('受診連絡: 結果まだn（m/d時点）', dueText(hv({}), TODAY) === '結果まだ2（10/24時点）', dueText(hv({}), TODAY));
+t('受診連絡: 0件・数でない・印が違う時は出さない', dueText(hv({ wait: 0 }), TODAY) === '' && dueText(hv({ wait: '2' }), TODAY) === ''
+  && dueText(hv({ wait: 1.5 }), TODAY) === '' && dueText(hv({ hv: 'yes' }), TODAY) === '', '');
 /* 薬情の見直し待ち（2026-11-11 代表者の決定）: 入居者マスタが管理者のログインで数え、件数と日付だけを残す。メニューは管理者にだけ出す */
 const rv = (o) => JSON.stringify(Object.assign({ v: 1, at: '2026-10-24', admin: true, review: 2 }, o));
 t('見直し待ち: 管理者のログインの時だけ「見直し待ちn（日付時点）」', dueText(rv({}), TODAY, 'admin') === '見直し待ち2（10/24時点）', dueText(rv({}), TODAY, 'admin'));
