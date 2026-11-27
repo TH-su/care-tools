@@ -270,6 +270,8 @@ const CENSUS = {
   "kintai-leave.js": [],   /* v4（2026-11-20）: 有給の純関数（DOM に触れない） */
   "kintai-36.js": [],      /* v5（2026-11-20）: 36協定の判定の純関数（DOM に触れない） */
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
+  "kintai-staffing-calc.js": [],   /* 2026-11-28: 今日の人員配置の純関数（決まりの確かめ・数え方。DOM に触れない） */
+  "kintai-staffing.js": [],        /* 2026-11-28: 今日の人員配置と設定の決まりの欄。HTML の文を返すだけで代入しない（代入は kintai.js の m.innerHTML の1か所・外からの値は esc） */
   "kintai-today.js": [],   /* 2026-11-27: ホームの今日の出勤状況（1人1行）の純関数（DOM に触れない） */
   "kintai-rules.js": [],
   "kintai-shaho.js": [],
