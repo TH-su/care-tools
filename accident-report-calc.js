@@ -15,7 +15,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-28';
+  var VERSION = '2026-11-28.3';
 
   function str(v) { return v == null ? '' : String(v); }
   function trim(v) { return str(v).replace(/^[\s　]+|[\s　]+$/g, ''); }
@@ -207,20 +207,61 @@
     return hit;
   }
 
-  /* 施設情報（SUFacility.get() の写し）から、紙と自動入力に使う形だけを取る */
-  function facOf(p) {
+  /* 施設情報の accidentReport（事故報告書の紙だけの事業所名・所在地の書き方・代表者の決定 2026-11-28）を鍵ごとに確かめる。
+     { officeNames: { 施設|訪問|通所: 1〜60字 }, officeAddresses: { 同じ鍵: 1〜80字 } }。前後の空白は除き、制御文字（改行・C1 の制御文字・行と段落の区切り U+2028・U+2029 を含む）・< > { } は不可。
+     形の合う鍵だけを使い、崩れた鍵・知らない kind・その kind の事業所が offices に無い鍵は捨てる（その分は offices の formalName・address のまま）。
+     返すのは { names, addresses（使える鍵だけ）, bad:[{ where, why }]（捨てた理由・値は持たない） }。
+     ★貼る前の確かめ（check/facility-secret-check.mjs）はこの関数をそのまま使う（同じ決まりを2か所に書かない） */
+  var AR_FIELDS = [['officeNames', 'names', 60, '事業所（施設）名'], ['officeAddresses', 'addresses', 80, '所在地']];
+  function accidentLabelsOf(ar, offices) {
+    var out = { names: {}, addresses: {}, bad: [] };
+    if (ar === undefined || ar === null) return out;
+    if (typeof ar !== 'object' || Array.isArray(ar)) { out.bad.push({ where: 'accidentReport', why: '{ } のかたまりではありません' }); return out; }
+    var have = {};
+    /* 名前の無い事業所は無いのと同じ（SUFacility.get() は書いていない種類も空の名前で埋めて返すため） */
+    (Array.isArray(offices) ? offices : []).forEach(function (x) { if (x && typeof x === 'object' && typeof x.kind === 'string' && (trim(x.formalName) || trim(x.name))) have[x.kind] = 1; });
+    Object.keys(ar).forEach(function (fk) {
+      var def = null; AR_FIELDS.forEach(function (f) { if (f[0] === fk) def = f; });
+      /* 知らない鍵の名前は理由に出さない（値と鍵を取り違えた時に、公開の記録へ名前が出ないように） */
+      if (!def) { out.bad.push({ where: 'accidentReport', why: '知らない項目があります（書けるのは officeNames・officeAddresses だけ）' }); return; }
+      var blk = ar[fk];
+      if (blk === undefined || blk === null) return;
+      if (typeof blk !== 'object' || Array.isArray(blk)) { out.bad.push({ where: 'accidentReport.' + fk, why: '{ } のかたまりではありません' }); return; }
+      Object.keys(blk).forEach(function (k) {
+        var w = 'accidentReport.' + fk + '.' + k, v = blk[k];
+        if (OFFICE_KINDS.indexOf(k) < 0) { out.bad.push({ where: 'accidentReport.' + fk, why: '知らない鍵があります（鍵は 施設・訪問・通所 だけ）' }); return; }
+        if (!have[k]) { out.bad.push({ where: w, why: 'その種類の事業所が offices にありません' }); return; }
+        if (typeof v !== 'string') { out.bad.push({ where: w, why: '文字ではありません' }); return; }
+        var t = trim(v), n = Array.from ? Array.from(t).length : t.length;
+        if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029<>{}]/.test(v)) { out.bad.push({ where: w, why: '改行・制御文字・行や段落の区切り・< > { } は使えません' }); return; }
+        if (n < 1 || n > def[2]) { out.bad.push({ where: w, why: '1〜' + def[2] + '字で書いてください（前後の空白は除いて数えます）' }); return; }
+        out[def[1]][k] = t;
+      });
+    });
+    return out;
+  }
+  /* 施設情報（SUFacility.get() の写し）から、紙と自動入力に使う形だけを取る。
+     ar は SUFacility.section('accidentReport') の写し（省いた時は施設情報そのものの accidentReport を読み、
+     無ければ SUFacility.get() の形の sections.accidentReport を読む）。
+     事故報告書の紙・自動で入る所在地・保存の写し（officeNames）にだけ効き、事業所番号・法人名は変えない */
+  function facOf(p, ar) {
     p = p && typeof p === 'object' ? p : {};
     var offices = Array.isArray(p.offices) ? p.offices : [];
+    if (arguments.length < 2) ar = p.accidentReport !== undefined ? p.accidentReport : (p.sections && typeof p.sections === 'object' ? p.sections.accidentReport : undefined);
+    var lab = accidentLabelsOf(ar, offices);
     var out = { municipality: trim(p.municipality), corpName: trim(p.corpName), offices: {} };
     OFFICE_KINDS.forEach(function (k) {
       var o = null; offices.forEach(function (x) { if (x && x.kind === k && !o) o = x; });
-      out.offices[k] = { name: trim(o && (o.formalName || o.name)), officeNo: trim(o && o.officeNo), address: trim(o && o.address) };
+      out.offices[k] = { name: lab.names[k] || trim(o && (o.formalName || o.name)), officeNo: trim(o && o.officeNo), address: lab.addresses[k] || trim(o && o.address) };
     });
     return out;
   }
   /* facOf の形ならそのまま、施設情報そのもの（offices が配列）なら facOf で読む */
   function asFac(fac) { return fac && fac.offices && !Array.isArray(fac.offices) ? fac : facOf(fac); }
   function officeNamesOf(fac) { return OFFICE_KINDS.map(function (k) { return fac.offices[k].name; }); }
+  function hasNames(d) { return Array.isArray(d && d.officeNames) && d.officeNames.some(function (x) { return trim(x) !== ''; }); }
+  /* 紙・画面のチップ・別紙に出す事業所の名前。保存した時の写しがあれば写し、無ければ今の施設情報（施設情報が無ければ空） */
+  function officeLabels(data, fac) { return hasNames(data) ? data.officeNames.slice() : (fac ? officeNamesOf(asFac(fac)) : ['', '', '']); }
 
   /* ═══════════ 報告書の中身（data）の形 ═══════════ */
   function blankData() {
@@ -317,6 +358,9 @@
     }
     if (f.corpName) d.corpName = f.corpName.slice(0, TEXT_MAX.corpName);
     ['offices', 'serviceKinds', 'officeNo', 'officeAddress', 'corpName'].forEach(function (k) { if (str(d[k]) !== '' && !(Array.isArray(d[k]) && !d[k].length)) autoFac.push(k); });
+    /* 施設情報から入れ直す道なので、事業所の名前の写しも今の施設情報で作り直す（施設情報が読めない時は今の写しを残す） */
+    var nowNames = officeNamesOf(f);
+    if (nowNames.some(function (x) { return x !== ''; })) d.officeNames = nowNames;
     clearOff(d);   // 住所を事業所所在地にした時は「その他」の住所を空にする（押して替えた時と同じ）
     return { data: d, auto: auto, autoFac: autoFac };
   }
@@ -337,7 +381,9 @@
   /* 保存する本文（決まった8つの鍵＋更新の時は id）。空の日付は null（データベースも空文字を null にする） */
   function toSave(rep, fac) {
     var d = normData(rep.data);
-    if (fac) { var nn = officeNamesOf(asFac(fac)); if (nn.some(function (x) { return x !== ''; })) d.officeNames = nn; }   // 施設情報が読めない時は保存済みの写しを残す
+    /* 事業所の名前の写し: すでに写しがある報告は変えない（保存し直しても・施設情報が読めない／accidentReport の無い端末で保存しても、保存した時の名前のまま）。
+       写しが無い時（新しい報告・全部空）だけ今の施設情報から写す。今の名前に作り直すのは「入居者マスタから入れ直す」（fromResident）の時だけ */
+    if (!hasNames(d) && fac) { var nn = officeNamesOf(asFac(fac)); if (nn.some(function (x) { return x !== ''; })) d.officeNames = nn; }
     var o = {};
     if (rep.id) o.id = rep.id;
     o.resident_id = str(rep.resident_id);
@@ -541,7 +587,7 @@
     t += cell(T, 2, 1, 2, 13, false, '');
     t += box(305, T[2], 1465, T[3] - T[2], fitText('corpName', d.corpName, 3.1, 'one', over), 'pad');
     t += cell(T, 3, 1, 2, 9, false, '');
-    var names = (Array.isArray(d.officeNames) && d.officeNames.some(function (x) { return trim(x); })) ? d.officeNames : officeNamesOf(f);
+    var names = officeLabels(d, f);
     var parts = [];
     OFFICE_KINDS.forEach(function (k, i) {
       var nm = trim(names[i]); if (!nm) return;
@@ -657,7 +703,7 @@
     (Array.isArray(overKeys) ? overKeys : Object.keys(overKeys || {})).forEach(function (k) { set[k] = 1; });
     /* 事業所（施設）名の行が最小の大きさで2行に折っても入らない時は、名前を全部並べ、選んだ物に「（選択）」を付ける */
     if (set.offices) {
-      var names = (Array.isArray(d.officeNames) && d.officeNames.some(function (x) { return trim(x); })) ? d.officeNames : (fac ? officeNamesOf(asFac(fac)) : []);
+      var names = officeLabels(d, fac);
       var lines = [];
       OFFICE_KINDS.forEach(function (k, i) { var nm = trim(names[i]); if (nm) lines.push(nm + (d.offices.indexOf(k) >= 0 ? '（選択）' : '')); });
       if (lines.length) out.push({ key: 'offices', label: '事業所（施設）名', text: lines.join('\n') });
@@ -709,7 +755,7 @@
     SAVE_KEYS: SAVE_KEYS, DATA_MAX: DATA_MAX, COLS: COLS, ROWS1: ROWS1, ROWS2: ROWS2, TABLE_TOP1: TABLE_TOP1, PAGE_W: PAGE_W, PAGE_H: PAGE_H, FIT_MIN: FIT_MIN, PANES: PANES,
     esc: esc, trim: trim, isIso: isIso, normDate: normDate, todayJST: todayJST, nowJST: nowJST, ageAt: ageAt, ageAfterDateChange: ageAfterDateChange,
     ymd: ymd, jpDate: jpDate, mdw: mdw, kindLabel: kindLabel, optOf: optOf, optIds: optIds, isOn: isOn, fitSteps: fitSteps,
-    normGender: normGender, normCareLevel: normCareLevel, normDementia: normDementia, bfNormRank: bfNormRank, facOf: facOf, officeNamesOf: officeNamesOf,
+    normGender: normGender, normCareLevel: normCareLevel, normDementia: normDementia, bfNormRank: bfNormRank, facOf: facOf, accidentLabelsOf: accidentLabelsOf, officeNamesOf: officeNamesOf, officeLabels: officeLabels,
     blankData: blankData, normData: normData, toggle: toggle, linkOffices: linkOffices, fromResident: fromResident,
     blankReport: blankReport, fromRow: fromRow, toSave: toSave, checkReport: checkReport, sameReport: sameReport, sortReports: sortReports,
     nextNo: nextNo, followUp: followUp, missing: missing, sheetItems: sheetItems, paperHtml: paperHtml,

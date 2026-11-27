@@ -14,3 +14,4 @@ paths:
 - 保存先は共通 DB（統合 0141 の acc_*）だけ。1通の報告書＝1行で、第1報・第n報・最終報告は別の行（続報は開いた報告を写して作り、元の報告の番号を持つ）。様式の欄は全部 data に入れ、鍵は `accident-report-calc.js` の KEYS だけ。取り消しは行を消さずに印を付ける。
 - 入居者を選んだ時だけ、入居者マスタ（SUResRead の getSection 'basic'）と施設情報から「3 対象者」「2 事業所の概要」を入れる。保存した報告を開いた時は入居者マスタの今の値で上書きせず、「入居者マスタから入れ直す」を押した時だけ入れる。自立度は入居者マスタと同じ読み方で正し、様式の選択肢に当たらない値（自立・読めない値）は空のまま。
 - 事務所PCで事務所・管理者だけ（su-app-gate の accident-report・現場の端末は先に止める＝二重）。端末に残すのは狭い幅の「入力／紙の見た目」の切り替え（acc_pane・決まった値だけ）だけで、報告の中身・氏名は端末に残さない。
+- 事業所（施設）名と所在地は、施設情報の accidentReport（officeNames・officeAddresses・鍵は施設・訪問・通所）に様式用の書き方がある鍵だけそれを使い、無い・崩れた鍵は offices の formalName・address のまま（読み方は calc の accidentLabelsOf・画面は SUFacility.section('accidentReport') を facOf に渡す・ほかの画面の表記は変えない・代表者の決定 2026-11-28）。
