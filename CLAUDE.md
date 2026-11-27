@@ -89,7 +89,7 @@ GitHub Pages で公開している **公開リポジトリ** です。読み手�
 - `.claude/rules/payroll.md` … 給与（計算・確定・明細・振込）の決まり。「端末に残してよい物」の1項目は CLAUDE.md に残す
 - `.claude/rules/resident-master.md` … 入居者マスタ（薬情の取り込み・薬情の見直し・収支の見通し・対象アプリ・ケアマネ一覧・居室一覧・更新時刻・接続先・一覧の読み取り）
 - `.claude/rules/patch-calendar.md` … 貼り薬カレンダー（施設情報の patchCalendar・種類・patch_read・まとめ送信）
-- `.claude/rules/care-meeting.md` … 担当者会議の記録の状態・色・出席者と印刷・E表の取り込み（振り分け・印の無い議事録・ほかの形の表の取り込みの3項目は、外部の AI へ送らない決まりを含むので CLAUDE.md に残す）
+- `.claude/rules/care-meeting.md` … 担当者会議の記録の状態・色・出席者と印刷・E表の取り込み（振り分け・印の無い議事録・ほかの形の表の取り込み・録音から作った議事録のファイルの4項目は、外部の AI へ送らない決まりを含むので CLAUDE.md に残す）
 - `.claude/rules/menu.md` … メニュー（並べ替え・役割の決まり・毬・見た目・区分）と、計画書・設備・担当者会議のタイルの札
 - `.claude/rules/genogram.md` … 家族構成図（絵の共通 DB・番号だけ受け取る・ping の止め）とフェイスシートの家族構成図の欄
 - `.claude/rules/moushiokuri.md` … 申送ビューア（ケアログの見た目・排泄タブ・読み込みの速さ・moushi_read・moushi_carelog・デイだけの方・ledger）
