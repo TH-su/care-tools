@@ -291,7 +291,7 @@ console.log('\n— 給与専用の暗証番号（統合 0110・2026-11-20 代表
   /* ★年末調整のタブ（2026-11-23・ROOT-yearend.md の C）を賞与の入った main に取り込み、両方が入った payroll.js を 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と、確定した賞与を年末調整の累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
   /* ★支給日の欄（既定27・全角と「日」を受ける・空の知らせ・2026-11-24）で 2026-11-24.1 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-26・手順の段階の入った版・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27）', /payroll\.js\?v=2026-11-27"/.test(H));
+  t('payroll.js の版を上げた（2026-11-26・手順の段階の入った版・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27・保存の穴の直しで 2026-11-28）', /payroll\.js\?v=2026-11-28"/.test(H));
 }
 
 console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C） —');
@@ -306,7 +306,7 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
   t('新しい5つの部品を payroll.js より前に ?v= つきで読む', iF > 0 && iYR > iF && iY > iYR && iW > iY && iU > iW && iP > iU, [iF, iYR, iY, iW, iU, iP]);
   /* ★賞与の入った main を取り込み 2026-11-23.6 に上げたので、期待の版を改めた */
   /* ★賞与の「freee と比べる」と累計へ入れる（2026-11-23・0124）で 2026-11-23.9 に上げたので、期待の版を改めた */
-  t('payroll.js の版を上げた（2026-11-26・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27）', /payroll\.js\?v=2026-11-27"/.test(H));
+  t('payroll.js の版を上げた（2026-11-26・勤怠からの受け渡しで 2026-11-26.1・同じ版の枝と重ならないよう 2026-11-26.2・開いた時の自動の計算で 2026-11-26.3・ファイルの欄を描き直しで作り直さない直しで 2026-11-27・保存の穴の直しで 2026-11-28）', /payroll\.js\?v=2026-11-28"/.test(H));
   t('描く物は PayrollYearEndUI.html(ctx)・無ければ「計算の部品が読み込めていません」', /else if \(tab === 'yearend'\) h = YEU\(\) \? YEU\(\)\.html\(yeCtx\(\)\) : '<div class="band ng" role="alert">計算の部品が読み込めていません。/.test(J));
   t('出来事は ye- で始まる act だけ・金額を隠している間は渡さない', /else if \(\/\^ye-\/\.test\(a\) && YEU\(\) && view === 'app' && !masked\) YEU\(\)\.onClick\(yeCtx\(\), a, b\);/.test(J)
     && /YEU\(\)\.onChange\(yeCtx\(\), e\.target\)/.test(J));
@@ -385,6 +385,30 @@ console.log('\n— 年末調整のタブ（2026-11-23・ROOT-yearend.md の C）
     const put0 = c.calls.find((x) => x.name === 'payroll_ytd_put');
     t('手で足す分は payroll_ytd_put に source=manual・課税支給が空なら総支給と同じ・新しい行は rev 0', !!put0 && put0.args.p_year === 2026 && put0.args.p_rows[0].source === 'manual' && put0.args.p_rows[0].kind === 'bonus' && put0.args.p_rows[0].data.taxable === 250000 && put0.args.p_rows[0].data.nontax === 0 && put0.args.p_rows[0].rev === 0, put0 && put0.args);
     await tick(); await tick();
+    {
+      /* 保存の穴の直し（2026-11-28）: 送信が投げた（通信切れ）時は窓を閉じず、入れた値を残して窓の中に知らせる。鍵（42501）の時は今までどおり閉じて fail */
+      const body = { kids: [], get firstChild() { return this.kids[0] || null; }, insertBefore(el) { el.parentNode = body; this.kids.unshift(el); D.f[el.id] = el; }, removeChild(el) { this.kids = this.kids.filter((k) => k !== el); delete D.f[el.id]; } };
+      D.f['p-dlg'] = { open: true }; D.f['p-dlg-b'] = body;
+      D.createElement = () => ({ setAttribute(k, v) { this[k] = v; } });
+      const keepRpc = c.rpc;
+      c.dlg = { title: '累計に1回分を手で足す' }; c.failed = null;
+      c.rpc = (name, args) => { c.calls.push({ name, args }); return Promise.reject(new Error('Failed to fetch')); };
+      Y.onClick(c, 'ye-manual-go', null); await tick(); await tick();
+      const ng = D.f['ye-dlg-ng'];
+      t('累計に手で足す: 通信が切れた時は窓を閉じず（入れた値はそのまま）、窓の中に「保存できませんでした…入れた内容は残っています」を出す', !!c.dlg && !c.failed && !!ng && /保存できませんでした/.test(ng.textContent) && /入れた内容は残っています/.test(ng.textContent) && ng.role === 'alert' && D.f['ye-m-gross'].value === '250,000', { dlg: !!c.dlg, failed: !!c.failed, ng: ng && ng.textContent });
+      t('… 押し直せる（送信中の印が戻る）', Y._test.state().busy === false);
+      c.rpc = (name, args) => { c.calls.push({ name, args }); const e = new Error('権限がありません'); e.code = '42501'; return Promise.reject(e); };
+      Y.onClick(c, 'ye-manual-go', null); await tick(); await tick();
+      t('累計に手で足す: 鍵（42501）の時は今までどおり窓を閉じて fail に任せる（押し直しで前の知らせは消える）', c.dlg === null && c.failed && c.failed.code === '42501' && !D.f['ye-dlg-ng']);
+      c.dlg = { title: '累計に1回分を手で足す' }; c.failed = null;
+      c.rpc = (name, args) => { c.calls.push({ name, args }); const e = new Error('duplicate key'); e.code = '23505'; return Promise.reject(e); };
+      Y.onClick(c, 'ye-manual-go', null); await tick(); await tick();
+      t('累計に手で足す: 通信でない失敗（データベースの断り）は今までどおり窓を閉じて fail に任せる（「通信が切れた」と偽らない）', c.dlg === null && c.failed && c.failed.code === '23505' && !D.f['ye-dlg-ng']);
+      c.rpc = keepRpc; delete D.f['p-dlg']; delete D.f['p-dlg-b']; c.failed = null;
+    }
+    t('送っている間に窓を閉じた後は、窓を残す道に入らない（「入れた内容は残っています」と偽らない・累計に足す・下書き保存の両方・反証レビュー）', /function dlgOpen\(\) \{ try \{ var el = document\.getElementById\('p-dlg'\); return !!\(el && el\.open\); \}/.test(U) && /if \(my === S\.gen && dlgOpen\(\) && keepOnThrow\(e\)\) \{ if \(ctx\.note\) ctx\.note\('累計に足す', e\);/.test(U));
+    t('年末調整の下書き保存も同じ（投げた時は窓を残す・鍵の時は今までどおり）', /if \(my === S\.gen && S\.dlg === D && dlgOpen\(\) && keepOnThrow\(e\)\) \{ if \(ctx\.note\) ctx\.note\('年末調整の下書き保存', e\); dlgNg\(ctx, NET_NG\); return; \}[^\n]*\n\s*ctx\.closeDlg\(\); S\.dlg = null; if \(ctx\.fail\) ctx\.fail\(e, '年末調整の下書き保存'\);/.test(U)
+      && /if \(e && \(e\.code === '42501' \|\| e\.payroll \|\| \/aal2\|mfa\/i\.test\(String\(e\.message \|\| ''\)\)\)\) return false;/.test(U));
     /* 精算（今月の給与のタブ）: もとは DB の payroll_yearend_check の行（年末調整のタブで読んだ物に頼らない）。二度押しても1行に置き換わる・額は balance_settle（負＝還付） */
     const CHK = (rows) => (n) => n === 'payroll_yearend_check' ? { ok: true, year: 2026, rows } : { ok: true };
     const FIN1 = { staff_id: 's-1', status: 'final', settle_ym: '2026-12', run_status: 'draft', has_item: true, tax_adjust: 0, balance_settle: -2500, state: 'diff' };
@@ -745,7 +769,28 @@ console.log('\n— 賞与の「freee と比べる」と、確定した賞与を�
   t('振込の所の印は対象外の人を差に数えず、比べた後に計算が変われば知らせる', /var n = c\.res\.pass \? 0 : c\.res\.diffCount \+ c\.res\.others;/.test(U) && /freee と比べた後に計算が変わりました/.test(U));
   t('「直す」に従業員番号の欄（20字まで・空なら前に値があった時だけ空に戻す）・A9 の人は比べる対象から外すと知らせる', /inp\('f-emp', '従業員番号（freee の番号）', d\.freee_emp_num/.test(J) && /else if \(empIn\) d\.freee_emp_num = empIn;/.test(J)
     && /else if \('freee_emp_num' in obj\(p\.data\)\) d\.freee_emp_num = null;/.test(J) && /比べる対象から外します/.test(J));
-  t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2・ファイルの欄の直しで yearend-ui 2026-11-27）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-27"/.test(H));
+  t('部品の版を上げた（freee-slips 2026-11-23.3・yearend-ui 2026-11-23.2・ファイルの欄の直しで yearend-ui 2026-11-27・通信切れで窓を残す直しで 2026-11-28）', /payroll-freee-slips\.js\?v=2026-11-23\.3"/.test(H) && /payroll-yearend-ui\.js\?v=2026-11-28"/.test(H));
+}
+
+console.log('\n— 保存の後の読み直しで、保存していない「その月だけの調整」を黙って捨てない（2026-11-28・保存の穴の直し） —');
+{
+  const aa = fnBody(J, 'adjAsk', 'var toastT');
+  const mk = (edits, answer) => {
+    const asked = [];
+    const f = new Function('EDITS', 'ANSWER', 'ASKED', 'var adjEdits = EDITS; function ask(m) { ASKED.push(m); return Promise.resolve(ANSWER); }\n' + aa + '\nreturn adjAsk();');
+    return f(edits, answer, asked).then((v) => ({ v, asked }));
+  };
+  pend.push(Promise.all([mk({}, false), mk({ 's-1': [{ kind: 'pay', name: '見本', amount: 1000, reason: 'x' }] }, false), mk({ 's-1': [] }, true)]).then((r) => {
+    t('保存していない調整が無い時は確かめずに進む', r[0].v === true && r[0].asked.length === 0, r[0]);
+    t('保存していない調整がある時は確かめ、「キャンセル」なら進まない（文は「捨てます」と先に下書き保存を勧める）', r[1].v === false && r[1].asked.length === 1 && /保存していない「その月だけの調整」があります/.test(r[1].asked[0]) && /捨てます/.test(r[1].asked[0]) && /下書き保存/.test(r[1].asked[0]), r[1]);
+    t('「OK」なら進む', r[2].v === true && r[2].asked.length === 1, r[2]);
+  }));
+  const pg = fnBody(J, 'profGo', 'function openBank'), sg = fnBody(J, 'settingsGo', '/* 手当・控除の定義'), ig = fnBody(J, 'importGo', '/* ── 設定（管理者だけ）');
+  const before = (src, rpcName) => { const a = src.indexOf('adjAsk().then('), b = src.indexOf("rpc('" + rpcName + "'"); return a >= 0 && b > a; };
+  t('職員の給与設定の保存は、確かめ（adjAsk）の答えの後に送る・窓が替わっていたら送らない', before(pg, 'payroll_profile_put') && /if \(!go \|\| dlgCtx !== c0\) return;/.test(pg) && pg.indexOf('if (!go || dlgCtx !== c0) return;') < pg.indexOf("rpc('payroll_profile_put'"));
+  t('設定の保存は、確かめ（adjAsk）の答えの後に送る', before(sg, 'payroll_settings_put') && /if \(!go \|\| !bs\) return;/.test(sg));
+  t('取り込みは、確かめ（adjAsk）→ 今までの「送ります」の確かめ → 送る の順', before(ig, 'payroll_import_put') && ig.indexOf('adjAsk().then(') < ig.indexOf("人分の設定（口座を含む）を送ります"));
+  t('3つとも成功の後の読み直しは今までどおり load(false)（読み直しの決まりは変えない）', [pg, sg, ig].every((x) => /return load\(false\);/.test(x)) && /if \(!keepCalc\) \{ calc = null; adjEdits = \{\}; dirty = false; autoCalcRef = null; \}/.test(J));
 }
 
 Promise.all(pend).catch((e) => { fail++; console.log('  ✗ 動かして確かめる試験が止まった  → ' + e.message); }).then(() => {
