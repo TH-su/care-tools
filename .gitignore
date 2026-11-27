@@ -78,6 +78,7 @@
 # 勤怠の日ごとの補助項目の通し試験（2026-11-25・統合 0127・関数の無い時と有る時・通信は全部偽物・架空の職員）
 !/check/kintai_extras_e2e.mjs
 !/check/kintai_views_e2e.mjs
+!/check/kintai_list_e2e.mjs
 !/check/build-holidays-fixture.mjs
 !/check/kintai_board_e2e.mjs
 !/check/kintai_shaho_e2e.mjs
@@ -245,6 +246,9 @@
 # 給与の画面（2026-11-19 新設）。コードのみ公開。給与・口座は共通ログインのデータベースの関数でだけ読み書きし、端末には開いていたタブしか残さない。
 !/payroll.html
 !/payroll.js
+!/payroll-list.js
+!/office-list.css
+!/kintai-list.js
 # 収支の見通し（入居者マスタの「💴 収支の見通し」）の計算の純関数（2026-11-07 本人指示）。規則だけで、入居者の氏名・金額は含まない
 !/revenue-calc.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
