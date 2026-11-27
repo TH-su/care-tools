@@ -40,7 +40,7 @@ function t(label, ok, detail) {
       dir('connect-src') === "connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co", dir('connect-src'));
     t(p + ': 既定は自サイト・object は無し・base は無し', dir('default-src') === "default-src 'self'" && dir('object-src') === "object-src 'none'" && dir('base-uri') === "base-uri 'none'");
   }
-  t('対象は業務画面23（すでに自分の CSP を持つ画面と配信で作る画面は別。採用管理 2026-10-26・設備・修繕の記録 2026-11-03・勤怠の2画面 2026-11-18・給与 2026-11-19）', C.PAGES.length === 23 && C.PAGES.includes('equip-log.html') && C.PAGES.includes('kintai.html') && C.PAGES.includes('kintai-clock.html') && C.PAGES.includes('payroll.html'), C.PAGES.length);
+  t('対象は業務画面24（すでに自分の CSP を持つ画面と配信で作る画面は別。採用管理 2026-10-26・設備・修繕の記録 2026-11-03・勤怠の2画面 2026-11-18・給与 2026-11-19・受診連絡 2026-11-27）', C.PAGES.length === 24 && C.PAGES.includes('hospital-visit.html') && C.PAGES.includes('equip-log.html') && C.PAGES.includes('kintai.html') && C.PAGES.includes('kintai-clock.html') && C.PAGES.includes('payroll.html'), C.PAGES.length);
 
   console.log('\n— 3. インラインのイベント属性・javascript: の URL を書かない —');
   for (const p of C.PAGES.concat(['shift-app.html'])) {

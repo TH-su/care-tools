@@ -559,6 +559,7 @@ input,select,textarea{font-family:inherit; font-size: 0.9375rem}
 /* ── 担当者会議（2026-10-25 本人指示）。詳細画面の「意向・人生会議（ACP）」の直後に、担当者会議のページへのリンクだけを置く。
    ★事務所PCだけ・画面だけ＝印刷しない（PRINT_SECS に入れない・data-k を付けない） ── */
 @media print{.sec-cmeet{display:none !important}}
+@media print{.sec-hvisit{display:none !important}}
 /* ── 薬の変更候補（2026-10-06 代表者の決定・案B）。管理者だけ・画面だけ（印刷しない）。既存の .modal には触れない ──
    ★追加・変更・中止は変更履歴と同じ文字の札（.mh-tag）で示す。注意は黄色＋⚠の文字（色だけで伝えない） */
 .mc-bar{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:0 0 8px}
@@ -2082,7 +2083,7 @@ if(!window.SUDialog) window.SUDialog = {
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-16"></script>
-<script src="su-app-gate.js?v=2026-11-27"></script>
+<script src="su-app-gate.js?v=2026-11-28"></script>
 <script src="su-facility.js?v=2026-11-17"></script>
 <script src="meds-effect-dict.js?v=2026-09-24"></script>
 <!-- 薬情の取り込みの判定・組み立て（純関数・2026-10-22）。読めない時は入口のボタンを出さない（yjCalcOk_） -->
@@ -2346,7 +2347,7 @@ function mcBuild_(d){
 }
 /* ==== 薬の変更候補の判定ここまで（MC-JUDGE-END） ==== */
 </script>
-<script src="resident-master.js?v=2026-11-16"></script>
+<script src="resident-master.js?v=2026-11-28"></script>
 <!-- 見出しの下の初回の案内の帯（2026-11-02 本人の決定）。×で閉じた端末では出さない。画面の動き・保存・印刷には触れない -->
 <script src="su-intro.js?v=2026-11-18"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>

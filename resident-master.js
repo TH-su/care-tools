@@ -7816,6 +7816,17 @@ function meetingLinkHtml_(r){
     '<a class="rlink" target="_blank" rel="noopener" href="'+esc('care-meeting.html?resident='+encodeURIComponent(String(r.id)))+'">📋 担当者会議の記録を開く</a>'+
     '</div></div></div>';
 }
+/* 詳細画面の「受診連絡」の欄（2026-11-28 本人「推奨どおり」）。受診連絡の画面へのリンクだけを出す。担当者会議の欄と同じ決まり:
+   ★渡すのは利用者No（resident=）だけ。氏名・居室は URL に載せない（あちらがサーバーから読む）
+   ★現場端末では欄ごと出さない（受診連絡も現場端末では使えないため）。印刷しない（.sec-hvisit を @media print で消す）
+   ★別タブで開く＝マスタで見ていた内容を失わない */
+function hvisitLinkHtml_(r){
+  if(getDeviceRole()==='field'||!r||r.id==null||r.id==='') return '';
+  return '<div class="sec sec-hvisit"><div class="sec-lbl">受診連絡</div><div class="sec-body">'+
+    '<div class="cell" style="border-right:none;border-bottom:none">'+
+    '<a class="rlink" target="_blank" rel="noopener" href="'+esc('hospital-visit.html?resident='+encodeURIComponent(String(r.id)))+'">🏥 受診連絡（病院への手紙・受診の結果）を開く</a>'+
+    '</div></div></div>';
+}
 function yjlLoad_(id){
   if(getDeviceRole()==='field'||!CFG.url) return;
   var gen=++yjlGen, dg=devGen;
@@ -8828,6 +8839,7 @@ function renderView(r){
     '<div class="cell" style="border-right:none;border-bottom:none"><span class="lab">本人の強み（ストレングス）</span><div class="fulltext">'+esc(r.strengths||'　')+'</div></div>'+
   '</div></div>';
   h+=meetingLinkHtml_(r);   // 担当者会議（事務所PCだけ・リンクだけ・印刷しない）（2026-10-25 本人指示）
+  h+=hvisitLinkHtml_(r);    // 受診連絡（事務所PCだけ・リンクだけ・印刷しない）（2026-11-28 本人「推奨どおり」）
   // 支援経過（新しい順）
   var slog=Array.isArray(r.supportLog)?r.supportLog.slice():[];
   slog.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''))});
