@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AzCXNSOI2beuzN31gFx8DwYK7W2EACIn7HgUCk2zqDo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TrGMTgsfMvVnAImrglKCrJl3oRJ2TK0toNfqWTA9otM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,7 +18,7 @@
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="hospital-visit-calc.js?v=2026-11-27"></script>
+<script src="hospital-visit-calc.js?v=2026-11-28"></script>
 <style>
 /* 受診連絡（2026-11-27 本人指示「グレージュの地に蛍光グリーンやショッキングピンク、蛍光オレンジのボタン」）。ライト固定。
    蛍光の3色はボタンの地だけに使い、字はどれも濃い色（コントラスト 5:1 以上を計算で確かめた）。役割は1色1つ:
@@ -167,9 +167,9 @@ body.sur-has-fab .foot{padding-right:150px}
 .hl-to{display:flex; gap:2.2em; flex-wrap:wrap; font-size:1.12em; padding-left:1.5em; margin-bottom:1.8em !important}
 .hl-title{font-size:1.22em; font-weight:400; text-align:center; letter-spacing:.06em; margin:0 0 1.8em}
 .hl-open{display:flex; justify-content:space-between; gap:1em; flex-wrap:wrap; margin-bottom:.6em !important}
-.hl-box{border:1px solid #000; padding:1.4em 1.6em; min-height:30em; white-space:pre-wrap}
+.hl-box{border:1px solid #000; padding:1.4em 1.6em; min-height:30em; white-space:pre-wrap; tab-size:8}
 .hl-close{margin-top:1em !important; padding-left:1.5em}
-.hl-sign{margin:3em 0 0 auto; width:fit-content; min-width:40%}
+.hl-sign{margin:2.2em 0 0 auto; width:fit-content; min-width:40%}
 .hl-sign p + p{margin-top:1.2em}
 
 /* ── 窓（病院の台帳・設定） ── */
@@ -215,7 +215,7 @@ body.sur-has-fab .foot{padding-right:150px}
   #toast,.dlg{display:none !important}
   body.su-print-letter{background:#fff !important}
   body.su-print-letter #h-print{display:block; font-size:var(--hl-fs,15px)}
-  #h-print .hl-box{min-height:28em}
+  #h-print .hl-box{min-height:44em}   /* 見本の手紙と同じく、枠が紙の約3分の2を占める（2026-11-28 見本との突き合わせ） */
   #h-print .hl-sheet{padding:0 2px}   /* 枠の右の罫線が紙の端の丸めで欠けないよう、わずかに内へ */
 }
 </style>
@@ -648,9 +648,9 @@ function paintRight_(){
     '<span class="sub" style="color:var(--ink2);font-size:.9375rem;align-self:center">本文が空の時だけ使えます。左の「前回の受診」「服薬中の薬」からも差し込めます。</span></div>';
   /* 受診の結果（見本1枚目の形） */
   $('rp-result').innerHTML=
-    '<div class="fi"><span class="lb">受診病院・受診科</span><div class="ro" style="min-height:44px;padding:8px 10px">'+esc([v.hospital_name,v.dept].filter(Boolean).join('　')||'（手紙のタブで選びます）')+'</div></div>'+
-    '<div class="grid2" style="margin-top:10px"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
+    '<div class="grid2"><div class="fi"><label for="f-visit_kind">受診種別</label><select id="f-visit_kind">'+opt_(settings.kinds,v.visit_kind)+'</select></div>'+
     '<div class="fi"><label for="f-visit_date2">受診日</label><input type="date" id="f-visit_date2" value="'+esc(v.visit_date)+'"></div></div>'+
+    '<div class="fi" style="margin-top:10px"><span class="lb">受診病院・受診科</span><div class="ro" style="min-height:44px;padding:8px 10px">'+esc([v.hospital_name,v.dept].filter(Boolean).join('　')||'（手紙のタブで選びます）')+'</div></div>'+
     '<div class="fi" style="margin-top:10px"><label for="f-result_body">診察内容</label><textarea id="f-result_body" rows="14" maxlength="8000">'+esc(v.result_body)+'</textarea></div>'+
     diffHtml_(v.result_body)+
     '<div class="acts"><button type="button" class="btn orange sm" data-act="result-start"'+(C.trim(v.result_body)||!medsOk_()?' disabled':'')+'>今の定期薬で書き始める</button></div>'+
@@ -892,8 +892,8 @@ document.addEventListener('click',function(ev){
     if(!(p&&/【[^】]*受診[前後]】/.test(String(p.result_body||'')))&&!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
     draft.letter_body=C.letterStarter(p,medical.medsRegular!=null?medical.medsRegular:''); paintRight_(); paintState_(); return; }
   if(a==='result-start'){ readForm_(); if(C.trim(draft.result_body)) return; if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } draft.result_body=C.resultStarter(medical.medsRegular,draft.visit_date); paintRight_(); paintState_(); return; }
-  if(a==='ins-prev'){ var pv=prevVisit_(); if(!pv) return; readForm_(); setRtab_('letter'); insertAt_('f-letter_body',String(pv.result_body||'').replace(/【受診前】/g,'【前回受診前】')); return; }
-  if(a==='ins-meds-letter'){ if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.medsBlock('現在の処方',medical&&medical.medsRegular)); return; }
+  if(a==='ins-prev'){ var pv=prevVisit_(); if(!pv) return; readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.letterIndent(String(pv.result_body||'').replace(/【受診前】/g,'【前回受診前】'))); return; }
+  if(a==='ins-meds-letter'){ if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; } readForm_(); setRtab_('letter'); insertAt_('f-letter_body',C.letterIndent(C.medsBlock('現在の処方',medical&&medical.medsRegular))); return; }
   if(a==='ins-meds-result'){
     if(!medsOk_()){ setMsg('h-dmsg',NO_MEDS); return; }
     readForm_(); setRtab_('result');
