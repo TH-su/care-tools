@@ -96,9 +96,17 @@
   function isSid(v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(v); }
   function writeList(key, list) { try { localStorage.setItem(key, JSON.stringify(list)); return true; } catch (e) { note('控えの保存', e); return false; } }
   function enqueue(item) {
-    var q = readList(Q_KEY); q.push(item);
+    var q = readList(Q_KEY);
+    if (q.some(function (x) { return x.id === item.id; })) return true;   /* 同じ控えの番号はもう控えてある（送る前に控えた打刻・二重に控えない） */
+    q.push(item);
     return writeList(Q_KEY, q);
   }
+  function dequeue(id) {
+    var q = readList(Q_KEY), rest = q.filter(function (x) { return x.id !== id; });
+    if (rest.length !== q.length) writeList(Q_KEY, rest);
+  }
+  /* 今この画面が送っている最中の控え（メモリだけ）。裏の送り直し（flush）はこれを飛ばす（同じ控えを「控えから」の印で先に送らないため） */
+  var inflight = {};
   /* 氏名の画面で選んだ事業所（UI の状態だけ・読み戻しは決まった4つのどれかの時だけ。ほかは「全部」） */
   function isOffice(v) { return OFFICES.some(function (o) { return o[0] === v; }); }
   function readOffice() { try { var v = localStorage.getItem(O_KEY); return isOffice(v) ? v : 'all'; } catch (_) { return 'all'; } }
@@ -439,10 +447,15 @@
       showDone({ tone: 'save', kind: kind, name: byName && shown ? shown + ' さん' : '', big: label + 'を控えました', time: hm(item.at), sub: (byName ? '' : '番号 ' + item.code + '・') + '端末の時刻。' + ((because || why) === 'busy' ? '止めが解けたら自動で送ります。' : 'つながったら自動で送ります。') });
     };
     if (!name) { save(); return; }
+    /* 名前が分かった打刻も、送る前に端末に控える（送っている間に読み込み直す・タブを閉じても消えないように。届いた後に消す。
+       控えに入れるのは番号・出勤か退勤か・控えの番号・端末の時刻だけ。同じ控えの番号の送り直しはデータベースが1件にまとめる） */
+    enqueue(item); inflight[item.id] = 1;
+    var settle = function (keep) { delete inflight[item.id]; if (!keep) dequeue(item.id); };
     view = 'sending'; mark(); clearTimeout(idleT);
     $('k-panel').innerHTML = '<p class="lbl">記録しています…</p>';
     withTimeout(rpc('kintai_clock_punch', { p_code: item.code, p_kind: kind, p_client_id: item.id, p_client_at: new Date(item.at).toISOString(), p_offline: false, p_device: deviceKey() }), PUNCH_TIMEOUT_MS).then(function (r) {
-      if (r && r.error === 'busy') { save('busy'); return; }   /* 番号の止めの間も控えて後で送る（D-5） */
+      if (r && r.error === 'busy') { settle(true); save('busy'); return; }   /* 番号の止めの間も控えて後で送る（D-5） */
+      settle(false);   /* 届いた（記録した・断られた）ので控えから消す。断られた時は画面で知らせて押し直してもらう */
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
       if (r && r.ok === true) {
@@ -452,7 +465,8 @@
       }
       back(r && r.error === 'notfound' ? 'その番号は見つかりませんでした。' : 'うまくいきませんでした。もう一度押してください。');
     })['catch'](function (e) {
-      if (isNet(e)) { save(); return; }
+      if (isNet(e)) { settle(true); save(); return; }
+      settle(false);
       if (view === 'sending') view = 'who';
       if (my !== gen) return;
       note('打刻', e);
@@ -505,7 +519,7 @@
 
   /* ── 控えの件数と、送れなかった控え ── */
   function paintFoot() {
-    var q = readList(Q_KEY).length, f = readList(F_KEY).length, h = '';
+    var q = readList(Q_KEY).filter(function (x) { return !inflight[x.id]; }).length, f = readList(F_KEY).length, h = '';   /* 今送っている最中の打刻は数えない */
     if (q) h += '<span class="chip" role="status">送信待ちの打刻 ' + q + ' 件（つながったら送ります）</span>';
     if (f) h += '<button type="button" class="chip ng" data-k="failed"' + (busyView() ? ' disabled aria-disabled="true"' : '') + '>送れなかった打刻 ' + f + ' 件（事務所へ）</button>';
     $('k-foot').innerHTML = h;
@@ -542,6 +556,7 @@
       var it = q[i];
       /* 名前の流れで照合できずに控えた打刻（sid あり）は、送る前に選んだ人と番号が合うかを確かめる。
          合わない時は送らない（番号だけで送ると、打ち間違いがほかの人の番号に当たった時にその人の打刻になるため・総点検 2026-11-20） */
+      if (inflight[it.id]) { i++; return step(); }   /* 画面が今送っている控えは飛ばす（送り終えれば消える・届かなければ次の回に送る） */
       if (it.sid && (chkTO[it.id] || 0) >= 3) { i++; return step(); }   /* 照合が3回打ち切られた控えは、この画面では飛ばす（送信待ちには残す） */
       var pre = it.sid ? withTimeout(rpc('kintai_clock_check', { p_staff_id: it.sid, p_code: it.code }), PUNCH_TIMEOUT_MS).then(function (c) {
         if (c && c.error === 'busy') return 'busy';
@@ -629,7 +644,7 @@
       $('k-gate').hidden = false; $('k-gate').textContent = '画面の部品を読み込めませんでした。ページを読み込み直してください。';
       return;
     }
-    window.SUAppGate.run('kintai-clock', { dirty: function () { return view === 'who' || view === 'confirm'; } }).then(function (ok) {
+    window.SUAppGate.run('kintai-clock', { dirty: function () { return view === 'who' || view === 'confirm' || view === 'sending'; } }).then(function (ok) {
       if (!ok) { view = 'gate'; return; }
       bind();
       $('k-body').hidden = false;

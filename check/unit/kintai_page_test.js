@@ -51,7 +51,8 @@ t('localStorage に書くのは控えの2つの鍵と、選んだ事業所（UI 
   /Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', O_KEY = 'kintai_clock_office'/.test(KC) &&
   /function saveOffice\(v\) \{ if \(!isOffice\(v\)\) return; try \{ localStorage\.setItem\(O_KEY, v\); \} catch \(_\) \{\} \}/.test(KC));
 t('事業所の読み戻しはホワイトリスト（決まった4つ以外は「全部」）', /var OFFICES = \[\['all', '全部'\], \['facility', '施設'\], \['visit', '訪問介護'\], \['day', '通所介護'\]\]/.test(KC) && /return isOffice\(v\) \? v : 'all';/.test(KC));
-t('控えに書くのは打刻の1か所だけ（名前の流れも同じ item を使う）', (KC.match(/enqueue\(/g) || []).length === 2 && (KC.match(/var my = \+\+gen, item = /g) || []).length === 1);
+/* ★保存の穴の直し（2026-11-28）: 名前が分かった打刻も送る前に同じ item を控える（enqueue(item) の呼び出しが2か所＝送る前と送れなかった時。同じ控えの番号は二重に控えない） */
+t('控えに書くのは打刻の item だけ（送る前と送れなかった時の2か所・名前の流れも同じ item を使う・同じ控えの番号は二重に控えない）', (KC.match(/enqueue\(/g) || []).length === 3 && (KC.match(/enqueue\(item\)/g) || []).length === 3 && (KC.match(/var my = \+\+gen, item = /g) || []).length === 1 && /if \(q\.some\(function \(x\) \{ return x\.id === item\.id; \}\)\) return true;/.test(KC));
 
 console.log('\n— 4. 送信の打ち切りと送信中の守り —');
 t('打刻の送信は打ち切りつき（12秒）', /PUNCH_TIMEOUT_MS = 12000/.test(KC) && /withTimeout\(rpc\('kintai_clock_punch'/.test(KC));
@@ -109,7 +110,7 @@ t('印刷の時だけの見出し（.ph は画面で出さない）', /\.ph\{dis
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24・打刻漏れの知らせと休暇の申請）で kintai.js だけを ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は変えていない・23.1 のまま） */
 /* ★段A1（2026-11-25・日ごとの補助項目）で kintai.js を ?v=2026-11-25 に上げたので期待の版を改めた（この行と下の 311 行あたりの1つ） */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-25 に上げた・社保の知らせで .3・資格の期限で .5（#679 が .4）・社保の説明文の esc で .6・給与との行き来で .7・見た目の仕上げで 2026-11-26・今日の出勤状況で 2026-11-27.3）', /kintai\.js\?v=2026-11-27/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-2…（kintai.js は 2026-11-25 に上げた・社保の知らせで .3・資格の期限で .5（#679 が .4）・社保の説明文の esc で .6・給与との行き来で .7・見た目の仕上げで 2026-11-26・今日の出勤状況で 2026-11-27.3・保存の穴の直しで 2026-11-28）', /kintai\.js\?v=2026-11-28/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(H) && /kintai-calc\.js\?v=2026-11-23/.test(HC));
 
 console.log('\n— 8. 打刻画面の v3（出勤を押す → 氏名 → パスコード） —');
 const pendClock = [];
@@ -138,7 +139,7 @@ t('通信できない時は番号の流れと同じく控える（名前は確�
   const runFlush = (queue, checkOk, busy) => {
     const store = { kintai_clock_queue: JSON.stringify(queue), kintai_clock_failed: '[]' }, calls = [];
     const f = new Function('STORE', 'CALLS', 'CHECK_OK', 'BUSY', `
-      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {};
+      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {}, inflight = {};
       var navigator = { onLine: true };
       function readList(k) { return JSON.parse(STORE[k] || '[]'); }
       function writeList(k, l) { STORE[k] = JSON.stringify(l); return true; }
@@ -162,7 +163,7 @@ t('通信できない時は番号の流れと同じく控える（名前は確�
     /* 照合の返事が毎回打ち切られる控えは、この画面では3回で照合をやめる（打ち切られてもサーバーは失敗を数えるため・反証レビュー 2026-11-20） */
     const store = { kintai_clock_queue: JSON.stringify([it1]), kintai_clock_failed: '[]' }, calls = [];
     const f = new Function('STORE', 'CALLS', `
-      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {};
+      var Q_KEY = 'kintai_clock_queue', F_KEY = 'kintai_clock_failed', PUNCH_TIMEOUT_MS = 12000, flushing = false, chkTO = {}, inflight = {};
       var navigator = { onLine: true };
       function readList(k) { return JSON.parse(STORE[k] || '[]'); }
       function writeList(k, l) { STORE[k] = JSON.stringify(l); return true; }
@@ -191,7 +192,7 @@ const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
 /* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai-clock.js の読み込みは ?v=2026-11-25.1', /<script src="kintai-clock\.js\?v=2026-11-25\.1"><\/script>/.test(HC));
+t('kintai-clock.js の読み込みは ?v=2026-11-28（送る前に控える直しで上げた）', /<script src="kintai-clock\.js\?v=2026-11-28"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
@@ -311,7 +312,7 @@ t('反証レビューの指摘1:「今日」は今日のカレンダー月へ移
 /* ★freee の月の集計の取り込み（2026-11-23・統合 0123）で kintai.js・kintai-calc.js を ?v=2026-11-23.1 に上げたので期待の版を改めた */
 /* ★v6（2026-11-24）で kintai.js を ?v=2026-11-24 に上げたので期待の版を改めた（kintai-calc.js は 2026-11-23.1 のまま・給与の画面と同じ版） */
 /* ★年別・事業所別・休日のタブ（2026-11-25）で kintai.js を ?v=2026-11-25.1、段B（統合 0130）で .2、社保の知らせで .3、資格の期限で .5（#679 が .4） に上げた */
-t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-27.3（今日の出勤状況で上げた）・2026-11-23.1（両画面と給与の画面でそろえる・締めて給与へ渡すで .1）', /kintai\.js\?v=2026-11-27\.3"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
+t('kintai.js・kintai-calc.js の読み込みは ?v=2026-11-28（今日の出勤状況で 2026-11-27.3・保存の穴の直しで上げた）・2026-11-23.1（両画面と給与の画面でそろえる・締めて給与へ渡すで .1）', /kintai\.js\?v=2026-11-28"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(H) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(HC) && /kintai-calc\.js\?v=2026-11-23\.1"/.test(read('payroll.html')));
 
 const await_pending = [];   /* 動かして確かめる試験（Promise）を最後に待つ */
 console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（2026-11-20・凍結した仕様書 ROOT-v4-master-leave.md） —');
@@ -359,7 +360,52 @@ console.log('\n— 12. v4 職員マスタ・勤務時間の手入力・有給（
   /* ★反証レビュー（2026-11-20）: 空の月分1つで止まっていたのを、入職日（分からなければ24か月前）まで・空が3つ続いたら止める形に直したので期待を改めた
      ★総点検（2026-11-20）: 速さのため同時に読む形にしたので、本文の形の確かめを新しい形にした（読む月分の並びは下の動きの試験が今までと同じ期待のまま確かめる） */
   t('シフトの有休の日は月分ごとに kintai_month_get を読み、KintaiLeave.usesFromMonth で手入力と合わせる（下限は入職日か24か月前・最大24か月分・空の月分が3つ続いたら止める）', /rpc\('kintai_month_get', \{ p_ym: y \}\)/.test(leaveMonthsFn) && /if \(!\(n < 24 && n \+ 1 < ys\.length && \(n < 1 \|\| emptyRun < 3\)\)\) stop = true;/.test(leaveMonthsFn) && /ys\.slice\(i, i \+ \(3 - emptyRun\)\)/.test(leaveMonthsFn) && /L\.usesFromMonth\(x\.months, manual\)/.test(loadLeaveFn) && /mp\.then\(function \(\) \{ return loadLeaveMonths\(my, lg\); \}\)/.test(loadLeaveFn));
-  t('反証レビュー: 移行の残りを足す時に移行日が空なら、移行日（既定は今日）も設定に入れる（付与の後に profile_put）', /if \(call\[1\]\.p_kind === 'opening' && !\(ctx\.prof && ctx\.prof\.opening_date\)\)/.test(leaveActFn) && /then2 = \['kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: \{ opening_date: od \}, p_rev: ctx\.rev,/.test(leaveActFn) && /rpc\(call\[0\], call\[1\]\)\.then\(okOr\)\.then\(function \(\) \{ return then2 \? rpc\(then2\[0\], then2\[1\]\)\.then\(okOr\) : null; \}\)/.test(leaveActFn) && /id="lv-g-open" value="' \+ esc\(td\) \+ '"/.test(K));
+  t('反証レビュー: 移行の残りを足す時に移行日が空なら、移行日（既定は今日）も設定に入れる（付与の後に profile_put）', /if \(call\[1\]\.p_kind === 'opening' && !\(ctx\.prof && ctx\.prof\.opening_date\)\)/.test(leaveActFn) && /then2 = \['kintai_leave_profile_put', \{ p_staff_id: ctx\.sid, p_patch: \{ opening_date: od \}, p_rev: ctx\.rev,/.test(leaveActFn) && /rpc\(call\[0\], call\[1\]\)\.then\(okOr\)\.then\(function \(\) \{ firstOk = true; return then2 \? rpc\(then2\[0\], then2\[1\]\)\.then\(okOr\) : null; \}\)/.test(leaveActFn) && /id="lv-g-open" value="' \+ esc\(td\) \+ '"/.test(K));
+  /* 保存の穴の直し（2026-11-28）: 付与を保存した後に移行日の設定で断られた・通信が切れた時は、窓を閉じて有給を読み直し「付与は保存しました（移行日は入っていません）」と出す（同じ値の窓を残してもう一度押すと付与が二重に入るため）。
+     leaveAct の送る所から終わりまでを切り出し、偽の rpc で動かす */
+  {
+    const tail0 = leaveActFn.slice(leaveActFn.indexOf('    if (!call) return;')), tail = tail0.slice(0, tail0.lastIndexOf('}'));   /* 関数の閉じかっこは外す */
+    const run = (second) => {
+      const log = [];
+      const f = new Function('LOG', 'SECOND', `
+        var busy = false, dlgCtx = { mode: 'leave' }, warnAfter = '', isAbs = false, at = null, at2 = null, act = 'lv-grant-add';
+        var ctx = { sid: 'sA', rev: 1 }, msg = { textContent: '' }, btn = {}, open = true;
+        var call = ['kintai_leave_grant_add', { p_kind: 'opening' }], then2 = ['kintai_leave_profile_put', { p_patch: { opening_date: '2026-11-28' } }];
+        function keepOf() { return null; }
+        function pressBusy() { return function () { LOG.push('restore'); }; }
+        function rpc(n) { LOG.push(n); if (SECOND === 'first' && n === 'kintai_leave_grant_add') return Promise.reject(new Error('Failed to fetch')); if (n === 'kintai_leave_profile_put') return SECOND === 'net' ? Promise.reject(new Error('Failed to fetch')) : Promise.resolve({ ok: false, error: 'stale' }); return Promise.resolve({ ok: true }); }
+        function okOr(r) { if (r && r.ok === false) { var e = new Error(r.error); e.kintai = r.error; throw e; } return r; }
+        function toast(m) { LOG.push('toast:' + m); }
+        function nameOf() { return '架空 一郎'; }
+        function loadLeave() { LOG.push('loadLeave'); return Promise.resolve(); }
+        function refreshAbsMonths() { return Promise.resolve(); }
+        function inPer() { return false; }
+        function load() { LOG.push('load'); return Promise.resolve(); }
+        function note() {}
+        function absMsg(e) { return e.message; }
+        function leaveMsg(e) { return '読み直してください'; }
+        function closeDlg() { LOG.push('closeDlg'); open = false; }
+        function alert(m) { LOG.push('alert:' + m); }
+        var $ = function (id) { return id === 'g-dlg' ? { open: open } : id === 'e-msg' ? msg : { value: '' }; };
+        (function () {
+${tail}
+        })();
+        return new Promise(function (r) { setTimeout(function () { r({ busy: busy, msg: msg.textContent }); }, 0); });`);
+      return f(log, second).then((st) => ({ log, st }));
+    };
+    for (const kind of ['stale', 'net']) {
+      await_pending.push(run(kind).then(({ log, st }) => {
+        const al = log.filter((x) => /^alert:/.test(x))[0] || '';
+        t('有給の窓: 付与の後の移行日の設定が ' + (kind === 'net' ? '通信の失敗' : '断られた') + ' 時は窓を閉じて有給を読み直し、「付与は保存しました。移行日は入っていません」と出す（窓を同じ値で残さない＝押し直しで付与を二重にしない）',
+          log.indexOf('kintai_leave_grant_add') === 0 && log.indexOf('kintai_leave_profile_put') === 1 && log.indexOf('closeDlg') > 1 && log.indexOf('loadLeave') > log.indexOf('closeDlg') &&
+          /^alert:付与は保存しました。移行日は入っていません/.test(al) && log.indexOf('restore') < 0 && st.busy === false, log);
+      }));
+    }
+    await_pending.push(run('first').then(({ log, st }) => {
+      t('有給の窓: 付与（1段目）から保存できなかった時は今までどおり窓を残して理由を窓に出す（閉じない・読み直さない・移行日を送らない）',
+        log.join() === 'kintai_leave_grant_add,restore' && st.msg === '読み直してください' && st.busy === false, { log, st });
+    }));
+  }
   t('反証レビュー: 移行日が未設定の人は一覧と窓に注意（移行の残りからみなした日を出す）', /if \(sm\.openingMissing\) hire \+= '<span class="tag rv">移行日が未設定<\/span>';/.test(K) && /sm\.openingMissing \? '<div class="band warn"[^>]*>移行日が未設定です。/.test(K));
   t('反証レビュー: 打刻（実働）がある日に手入力の有休を足す時は確かめる（止めはしない）', /var wm = workedMin\(ctx\.sid, ud\);\s*if \(wm > 0 && !confirm\([^;]*この日を有休にしますか？'\)\) return;/.test(leaveActFn));
   /* 下限の月と止め方を、画面の関数をそのまま取り出して偽の月分で動かす */
