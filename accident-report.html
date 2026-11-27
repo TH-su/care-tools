@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CBqoLBZIzEOBUEbnp6TWq1W4OXICJpwo7IJqZizE7io='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CRYW5gTk+PVGq8/oUwArwJKXmJaEKTeSleenLYZt31E='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -14,11 +14,11 @@
 <script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-28.2"></script>
-<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-facility.js?v=2026-11-28"></script>
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="accident-report-calc.js?v=2026-11-28"></script>
+<script src="accident-report-calc.js?v=2026-11-28.2"></script>
 <style>
 /* 事故報告書（2026-11-28 本人指示）。画面は「つむぐケアの型」（su-theme.css の藍と生成り）でライト固定。
    文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。塗りのボタンは「保存する」の1つだけ。
@@ -440,7 +440,8 @@ function isField(){return getDeviceRole()==='field'}
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){/* 私用モードなど */}}
 function confirm_(m){ return (window.SUDialog&&typeof window.SUDialog.confirm==='function')?window.SUDialog.confirm(m):Promise.resolve(window.confirm(m)); }
-function fac_(){ try{ return C.facOf(window.SUFacility?window.SUFacility.get():null); }catch(e){ return C.facOf(null); } }
+/* 事故報告書の紙だけの事業所名・所在地の書き方（施設情報の accidentReport・鍵ごとに calc が確かめる・代表者の決定 2026-11-28） */
+function fac_(){ try{ var F=window.SUFacility; return C.facOf(F?F.get():null,(F&&typeof F.section==='function')?F.section('accidentReport'):null); }catch(e){ return C.facOf(null); } }
 function today_(){ return C.todayJST(); }
 
 /* データベースの窓口。通信は rpc_ だけを通す */

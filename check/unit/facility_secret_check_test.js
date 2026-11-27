@@ -183,6 +183,39 @@ const leaks = (lines) => lines.filter(l => SECRET_WORDS.some(w => l.includes(w))
     t('見本（facility-profile.sample.json）に patchCalendar を書いていない時も今までどおり', !('patchCalendar' in JSON.parse(SAMPLE_SRC)) && run(good()).ok);
   }
 
+  console.log('— G. 事故報告書の紙だけの事業所名・所在地（accidentReport）は画面と同じ決まりで止める（代表者の決定 2026-11-28） —');
+  {
+    const withAr = (v) => { const p = good(); p.accidentReport = v; return run(p); };
+    const okCases = [
+      ['名前と所在地を3つとも', { officeNames: { 施設: '見本ホーム事業所', 訪問: '見本ヘルパー事業所', 通所: '見本デイ事業所' }, officeAddresses: { 施設: '見本町１－２－３', 訪問: '見本町１－２－３', 通所: '見本町１－２－３' } }],
+      ['名前を1つだけ', { officeNames: { 施設: '見本ホーム事業所' } }],
+      ['所在地だけ（前後の空白は除いて数える）', { officeAddresses: { 通所: '  見本町１－２－３ ' } }],
+      ['中身が空の塊', {}],
+    ];
+    for (const [n, v] of okCases) { const r = withAr(v); t('OK: ' + n, r.ok, r.errors); }
+    const ngCases = [
+      ['塊でない（文字）', '見本', /^accidentReport：/],
+      ['塊でない（一覧）', [1], /^accidentReport：/],
+      ['null', null, /^accidentReport：/],
+      ['知らない項目', { officeTel: {} }, /^accidentReport：知らない項目/],
+      ['officeNames が塊でない', { officeNames: '見本' }, /^accidentReport\.officeNames：/],
+      ['知らない kind', { officeNames: { 居宅: '見本居宅' } }, /^accidentReport\.officeNames：知らない鍵/],
+      ['名前が61字', { officeNames: { 施設: 'あ'.repeat(61) } }, /^accidentReport\.officeNames\.施設：/],
+      ['所在地が81字', { officeAddresses: { 施設: 'あ'.repeat(81) } }, /^accidentReport\.officeAddresses\.施設：/],
+      ['空白だけ', { officeNames: { 訪問: '　 ' } }, /^accidentReport\.officeNames\.訪問：/],
+      ['改行', { officeNames: { 訪問: '見本\n事業所' } }, /^accidentReport\.officeNames\.訪問：/],
+      ['< がある', { officeAddresses: { 通所: '見本<町' } }, /^accidentReport\.officeAddresses\.通所：/],
+      ['{ がある', { officeNames: { 通所: '見本{事業所' } }, /^accidentReport\.officeNames\.通所：/],
+      ['文字でない', { officeNames: { 施設: 5 } }, /^accidentReport\.officeNames\.施設：/],
+    ];
+    for (const [n, v, re] of ngCases) { const r = withAr(v); t('NG: ' + n, !r.ok && has(r, re), r.errors); }
+    t('崩れた鍵だけを NG にする（ほかの鍵は数えない）', (() => { const r = withAr({ officeNames: { 施設: '見本ホーム事業所', 訪問: 'あ'.repeat(61) } }); return !r.ok && r.errors.length === 1; })());
+    t('offices に無い kind の鍵は NG', (() => { const p = good(); p.offices = p.offices.filter((o) => o.kind !== '通所'); p.accidentReport = { officeNames: { 通所: '見本デイ事業所' } }; const r = run(p); return has(r, /^accidentReport\.officeNames\.通所：.*offices にありません/); })());
+    t('鍵と値を取り違えても NG の文に名前を出さない', (() => { const r = withAr({ officeNames: { '試験の丘ホーム': '施設' }, ['試験の丘']: {} }); return !r.ok && leaks(r.errors).length === 0 && r.errors.length === 2; })(), (() => { const r = withAr({ officeNames: { '試験の丘ホーム': '施設' }, ['試験の丘']: {} }); return r.errors.length; })());
+    t('NG の文に値を出さない', (() => { const r = withAr({ officeNames: { 施設: '試験の丘' + 'あ'.repeat(60) } }); return !r.ok && leaks(r.errors).length === 0; })());
+    t('見本（facility-profile.sample.json）に accidentReport を書いていない時も今までどおり', !('accidentReport' in JSON.parse(SAMPLE_SRC)) && run(good()).ok);
+  }
+
   console.log('— E. 公開の手順も同じ道具を呼ぶ —');
   const Y = read('.github/workflows/pages.yml');
   t('pages.yml は facility-secret-check.mjs を --github で呼び、別の判定を持たない', /node check\/facility-secret-check\.mjs --github facility-profile\.json/.test(Y) && !/json\.load\(open\('facility-profile\.json'/.test(Y));

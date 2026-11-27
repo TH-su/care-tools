@@ -210,5 +210,69 @@ t('検索（名前・ふりがな・居室）・退居の方は出さない', C.
 t('医療機関の候補（名前の重なりは1つ）', C.hospitalChoices([{ name: '見本病院', tel: '000' }, { name: '見本病院', tel: '111' }, { name: '' }]).length === 1);
 t('端末に残すのは決まった値だけ（入力／紙の見た目）', C.pickPane('paper') === 'paper' && C.pickPane('<x>') === 'form' && C.pickPane(null) === 'form');
 
+group('10. 施設情報の事故報告書の表記（accidentReport・代表者の決定 2026-11-28）');
+{
+  const esc = C.esc;
+  const withAr = (ar) => Object.assign(JSON.parse(JSON.stringify(FAC)), { accidentReport: ar });
+  const N3 = { 施設: '見本ホーム事業所', 訪問: '見本ヘルパー事業所', 通所: '見本デイ事業所' };
+  const A3 = { 施設: '見本町１－２－３', 訪問: '見本町４－５－６', 通所: '見本町７－８－９' };
+  const base = C.facOf(FAC);
+  t('塊なし＝今と同じ（formalName・address）', JSON.stringify(C.facOf(FAC, null)) === JSON.stringify(base) && JSON.stringify(C.facOf(FAC, undefined)) === JSON.stringify(base)
+    && base.offices['施設'].name === FAC.offices[0].formalName && base.offices['施設'].address === FAC.offices[0].address);
+  t('塊が object でない（文字・一覧・数）＝今と同じ', ['見本', [1, 2], 5, true].every((v) => JSON.stringify(C.facOf(FAC, v)) === JSON.stringify(base)));
+  const f3 = C.facOf(FAC, { officeNames: N3, officeAddresses: A3 });
+  t('3つとも指定 → 名前と所在地が様式の書き方になる', C.OFFICE_KINDS.every((k) => f3.offices[k].name === N3[k] && f3.offices[k].address === A3[k]), f3.offices);
+  t('事業所番号・法人名・市区町村は変えない', C.OFFICE_KINDS.every((k) => f3.offices[k].officeNo === base.offices[k].officeNo) && f3.corpName === base.corpName && f3.municipality === base.municipality);
+  t('施設情報そのものに accidentReport があれば読む（省いた時）', JSON.stringify(C.facOf(withAr({ officeNames: N3, officeAddresses: A3 }))) === JSON.stringify(f3));
+  t('第2引数があれば施設情報の中の accidentReport より第2引数（section の写し）を使う', C.facOf(withAr({ officeNames: N3 }), null).offices['施設'].name === base.offices['施設'].name);
+  const f1 = C.facOf(FAC, { officeNames: { 訪問: '  見本ヘルパー事業所 ' } });
+  t('1つだけ指定 → その事業所の名前だけ（前後の空白は除く）・ほかと所在地は今のまま', f1.offices['訪問'].name === '見本ヘルパー事業所' && f1.offices['施設'].name === base.offices['施設'].name
+    && f1.offices['通所'].name === base.offices['通所'].name && C.OFFICE_KINDS.every((k) => f1.offices[k].address === base.offices[k].address));
+  const bad = { officeNames: { 施設: 'あ'.repeat(61), 訪問: '', 通所: '見本デイ事業所' }, officeAddresses: { 施設: '見本\n町', 訪問: 5, 通所: '見本<町' } };
+  const fb = C.facOf(FAC, bad);
+  t('崩れた鍵（長すぎ・空・改行・< ・文字でない）は捨ててほかは効く', fb.offices['通所'].name === '見本デイ事業所' && fb.offices['施設'].name === base.offices['施設'].name && fb.offices['訪問'].name === base.offices['訪問'].name
+    && C.OFFICE_KINDS.every((k) => fb.offices[k].address === base.offices[k].address), fb.offices);
+  t('60字・80字ちょうどは使う・61字・81字は捨てる', C.facOf(FAC, { officeNames: { 施設: 'あ'.repeat(60) } }).offices['施設'].name === 'あ'.repeat(60)
+    && C.facOf(FAC, { officeAddresses: { 施設: 'い'.repeat(80) } }).offices['施設'].address === 'い'.repeat(80)
+    && C.facOf(FAC, { officeAddresses: { 施設: 'い'.repeat(81) } }).offices['施設'].address === base.offices['施設'].address);
+  t('{ } > と制御文字（タブ）も捨てる', ['見本{', '見本}', '見本>', '見本\t事業所'].every((v) => C.facOf(FAC, { officeNames: { 施設: v } }).offices['施設'].name === base.offices['施設'].name));
+  t('officeNames・officeAddresses が object でない時はその塊だけ捨てる', C.facOf(FAC, { officeNames: '見本', officeAddresses: { 施設: '見本町１－２－３' } }).offices['施設'].address === '見本町１－２－３');
+  const noDay = JSON.parse(JSON.stringify(FAC)); noDay.offices = noDay.offices.filter((o) => o.kind !== '通所');
+  const fn = C.facOf(noDay, { officeNames: { 通所: '見本デイ事業所', 施設: '見本ホーム事業所', 居宅: '見本居宅' } });
+  t('offices に無い kind・知らない kind は捨てる', fn.offices['通所'].name === '' && fn.offices['施設'].name === '見本ホーム事業所' && !('居宅' in fn.offices));
+  const lb = C.accidentLabelsOf(bad, FAC.offices);
+  t('捨てた理由は場所と理由だけ（値を持たない）', lb.bad.length === 5 && lb.bad.every((b) => /^accidentReport\.office(Names|Addresses)\.(施設|訪問|通所)$/.test(b.where) && b.why.indexOf('あああ') < 0 && b.why.indexOf('見本') < 0), lb.bad);
+  t('名前の無い事業所（get() が空で埋めた種類）は無いのと同じ', C.facOf({ offices: [{ kind: '施設', formalName: '見本ホーム', address: '' }, { kind: '通所', name: '', formalName: '', address: '' }] }, { officeNames: { 通所: '見本デイ事業所' } }).offices['通所'].name === '');
+  t('塊なしは理由も無い', C.accidentLabelsOf(undefined, FAC.offices).bad.length === 0 && C.accidentLabelsOf(null, FAC.offices).bad.length === 0);
+
+  /* 事業所を選んだ時・入居者を選んだ時に入る所在地 */
+  let d = C.blankData(), pv = d.offices.slice();
+  d = C.toggle(d, 'offices', '訪問'); d = C.linkOffices(d, pv, f3);
+  t('事業所を選んだ時の所在地は様式の書き方・事業所番号は offices のまま', d.officeAddress === A3['訪問'] && d.officeNo === FAC.offices[1].officeNo);
+  const fr = C.fromResident(C.blankData(), REC, f3, '2026-11-28');
+  t('入居者を選んだ時の所在地は様式の書き方（施設）・法人名は今のまま', fr.data.officeAddress === A3['施設'] && fr.data.corpName === base.corpName && fr.data.offices.join() === '施設');
+  const frRaw = C.fromResident(C.blankData(), REC, withAr({ officeAddresses: { 施設: '見本町１－２－３' } }), '2026-11-28');
+  t('施設情報そのものを渡しても所在地は様式の書き方', frRaw.data.officeAddress === '見本町１－２－３');
+
+  /* 保存の写し */
+  const rep = C.blankReport({ id: 'K001', name: '架空 花子' }, '2026-11-28');
+  rep.data = fr.data;
+  const sv = C.toSave(rep, f3);
+  t('保存の時に写す officeNames は様式の書き方（施設・訪問・通所の順）', JSON.stringify(sv.data.officeNames) === JSON.stringify([N3['施設'], N3['訪問'], N3['通所']]), sv.data.officeNames);
+  t('塊なしの保存の写しは今と同じ（formalName）', JSON.stringify(C.toSave(rep, FAC).data.officeNames) === JSON.stringify(FAC.offices.map((o) => o.formalName)));
+  /* 保存済みの報告は写しのまま（後で施設情報を変えても追従しない） */
+  const opened = C.fromRow({ id: 'r1', rev: 1, report_kind: 'first', data: C.toSave(rep, FAC).data });
+  const ph = C.paperHtml({ data: opened.data, kind: 'first', no: '', submit: '', fac: f3, over: {} });
+  t('保存済みの報告を開くと、紙は保存した時の名前・所在地のまま（今の施設情報の書き方に変えない）', ph.indexOf(esc(FAC.offices[0].formalName)) >= 0 && ph.indexOf(N3['施設']) < 0 && opened.data.officeAddress === A3['施設']);
+  /* 紙の HTML */
+  const nd = C.blankData(); nd.offices = ['訪問'];
+  const p3 = C.paperHtml({ data: nd, kind: 'first', no: '', submit: '', fac: f3, over: {} });
+  t('紙の事業所（施設）名の並びに指定した名前が出る（丸は選んだ事業所）', C.OFFICE_KINDS.every((k) => p3.indexOf('aria-label="事業所：' + N3[k] + '"') >= 0) && /ar-o ar-on" data-g="offices" data-id="訪問"/.test(p3));
+  const pe = C.paperHtml({ data: C.blankData(), kind: 'first', no: '', submit: '', fac: C.facOf(FAC, { officeNames: { 施設: '見本&"ホーム\'' } }), over: {} });
+  t('指定した名前は紙でエスケープされる', pe.indexOf('見本&amp;&quot;ホーム&#39;') >= 0 && pe.indexOf('見本&"ホーム') < 0);
+  const sh = C.sheetItems(nd, ['offices'], f3);
+  t('別紙に回した時の名前も指定した名前', sh.length === 1 && sh[0].text.indexOf(N3['訪問'] + '（選択）') >= 0);
+}
+
 say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 if (fail) process.exitCode = 1;
