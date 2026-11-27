@@ -1,0 +1,122 @@
+/* su-kp-theme.css — 勤怠管理・給与・打刻・自分の勤怠の色の型「桜鼠と葡萄」（2026-11-27 試し・本人指示「試しに変えてみて」）
+ *
+ * ・読むのは kintai.html・kintai-clock.html・kintai-self.html・payroll.html の4画面だけ（各画面の CSS の最後に1行）。
+ * ・当てるのは画面だけ。全部 @media screen の中に置き、印刷の紙は変えない。
+ * ・変えるのは色と角の丸みだけ。文字の大きさ・書体・部品の並び・文言・動きは変えない。線は今ある枠の色を変えるだけで、枠の太さは足さない。
+ * ・色は各画面が持つ色の名前（--ink・--sub・--line・--ok・--wk・--warn・--focus …）を置き換えて当てる。
+ *   部品の決まり（次に押す1つだけ塗る・「なし」の1行の箱・手順の段・iPhone の幅の2行の一覧）は su-office.css のまま効く。
+ * ・各画面の <style> と su-theme.css の後に効くよう、:root を重ねて1段強く書く（kintai-self.html は data-su-theme が無いので別の塊）。
+ * ・明るい表示と暗い表示は prefers-color-scheme で分ける（暗い表示は案に無いので、同じ色相で作った仮置き）。
+ * ・文字と地の差は 7:1 以上（案の値で足りない組は、同じ色相のまま濃く（暗い表示は明るく）した）。
+ * ・色の役: 葡萄＝ふつう・主な操作・打刻の出勤／藍＝出勤中（管理画面）／茶橙＝注意・退勤／灰＝終わった物（確認済み・なし・承認済み）／青緑＝休暇の種類（自分の勤怠）／赤＝要対応（今のまま）
+ */
+
+/* ───────── 明るい表示 ───────── */
+@media screen and (not (prefers-color-scheme: dark)) {
+  /* 勤怠管理・給与・打刻（data-su-theme の3画面） */
+  :root:root:root[data-su-theme] {
+    --bg: #f8f3f2; --card: #ffffff; --field: #ffffff; --th: #faf6f6; --tag: #f2ebeb; --skel: #ecdfdf;
+    --line: #e3d3d6;
+    --ink: #2b1f24; --sub: #584b51; --muted: #584b51;
+    --focus: #8a4055; --pri-tx: #ffffff; --pri: #8a4055;
+    /* 出勤中（wk）は藍。画面の説明の文「青＝出勤中」と色を合わせる（文は画面の JS にあり変えない） */
+    --wk: #3f4975; --wk-bg: #e5e8f4; --kp-grape-l: #f4e3e8;
+    --ok: #584b51; --ok-bg: #f2ebeb;
+    --warn: #773e12; --warn-bg: #f9e8d6;
+    --ng: #8f0c0c; --ng-bg: #fdecea;
+    --toast: #2b1f24; --toast-tx: #ffffff;
+    /* 打刻の画面: 出勤＝葡萄・退勤＝茶橙（白い字 7:1 以上） */
+    --fill-in: #8a4055; --fill-out: #894715;
+    --in: #773749; --in-bg: #f4e3e8; --out: #773e12; --out-bg: #f9e8d6;
+    --press: #f2ebeb; --sug: rgba(138, 64, 85, .35);
+    /* 型（su-theme.css）の色の名前: 初回の案内の帯・覆いの画面などを同じ葡萄の系統にする */
+    --su-ink: #773749; --su-ink2: #584b51; --su-paper: #f8f3f2; --su-line: #e3d3d6; --su-ink-l: #f4e3e8;
+  }
+  :root:root:root[data-su-theme] .void { color: #584b51; }
+  :root:root:root[data-su-theme] dialog::backdrop { background: rgba(43, 31, 36, .4); }
+  :root:root:root[data-su-theme] .keys .k-ok:disabled { background: #b3a3aa; border-color: #b3a3aa; }
+  :root:root:root[data-su-theme] .chip { border-color: #efd2b8; }
+  :root:root:root[data-su-theme] .chip.ng { border-color: #e6a9b2; }
+
+  /* 打刻の見出し: 桜鼠の地に濃い字（白地の札・ボタンの枠は葡萄） */
+  :root:root:root[data-su-theme]:has(#k-body) .hdr { background: #f8f3f2; color: #2b1f24; box-shadow: inset 0 -2px 0 #e3d3d6; }
+  :root:root:root[data-su-theme]:has(#k-body) .hdr-btn { background: #ffffff; color: #2b1f24; border-color: #773749; }
+  :root:root:root[data-su-theme]:has(#k-body) .hdr-btn:hover { background: #f4e3e8; }
+  :root:root:root[data-su-theme]:has(#k-body) .su-shell-role { color: #773749; box-shadow: inset 0 0 0 1px #773749; }
+
+  /* 自分の勤怠（data-su-theme の無い画面） */
+  :root:root:not([data-su-theme]) {
+    --bg: #f8f3f2; --card: #ffffff; --tx: #2b1f24; --mut: #584b51; --line: #e3d3d6;
+    --pri: #773749; --pri-tx: #ffffff; --pri-l: #f4e3e8;
+    --ok: #584b51; --ok-l: #f2ebeb; --ng: #8f0c0c; --ng-l: #fdecea; --warn: #773e12; --warn-l: #f9e8d6;
+    --kp-paid: #27545e; --kp-paid-l: #e3eff1;
+  }
+}
+
+/* ───────── 暗い表示（仮置き・同じ色相で作った） ───────── */
+@media screen and (prefers-color-scheme: dark) {
+  :root:root:root[data-su-theme] {
+    --bg: #181215; --card: #231a1e; --field: #1d1519; --th: #2c2126; --tag: #33282d; --skel: #33282d;
+    --line: #4a3a41;
+    --ink: #f3eaed; --sub: #cdbcc2; --muted: #cdbcc2;
+    --focus: #d99ab0; --pri-tx: #181215; --pri: #7a3a50;
+    --wk: #abb5e1; --wk-bg: #232a45; --kp-grape-l: #3d2230;
+    --ok: #cdbcc2; --ok-bg: #33282d;
+    --warn: #e9ab73; --warn-bg: #3a2716;
+    --ng: #ff9b8a; --ng-bg: #3a1714;
+    --toast: #f3eaed; --toast-tx: #181215;
+    --fill-in: #7a3a50; --fill-out: #7a4015;
+    --in: #dea7ba; --in-bg: #3d2230; --out: #e9ab73; --out-bg: #3a2716;
+    --press: #33282d; --sug: rgba(217, 154, 176, .55);
+  }
+  :root:root:root[data-su-theme] .void { color: #cdbcc2; }
+  :root:root:root[data-su-theme] .keys .k-ok { background: #7a3a50; border-color: #7a3a50; }
+  :root:root:root[data-su-theme] .keys .k-ok:disabled { background: #4a3a41; border-color: #4a3a41; color: #cdbcc2; }
+  :root:root:root[data-su-theme] .off.on { background: #7a3a50; border-color: #7a3a50; }
+  :root:root:root[data-su-theme] .chip { border-color: #6b4a2a; }
+  :root:root:root[data-su-theme] .chip.ng { border-color: #7a3a3a; }
+  :root:root:root[data-su-theme]:has(#k-body) .hdr { background: #231a1e; color: #f3eaed; box-shadow: inset 0 -2px 0 #4a3a41; }
+  :root:root:root[data-su-theme]:has(#k-body) .hdr-btn { background: #231a1e; color: #f3eaed; border-color: #4a3a41; }
+  :root:root:root[data-su-theme]:has(#k-body) .hdr-btn:hover { background: #33282d; }
+
+  :root:root:not([data-su-theme]) {
+    --bg: #181215; --card: #231a1e; --tx: #f3eaed; --mut: #cdbcc2; --line: #4a3a41;
+    --pri: #dea7ba; --pri-tx: #181215; --pri-l: #3d2230;
+    --ok: #cdbcc2; --ok-l: #33282d; --ng: #ff9b8a; --ng-l: #3a1714; --warn: #e9ab73; --warn-l: #3a2716;
+    --kp-paid: #8cc8d4; --kp-paid-l: #16343a;
+  }
+  /* 「不具合を報告」のボタンは白い字のまま読めるよう、暗い表示でも濃い葡萄の地にする（明るい --pri だと白い字が 2:1 になる） */
+  :root:root:not([data-su-theme]) .sur-fab { background: #7a3a50; }
+}
+
+/* ───────── 明暗どちらにも同じ物（色の名前を通すか、明暗で同じ値の物） ───────── */
+@media screen {
+  /* 勤怠管理・給与の見出しの帯: 濃い葡萄の地に白い字（横のメニューは無いので見出しの帯を葡萄の系統にする）。明暗とも同じ */
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .hdr { background: #3a2a31; color: #ffffff; box-shadow: inset 0 -2px 0 #2a1d23; border-bottom-color: #2a1d23; }
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .hdr-btn { background: transparent; color: #f3eaed; border-color: #8c7680; }
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .hdr-btn:hover { background: #56404a; }
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .hdr-btn:focus-visible { outline-color: #ffffff; }
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .hdr .sync { background: #56404a; color: #ffffff; border-color: #56404a; }
+  :root:root:root[data-su-theme]:not(:has(#k-body)) .su-shell-role { background: #56404a; color: #ffffff; box-shadow: none; }
+
+  /* 角の丸み: 箱 14px・札 6px・大きな打刻のボタン 18px（大きさは変えない） */
+  :root:root:root[data-su-theme] .cd,
+  :root:root:root[data-su-theme] .hbox,
+  :root:root:root[data-su-theme] .hnt,
+  :root:root:root[data-su-theme] .hflow,
+  :root:root:root[data-su-theme] .hist,
+  :root:root:root[data-su-theme] .gate,
+  :root:root:root[data-su-theme] dialog { border-radius: 14px; }
+  :root:root:root[data-su-theme] .tag,
+  :root:root:root[data-su-theme] .hbox .hv { border-radius: 6px; }
+  :root:root:root[data-su-theme] #k-kinds .kd { border-radius: 18px; }
+  /* 次に押す物の箱（進み具合）と、押している切り替えのボタンの地は淡い葡萄（枠の葡萄とそろえる・出勤中の藍と分ける） */
+  :root:root:root[data-su-theme] .hflow { background: color-mix(in srgb, var(--kp-grape-l) 60%, var(--card)); }
+  :root:root:root[data-su-theme] .btn[aria-pressed="true"] { background: var(--kp-grape-l); }
+
+  /* 自分の勤怠: 箱 14px・休暇の種類の札は青緑（有給の色）・月の切り替えと札は今のまま */
+  :root:root:not([data-su-theme]) .cd,
+  :root:root:not([data-su-theme]) .day,
+  :root:root:not([data-su-theme]) .nt-box { border-radius: 14px; }
+  :root:root:not([data-su-theme]) .day .tag { background: var(--kp-paid-l); color: var(--kp-paid); border-radius: 6px; }
+}
