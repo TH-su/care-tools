@@ -31,6 +31,8 @@
     { key: 'equip-log', href: 'equip-log.html', ic: '🔧', nm: '設備・修繕の記録', def: { office: true, field: false } },
     /* 受診連絡（2026-11-27 本人指示）。病院あての手紙と受診の結果。処方・病状を扱うので事務所・管理者だけ（現場の端末も止める＝二重） */
     { key: 'hospital-visit', href: 'hospital-visit.html', ic: '🏥', nm: '受診連絡', def: { office: true, field: false } },
+    /* 事故報告書（2026-11-28 本人指示）。行政へ出す事故報告書。入居者の状態・事故の中身を扱うので事務所・管理者だけ（現場の端末も止める＝二重） */
+    { key: 'accident-report', href: 'accident-report.html', ic: '🚑', nm: '事故報告書', def: { office: true, field: false } },
     /* 勤怠管理（2026-11-18 新設）。打刻の画面は現場のタブレットで使うので現場も既定で開ける（データベースが現場に許すのは
        番号で名前を引くことと打刻することだけ）。管理画面（修正・承認・締め・出力）は事務所・管理者だけ */
     { key: 'kintai-clock', href: 'kintai-clock.html', ic: '⏱️', nm: '出勤・退勤の打刻', def: { office: true, field: true } },

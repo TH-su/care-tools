@@ -193,6 +193,9 @@
 !/equip-calc.js
 !/hospital-visit.html
 !/hospital-visit-calc.js
+# 事故報告書の画面と純関数（2026-11-28 本人指示）。コードのみ公開。報告書は共通ログインのデータベース（事務所・管理者だけ）にあり、端末には残さない
+!/accident-report.html
+!/accident-report-calc.js
 # 勤怠管理の画面・打刻の画面・純関数（2026-11-18 本人指示）。コードのみ公開。職員・打刻の記録は共通ログインのデータベースにあり、
 # 端末には UI の状態と、通信できない時の打刻の控え（番号・種類・時刻だけ・名前なし）しか残さない。shift-symbols.js はシフトアプリの記号の解釈の写し
 !/kintai.html
@@ -355,6 +358,7 @@ mailer/.DS_Store
 # 1つずつ名前で足す（*.md でまとめて開けない）。テーマの手元には公開しない内部の決まり（データの約束事・個人情報の扱い）が同じフォルダにあるため（2026-11-22）
 !/.claude/rules
 /.claude/rules/*
+!/.claude/rules/accident-report.md
 !/.claude/rules/accounts.md
 !/.claude/rules/admission.md
 !/.claude/rules/ats.md
