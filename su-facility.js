@@ -54,6 +54,7 @@
     residenceFees: function (p) { return p.residenceFees; },                                           /* 入居者マスタの収支の見通しの施設の利用料（介護度ごとの月額・2026-11-07） */
     patchCalendar: function (p) { return p.patchCalendar; },                                           /* 貼り薬カレンダーの薬の名前と貼る場所（2026-11-13） */
     rateDefaults: function (p) { return p.rateDefaults; },                                             /* 週間計画の単位単価の既定（地域区分の単価・端末に保存の無い時だけ・2026-11-13） */
+    accidentReport: function (p) { return p.accidentReport; },                                         /* 事故報告書の紙だけの事業所名・所在地の書き方（2026-11-28） */
     daycareDays: function (p) {                                                                        /* デイ利用表の曜日の列（通所の事業所の営業曜日 days・2026-11-14 第6段 K5） */
       for (var i = 0; i < p.offices.length; i++) if (p.offices[i] && p.offices[i].kind === '通所') return p.offices[i].days;
       return null;
