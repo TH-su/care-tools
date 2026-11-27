@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-TrGMTgsfMvVnAImrglKCrJl3oRJ2TK0toNfqWTA9otM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G6QCT1zOBL31/Ti+RmJMYJXtrsNSL38eRW4377zR67c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -18,7 +18,7 @@
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="hospital-visit-calc.js?v=2026-11-28"></script>
+<script src="hospital-visit-calc.js?v=2026-11-28.2"></script>
 <style>
 /* 受診連絡（2026-11-27 本人指示）。色は勤怠管理・給与の画面と同じ「グレージュ＋ピンク」（2026-11-28 本人指示「勤怠管理・給与アプリの色に合わせよ」・
    値は勤怠管理・給与の見た目の部品（明るい表示）の値と同じ・その部品は読まずに値だけを写す）。ライト固定。
@@ -309,7 +309,8 @@ body.sur-has-fab .foot{padding-right:150px}
 /* 受診連絡（2026-11-27 本人指示）。
    ・保存先は共通 DB だけ（統合 0137 の hv_*）。Google（GAS）は使わない。入居者の名簿と医療の欄（病院・主治医・定期薬）は
      入居者マスタから SUResRead で読む（新しい保存先へ切り替えた後・事務所・管理者のログイン）。読んだ中身は端末に残さない
-   ・端末に残すのは開いていたタブ（左・右）だけ（hv_ltab・hv_rtab・決まった値だけ）
+   ・端末に残すのは開いていたタブ（左・右・hv_ltab・hv_rtab・決まった値だけ）と、メニューの札の件数（hv_menu_due・結果がまだの受診の件数と数えた日だけ・
+     氏名・利用者No・病院名は入れない・一覧を読めた時だけ書く・2026-11-28 本人「推奨」）
    ・入居者を切り替えた瞬間に世代（gen）を上げ、遅れて届いた応答は捨てる（取り違えの守り・CLAUDE.md §2-5）
    ・外部の AI へは何も送らない。手紙の文に自動の文言を足さない（定型文は設定が正） */
 var C=window.HospitalVisitCalc;
@@ -415,7 +416,7 @@ function loadHome_(){
   var pList=rpc_('hv_list',{p_resident:null}).then(function(d){
     if(my!==gen) return;
     if(!d||d.ok!==true) throw {hvText:'受診の一覧を読めませんでした。読み直してください。'};
-    recent=Array.isArray(d.visits)?d.visits:[]; takeShared_(d); dbState='ok';
+    recent=Array.isArray(d.visits)?d.visits:[]; takeShared_(d); dbState='ok'; writeMenuDue_();
   });
   var pRos=resRead_({action:'getRoster'}).then(function(d){
     if(my!==gen) return;
@@ -729,7 +730,13 @@ function showConflict_(row){
 function clearConflict_(){ showConflict_.row=null; var rb=$('h-reload'); if(rb) rb.remove(); }
 function refreshRecent_(){
   var my=gen;
-  rpc_('hv_list',{p_resident:null}).then(function(d){ if(my!==gen||!d||d.ok!==true) return; recent=Array.isArray(d.visits)?d.visits:[]; }).catch(function(e){ note_('一覧の読み直し',e); });
+  rpc_('hv_list',{p_resident:null}).then(function(d){ if(!d||d.ok!==true) return; recent=Array.isArray(d.visits)?d.visits:[]; writeMenuDue_(); }).catch(function(e){ note_('一覧の読み直し',e); });
+}
+/* メニューのタイルの札（結果まだn）の件数を端末に残す。一覧を読めた時だけ（読めない時は前の件数を0件で上書きしない）・現場の端末では書かない */
+function writeMenuDue_(){
+  if(isField()) return;
+  var v=C.menuDue(recent,C.todayJST()); if(!v) return;
+  try{ if(localStorage.getItem(C.MENU_DUE_KEY)!==v) localStorage.setItem(C.MENU_DUE_KEY,v); }catch(e){ /* 私用モードなど・札が出ないだけ */ }
 }
 function cancelVisit_(){
   if(!draft||!draft.id) return;

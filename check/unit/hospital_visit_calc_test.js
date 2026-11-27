@@ -87,7 +87,12 @@ t('本文はエスケープ（画面に入る外の値）', h.indexOf('<script>'
 t('日付と署名（施設の呼び名と設定の名前）', h.indexOf('2026年11月17日') > 0 && h.indexOf('<p>架空ホーム</p>') > 0 && h.indexOf('施設長　架空') > 0);
 t('医師名が無い時は文を足さない', C.letterHtml({ resident_name: 'x' }, {}, '').indexOf('<span class="hl-doc">御机下</span>') > 0);
 
-group('8. 画面の状態');
+group('8. メニューの札');
+const md = JSON.parse(C.menuDue([{ id: 'a', has_result: false }, { id: 'b', has_result: true }, { id: 'c', result1: '' }, null], '2026-11-28'));
+t('結果まだの件数と数えた日だけ（氏名・番号・病院名を入れない）', md.v === 1 && md.at === '2026-11-28' && md.hv === true && md.wait === 2 && Object.keys(md).length === 4);
+t('日付の形が違う・一覧でない時は書かない', C.menuDue([], '2026/11/28') === null && C.menuDue(null, '2026-11-28') === null && C.MENU_DUE_KEY === 'hv_menu_due');
+
+group('9. 画面の状態');
 t('タブは決まった値だけ', C.pickTab('meds', C.LEFT_TABS, 'prev') === 'meds' && C.pickTab('x', C.LEFT_TABS, 'prev') === 'prev' && C.pickTab('paper', C.RIGHT_TABS, 'letter') === 'paper');
 
 say('\n合格 ' + pass + ' / 不合格 ' + fail);

@@ -14,7 +14,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-11-27';
+  var VERSION = '2026-11-28';
   var MAX = { letter_body: 8000, result_body: 8000, result_note: 4000, added_med_note: 200, hospital_name: 80, dept: 40, doctor: 60,
               visit_kind: 20, result1: 20, result2: 20, letter_title: 40, resident_name: 60 };
 
@@ -255,6 +255,16 @@
       '</div>';
   }
 
+  /* メニューのタイルの札の中身（hv_menu_due・ほかの札と同じ形）。件数と数えた日だけ {"v":1,"at":"YYYY-MM-DD","hv":true,"wait":n}。
+     数えるのは一覧（取り消しを除く）のうち結果がまだの受診。氏名・利用者No・病院名は入れない。日付の形が違う・一覧が配列でない時は null（書かない） */
+  function menuDue(visits, today) {
+    if (!Array.isArray(visits) || !isIso(today)) return null;
+    var n = 0;
+    for (var i = 0; i < visits.length; i++) if (visits[i] && !hasResult(visits[i])) n++;
+    if (n > 9999) n = 9999;
+    return JSON.stringify({ v: 1, at: String(today), hv: true, wait: n });
+  }
+
   /* 画面の状態（端末に残すのは開いていたタブだけ）。決まった値だけを受ける */
   var LEFT_TABS = ['prev', 'meds'], RIGHT_TABS = ['letter', 'result', 'paper'];
   function pickTab(v, list, def) { return list.indexOf(v) >= 0 ? v : def; }
@@ -265,7 +275,7 @@
     todayJST: todayJST, hasResult: hasResult, sortVisits: sortVisits, prevVisitFor: prevVisitFor, medLines: medLines, medsBlock: medsBlock,
     resultStarter: resultStarter, letterStarter: letterStarter, letterIndent: letterIndent, medDiff: medDiff, splitBeforeAfter: splitBeforeAfter,
     searchResidents: searchResidents, hospitalChoices: hospitalChoices, checkVisit: checkVisit, toSave: toSave, sameDraft: sameDraft,
-    blankVisit: blankVisit, fromRow: fromRow, letterHtml: letterHtml, pickTab: pickTab
+    blankVisit: blankVisit, fromRow: fromRow, letterHtml: letterHtml, pickTab: pickTab, menuDue: menuDue, MENU_DUE_KEY: 'hv_menu_due'
   };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.HospitalVisitCalc = api;
