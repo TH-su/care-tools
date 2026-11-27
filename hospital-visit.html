@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-2PRn3hXYEC25KH/AoOzSkaPsS5KoSlsGu7TMnSUnAJQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-AzCXNSOI2beuzN31gFx8DwYK7W2EACIn7HgUCk2zqDo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -396,7 +396,16 @@ function startApp_(){
   ltab=C.pickTab(lsGet(LS_L),C.LEFT_TABS,'prev'); rtab=C.pickTab(lsGet(LS_R),C.RIGHT_TABS,'letter');
   showHome_();
   try{ if(window.SUPerf) window.SUPerf.ready(); }catch(e){ note_('速さの記録', e); }
-  return loadHome_().then(function(){ return 'app'; });
+  return loadHome_().then(function(){ openFromUrl_(); return 'app'; });
+}
+/* 入居者マスタの「受診連絡を開く」（?resident=<利用者No>）。番号は形を確かめ、名簿にいる方だけを開く。名前は URL から受けない */
+function openFromUrl_(){
+  var id='';
+  try{ id=new URLSearchParams(location.search).get('resident')||''; }catch(e){ id=''; }
+  if(!/^[0-9A-Za-z_-]{1,32}$/.test(id)) return;
+  var hit=false; roster.forEach(function(r){ if(r.id===id) hit=true; });
+  if(!hit){ setMsg('h-msg','入居者マスタから渡された方が名簿に見つかりませんでした。下の一覧から選んでください。'); return; }
+  pickResident_(id);
 }
 /* 名簿と最近の受診（病院の台帳・設定も）を読む */
 function loadHome_(){
