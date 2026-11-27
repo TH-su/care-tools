@@ -101,11 +101,16 @@
       (d.entered.length ? '<details><summary>入った行（' + esc(d.entered.length) + '）</summary><ul>' + d.entered.map(line).join('') + '</ul></details>' : '') +
       (d.missed.length ? '<p>入らなかった行</p><ul>' + d.missed.map(line).join('') + '</ul>' : '') + '入らなかった行は、直してから「累計に入れる」をもう一度押してください（下の数は入らなかった行だけ）。</div>';
   }
+  /* ファイルの欄は給与の画面が描き直しで作り直さない形（ctx.fileSlot・2026-11-27）で置く。ctx に無い時だけ今までの欄 */
+  function fileSlot(ctx, id, multiple) {
+    if (typeof ctx.fileSlot === 'function') return ctx.fileSlot(id, multiple, true);
+    return '<input type="file" id="' + ctx.esc(id) + '" accept=".csv,text/csv"' + (multiple ? ' multiple' : '') + ' style="max-width:100%">';
+  }
   function importHtml(ctx, year) {
     var esc = ctx.esc, yen = ctx.yen;
     var h = '<div class="cd"><h2>freee の明細を取り込む（1〜11月の累計）</h2><p class="help">freee から書き出した月ごとの給与・賞与の明細の CSV を選びます（いくつでも）。画面の中だけで読み、「累計に入れる」を押すまでデータベースは変わりません。ファイルはどこにも保存しません。★CSV の見出しは、事務担当が書き出した実物でまだ確かめていません（未検証）。</p>';
     h += '<div class="row"><label for="ye-kind">種類</label><select id="ye-kind"><option value="">ファイルの見出しで決める</option><option value="salary">給与</option><option value="bonus">賞与</option></select>' +
-      '<label for="ye-files">CSV のファイル</label><input type="file" id="ye-files" accept=".csv,text/csv" multiple style="max-width:100%">' +
+      '<label for="ye-files">CSV のファイル</label>' + fileSlot(ctx, 'ye-files', true) +
       '<button type="button" class="btn" data-act="ye-manual">＋ 累計に1回分を手で足す</button></div>';
     if (S.impErr) h += '<div class="band ng" role="alert">' + esc(S.impErr) + '</div>';
     var im = S.imp;
@@ -138,7 +143,7 @@
   function compareHtml(ctx) {
     var esc = ctx.esc, yen = ctx.yen;
     var h = '<div class="cd"><h2>freee と比べる（' + esc(ymText(ctx.ym)) + '）</h2><p class="help">freee から書き出したこの月分の給与の明細の CSV を選ぶと、この画面の今の計算（下書きでも確定でも）と人×項目で比べます。自社の明細に「所得税の精算」（年末調整の還付・追徴）がある時は、それを除いた控除の合計・差引で比べ、精算の額は別の列に出します（freee では年末調整をしないため・差の数に入れません）。</p>';
-    h += '<div class="row"><label for="ye-cmpfile">この月分の CSV</label><input type="file" id="ye-cmpfile" accept=".csv,text/csv" style="max-width:100%"></div>';
+    h += '<div class="row"><label for="ye-cmpfile">この月分の CSV</label>' + fileSlot(ctx, 'ye-cmpfile', false) + '</div>';
     if (S.cmpErr) h += '<div class="band ng" role="alert">' + esc(S.cmpErr) + '</div>';
     var c = S.cmp;
     if (!c || c.ym !== ctx.ym) return h + '</div>';

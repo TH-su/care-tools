@@ -141,6 +141,19 @@ const waitApp = async (page) => {
   await page.waitForFunction(() => !document.getElementById('p-app').hidden && !document.querySelector('#p-main .skel'), null, { timeout: 15000 });
   await page.waitForLoadState('networkidle').catch(() => {});
 };
+/* ファイルを選ぶ窓を開いたまま画面を描き直させ、その後に選ぶ（人の手順の写し・2026-11-27）。
+   窓を開いた後に #p-main へ印を1つ置き、描き直し（repaint）で印が消えた＝#p-main が作り直されたのを確かめてから、落ち着くのを待って選ぶ。
+   選んだ物は、窓を開いた時の欄に入る（Playwright の filechooser）。前の画面は描き直すたびに欄を作り直していたので、ここで選んだ物が画面に届かなかった */
+const pickAcross = async (page, sel, files, repaint) => {
+  const [ch] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10000 }), page.click(sel)]);
+  await page.evaluate(() => { const x = document.createElement('i'); x.hidden = true; x.setAttribute('data-e2e-old', '1'); document.getElementById('p-main').appendChild(x); });
+  await repaint();
+  await page.waitForFunction(() => !document.querySelector('#p-main [data-e2e-old]'), null, { timeout: 10000 });
+  await settle(page);
+  await ch.setFiles(files);
+};
+/* 条件が満たされたかを真偽で返す（満たされなければ t の失敗に数える。時間切れで場面を止めない） */
+const seen = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 10000 }).then(() => true, () => false);
 
 /* ── 1. 計算→下書き保存→確定 ── */
 console.log('\n— 1. 計算 → 下書き保存 → 確定 —');
@@ -768,6 +781,44 @@ for (const [nm, vp, dark] of [['yearend.ph', { width: 390, height: 844 }, false]
 }
 });
 
+/* ── ファイルを選ぶ窓を開いている間に描き直されても、選んだファイルが届く（2026-11-27）: 職員の給与設定・年末調整の取り込みと比べる ── */
+console.log('\n— ファイルを選ぶ窓を開いている間の描き直し —');
+await scene_('ファイルを選ぶ窓を開いている間の描き直し（職員の給与設定・年末調整）', async () => {
+  const csvF = '従業員番号,氏名,給与形態,基本給\r\nF-1,見本 一郎,月給,245000\r\n';
+  const o = await open({ tab: 'profile', start: 'confirmed' });
+  const p = o.page;
+  await waitApp(p); await settle(p);
+  await pickAcross(p, '#i-file', { name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csvF, 'utf8') }, () => p.click('#p-reload'));
+  t('職員の給与設定（#i-file）: 窓を開いている間に読み直しても、選んだ CSV の取り込みの表が出る', await seen(p, () => !!document.querySelector('[data-act="imp-go"]')));
+  t('職員の給与設定: 選んだ後は欄が空（前のファイルの名前を残さない）・欄は1つだけ', await p.inputValue('#i-file') === '' && await p.evaluate(() => document.querySelectorAll('#i-file').length === 1));
+  if (await p.$('[data-act="imp-cancel"]')) { await p.click('[data-act="imp-cancel"]'); await settle(p); }   /* 表が出なかった時（直す前の画面）も後の欄を確かめる */
+  t('職員の給与設定: やめると取り込みの表が消える', !(await p.$('[data-act="imp-go"]')));
+  /* 年末調整のタブ: 累計の取り込み（#ye-files・いくつでも）と freee と比べる（#ye-cmpfile） */
+  await p.click('[data-tab="yearend"]');
+  await p.waitForFunction(() => /職員ごとの累計と年末調整/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
+  await settle(p);
+  t('年末調整: 累計の取り込みの欄は「いくつでも」選べる・CSV だけ', await p.evaluate(() => { const f = document.getElementById('ye-files'); return f.multiple && f.accept === '.csv,text/csv' && document.querySelector('label[for="ye-files"]').textContent === 'CSV のファイル'; }));
+  const csvY = '\ufeff氏名,支給日,総支給額,課税支給額,健康保険料,厚生年金保険料,雇用保険料,所得税\r\n見本 一郎,2026/03/25,"250,000","242,000","13,000","23,790","1,375","5,130"\r\n';
+  await pickAcross(p, '#ye-files', [{ name: 'freee-2026-03.csv', mimeType: 'text/csv', buffer: Buffer.from(csvY, 'utf8') }], () => p.click('#p-reload'));
+  t('年末調整の累計の取り込み（#ye-files）: 窓を開いている間に読み直しても、選んだ CSV の下見が出る', await seen(p, () => !!document.querySelector('[data-act="ye-imp-go"]')));
+  await pickAcross(p, '#ye-cmpfile', { name: 'other.csv', mimeType: 'text/csv', buffer: Buffer.from('あ,い\r\n1,2\r\n', 'utf8') }, () => p.click('#p-reload'));
+  t('年末調整の freee と比べる（#ye-cmpfile）: 窓を開いている間に読み直しても、選んだ CSV を読む（見出しの読めない CSV の知らせが出る）', await seen(p, () => /読めなかった見出し/.test(document.getElementById('p-main').textContent)));
+  t('年末調整: 選んだ後は2つの欄とも空', await p.inputValue('#ye-files') === '' && await p.inputValue('#ye-cmpfile') === '');
+  /* 欄の無いタブにいる間に届いた選びは使わない（タブを変えた時の今の捨て方のまま） */
+  await p.click('[data-tab="profile"]'); await settle(p);
+  const [ch] = await Promise.all([p.waitForEvent('filechooser', { timeout: 10000 }), p.click('#i-file')]);
+  await p.click('[data-tab="run"]'); await settle(p);
+  await ch.setFiles({ name: 'freee.csv', mimeType: 'text/csv', buffer: Buffer.from(csvF, 'utf8') });
+  await p.click('[data-tab="profile"]'); await settle(p);
+  t('欄の無いタブ（今月の給与）にいる間に選んだファイルは使わない（職員の給与設定へ戻っても取り込みの表は出ない・欄は空）', !(await p.$('[data-act="imp-go"]')) && await p.inputValue('#i-file') === '');
+  t('画面に出ていない欄は隠れた置き場にある（今の画面の欄のほかは見えない）', await p.evaluate(() => [...document.querySelectorAll('input[type=file]')].every((f) => f.closest('#p-main') || (f.closest('[hidden]') && f.getClientRects().length === 0))));
+  await p.emulateMedia({ media: 'print' });
+  t('ファイルの欄は紙に出ない（画面だけ）', await p.evaluate(() => [...document.querySelectorAll('input[type=file]')].every((f) => f.getClientRects().length === 0)));
+  await p.emulateMedia({ media: 'screen' });
+  t('ファイルを選ぶ窓の場面: 画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+});
+
 /* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
 /* 賞与額が空の欄に 0 を入れる・前月の給与の欄を全員「前月の給与なし」にする（代表者の答え 2026-11-23「誰も外さない」で、空の人がいると確定できないため） */
 const fillZero = async (pg, skip = []) => { const ids = await pg.evaluate((sk) => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value && !sk.includes(e.getAttribute('data-bsid'))).map((e) => e.id), skip); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
@@ -898,6 +949,9 @@ await scene_('7. 賞与のタブ', async () => {
   await up(csvB(paid.map((i) => rowOf(i, { date: 'R8.12.24' }))));
   await p.waitForFunction(() => /支給日の読めない行が/.test(document.getElementById('p-main').textContent), null, { timeout: 10000 });
   t('支給日の読めない賞与の CSV（R8.12.24）は比べない（合格の帯を出さない）', !/1円まで一致|差あり/.test(await p.textContent('#p-main')));
+  /* 窓を開いている間に読み直しても、選んだ CSV で比べる（2026-11-27）。読み直しで前の結果は捨てる */
+  await pickAcross(p, '#b-cmpfile', { name: 'bonus.csv', mimeType: 'text/csv', buffer: csvB(paid.map((i) => rowOf(i))) }, () => p.click('#p-reload'));
+  t('賞与の freee と比べる（#b-cmpfile）: 窓を開いている間に読み直しても、選んだ CSV で比べる（「1円まで一致」）・欄は空', await seen(p, () => /1円まで一致/.test(document.getElementById('p-main').textContent)) && await p.inputValue('#b-cmpfile') === '');
   /* freee に登録の無い人（従業員番号 A9 始まり）: CSV に居なくても対象外として別に数え、ほかが全部同じなら合格 */
   const a9 = paid[paid.length - 1];
   o.routes.db.profiles.filter((q) => q.staff_id === a9.staff_id).forEach((q) => { q.data = Object.assign({}, q.data, { freee_emp_num: 'A901' }); });
