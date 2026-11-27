@@ -2366,6 +2366,8 @@ function wire_(){
   window.addEventListener('hashchange',onHash_);
   window.addEventListener('storage',onStorage_);
   window.addEventListener('beforeunload',onBeforeUnload_);
+  /* 戻るで復元した時は storage の知らせが届かないので、現場用に変わっていたら読み込み直して起動時の守りに任せる */
+  window.addEventListener('pageshow',function(e){ try{ if(e&&e.persisted&&isField()) onStorage_({key:DEVICE_KEY,newValue:'field'}); }catch(err){ atsNote_('戻るで復元した時の切り替え', err); } });
   var ev=$('a-evdlg'); if(ev) ev.addEventListener('cancel',onEvCancel_);
   definePrint_();
 }
