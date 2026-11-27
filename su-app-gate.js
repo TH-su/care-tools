@@ -52,7 +52,7 @@
   var SESSION_RE = /^sb-[a-z0-9]+-auth-token$/;
   var V_AUTH = 'su-auth.js?v=2026-11-21';
   var V_SB = 'supabase-js-2.112.4.js';
-  var V_CSS = 'su-app-gate.css?v=2026-10-29';
+  var V_CSS = 'su-app-gate.css?v=2026-11-27';
 
   function appOf(key) { for (var i = 0; i < APPS.length; i++) if (APPS[i].key === key) return APPS[i]; return null; }
   function isBool(v) { return v === true || v === false; }
