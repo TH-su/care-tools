@@ -594,6 +594,29 @@
   function waitBox(title, txt, err) {
     return '<div class="hbox wait"><span class="ht"><span>' + esc(title) + '</span></span><span class="hl">' + esc(txt) + '</span>' + (err ? '<span class="hl"><button type="button" class="btn" data-act="lv-reload">読み直す</button></span>' : '') + '</div>';
   }
+  /* ── ホームの「今日の出勤状況」（2026-11-27・代表者の決定 2026-11-27・文と位置は仮置き）──
+   * 行は kintai-today.js の board（「今日」の箱と同じ数え方を行に分けたもの）。事業所の切り替えは日ごと・月の一覧と同じ officeFilter（画面の中だけ・端末に残さない）。
+   * 行を押すとその日の「日ごと」へ移る（その人の所までは移らない・仮置き）。札は普段と違う状態（遅れ・打刻なし・退勤の打刻なし・要確認）だけ。画面だけで印刷しない */
+  var TDY = window.KintaiToday || null;
+  var TDY_CLS = { working: 'wk', done: 'dn', leave: 'dn', absent: 'dn' };
+  function tdHm(v) { return hm(v).replace(/^0(?=\d:)/, ''); }   /* 一覧は 9:30 の形（頭の0を付けない） */
+  function todayBoardHtml(td) {
+    var bd = TDY.board(month, td, officeFilter);
+    var seg = '<div class="chips" role="group" aria-label="事業所">' + [''].concat(['facility', 'visit', 'day']).map(function (o) {
+      return '<button type="button" class="chip" data-act="tdof" data-o="' + o + '" aria-pressed="' + (officeFilter === o ? 'true' : 'false') + '">' + (o ? esc(officeName(o) || o) : '全部') + '</button>';
+    }).join('') + '</div>';
+    var rows = bd.rows.map(function (r) {
+      var sc = r.scheduled && r.schedStart != null ? tdHm(r.schedStart) + '〜' + (r.nextDay ? '翌' : '') + tdHm(r.schedEnd) : '予定なし';
+      var st = r.unusual ? '<span class="tag rv">' + esc(r.label) + '</span>' : '<span class="tds ' + (TDY_CLS[r.status] || '') + '">' + esc(r.label) + '</span>';
+      if (r.review && !r.unusual) st += '<span class="tag rv">要確認</span>';
+      var inT = r.inAt != null ? tdHm(r.inAt) : '—', outT = r.outAt != null ? tdHm(r.outAt) : '—';
+      return '<li><button type="button" class="tdr' + (r.cont ? ' tdc' : '') + '" data-tab="day" data-tdr="1" data-date="' + esc(r.date) + '">' +
+        '<span class="tdn">' + esc(r.name) + '</span><span class="tdo">' + esc(officeName(r.office)) + '</span>' +
+        '<span class="tdp">' + esc(sc) + (r.prevDay ? '<small>前の日から</small>' : '') + '</span><span class="tdi"><small>出 </small>' + esc(inT) + '</span><span class="tdx"><small>退 </small>' + esc(outT) + '</span><span class="tdt">' + st + '</span><span class="tdbr" aria-hidden="true"></span></button></li>';
+    }).join('');
+    return '<section class="tdb no-print" aria-labelledby="tdb-h"><div class="tdb-hd"><h3 id="tdb-h">今日の出勤状況</h3>' + seg + '</div>' + (bd.total ? '<p class="tdb-help">行を押すと、その日の「日ごと」を開きます。</p>' : '') +
+      (bd.total ? '<div class="tdr tdh" aria-hidden="true"><span class="tdn">氏名</span><span class="tdo">事業所</span><span class="tdp">予定</span><span class="tdi">出勤</span><span class="tdx">退勤</span><span class="tdt">状態</span></div><ul class="tdl">' + rows + '</ul>' : '<p class="tdb-none">なし</p>') + '</section>';
+  }
   function paintHome() {
     var h = '<div class="cd no-print">';
     if (!MON) return h + '<div class="band ng" role="alert">ホームの部品を読み込めませんでした。ページを読み込み直してください。</div></div>';
@@ -614,7 +637,8 @@
       if (b.key === 'today') {
         if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
         var c = b.counts;
-        out.push(ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in')));
+        var tbx = ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in'));
+        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + '</div>' : tbx);   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（予定・勤務の1つごとに1行）。部品が無い時は今の箱だけ */
         return;
       }
       if (b.key === 'a36') {
@@ -3709,9 +3733,11 @@
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       var t = b.getAttribute('data-tab');
+      if (t && b.hasAttribute('data-tdr')) dayFilter = null;   /* ホームの今日の出勤状況の行から移る時だけ、日ごとの札の絞り込みを外す（押した人が見えるように・2026-11-27） */
       if (t) { var td0 = b.getAttribute('data-date'); if (td0 && C.isDate(td0)) selDate = td0; if (b.getAttribute('data-rq') === 'pending') reqF = { status: 'pending', ym: '' }; setTab(t); return; }   /* v5 段5: 申請の箱・締めの画面からは承認待ち・すべての月分で開く */   /* ホームの「今日」の箱は今日の日ごとへ */
       var a = b.getAttribute('data-act');
       if (!a) return;
+      if (a === 'tdof') { var o0 = b.getAttribute('data-o') || ''; officeFilter = ['facility', 'visit', 'day'].indexOf(o0) >= 0 ? o0 : ''; paint(); return; }   /* ホームの今日の出勤状況の事業所（日ごとの絞り込みと同じ・2026-11-27） */
       if (a.indexOf('vw-') === 0) { if (typeof VW !== 'undefined' && VW) VW.act(a, b, vwCtx()); return; }   /* 年別・事業所別・休日（2026-11-25） */
       if (a.indexOf('ct-') === 0) { if ((typeof CT !== 'undefined' && CT)) CT.act(a, b, ctCtx()); return; }   /* 資格の期限（2026-11-25） */
       if (a === 'nt-add') { ntAdd(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-kind'), b); return; }   /* v6: 打刻漏れの知らせ */

@@ -203,6 +203,8 @@
 # 36協定のアラートと管理者のホーム（勤怠モニター）の純関数（2026-11-20・勤怠 v5 の段2・段3）。計算だけで、職員の氏名・時間は含まない
 !/kintai-36.js
 !/kintai-monitor.js
+# ホームの今日の出勤状況（予定・勤務の1つごとに1行）の純関数（2026-11-27）。計算だけで、職員の氏名・時間は含まない
+!/kintai-today.js
 !/kintai-rules.js
 !/kintai-freee-import.js
 !/kintai-extras.js

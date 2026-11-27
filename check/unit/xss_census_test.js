@@ -270,6 +270,7 @@ const CENSUS = {
   "kintai-leave.js": [],   /* v4（2026-11-20）: 有給の純関数（DOM に触れない） */
   "kintai-36.js": [],      /* v5（2026-11-20）: 36協定の判定の純関数（DOM に触れない） */
   "kintai-monitor.js": [], /* v5（2026-11-20）: 管理者のホームの箱の純関数（DOM に触れない） */
+  "kintai-today.js": [],   /* 2026-11-27: ホームの今日の出勤状況（1人1行）の純関数（DOM に触れない） */
   "kintai-rules.js": [],
   "kintai-shaho.js": [],
   "kintai-cert-calc.js": [],   /* 2026-11-25: 資格の失効の警告の純関数（判定・箱・入力の確かめ。DOM に触れない） */

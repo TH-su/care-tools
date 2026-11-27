@@ -23,6 +23,7 @@
 <script src="kintai-ledger.js?v=2026-11-20.2"></script>
 <script src="kintai-36.js?v=2026-11-20"></script>
 <script src="kintai-monitor.js?v=2026-11-20.2"></script>
+<script src="kintai-today.js?v=2026-11-27"></script>
 <script src="kintai-rules.js?v=2026-11-20"></script>
 <script src="kintai-freee-import.js?v=2026-11-23"></script>
 <script src="kintai-extras.js?v=2026-11-25"></script>
@@ -125,6 +126,44 @@ legend{font-weight:600;padding:0 6px}
 .hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
 /* v6: ホームの箱の下の「本人のスマホに知らせる」の並び（画面だけ・状態は文字でも出す＝色だけで伝えない） */
 .hcell{display:grid;gap:6px;align-content:start}
+/* ホームの今日の出勤状況（2026-11-27・画面だけ）。「今日」の箱の升を横いっぱいに広げ、箱のすぐ下に予定・勤務の1つごとに1行で並べる。iPhone の幅（700px 以下）では1人2行 */
+@media screen{
+.tdw{grid-column:1/-1;display:grid;gap:8px;align-content:start}
+/* ホームの箱は例外を先に並べる（su-office.css の order）。今日の升も中の「今日」の箱の色と同じ段に置く */
+:root[data-su-theme] .hgrid > .tdw:has(.hbox.alert){order:-2}:root[data-su-theme] .hgrid > .tdw:has(.hbox.warn){order:-1}:root[data-su-theme] .hgrid > .tdw:has(.hbox.ok){order:1}
+.tdb{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px 4px}
+.tdb-hd{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.tdb-hd h3{font-size:16px;margin:0}
+.tdb-hd .chips{margin:0}
+.tdl{list-style:none;margin:0;padding:0}
+.tdr{display:grid;grid-template-columns:minmax(7em,1.4fr) minmax(4em,.7fr) minmax(9em,1fr) 4.5em 4.5em minmax(8em,1fr);align-items:center;column-gap:12px;width:100%;min-height:44px;padding:6px 6px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.tdr.tdh{min-height:0;padding:2px 6px 4px;border-top:0;font-size:13px;color:var(--muted);cursor:default}
+.tdl .tdr:hover{background:var(--th)}
+.tdr:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+.tdn{font-weight:700;overflow-wrap:anywhere}
+/* 同じ人の2行目から（分けた勤務など）: 名前を薄く・上の線を点線にして、前の行の続きに見せる（仮置き） */
+.tdl .tdr.tdc{border-top-style:dashed}.tdr.tdc .tdn{color:var(--muted);font-weight:400}
+.tdo{color:var(--sub);font-size:15px}
+.tdp,.tdi,.tdx{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tdp small{display:block;font-size:15px;color:var(--muted)}
+.tdbr{display:none}
+/* 出勤・退勤の見出しの語は PC では列の見出しがあるので見せず、読み上げにだけ残す */
+.tdi small,.tdx small{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;font-size:15px}
+.tds{color:var(--sub)}.tds.wk{color:var(--wk);font-weight:700}.tds.dn{color:var(--muted)}
+.tdt{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.tdt .tag{margin:0;font-size:15px;font-weight:700}
+.tdb-none{margin:2px 0 8px;color:var(--sub)}
+.tdb-help{margin:0 0 4px;font-size:15px;color:var(--muted)}
+}
+@media screen and (max-width:700px){
+.tdr.tdh{display:none}
+.tdr{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;padding:8px 2px}
+/* 1行目に名前・事業所・状態、2行目に予定・出勤・退勤 */
+.tdn{order:1;flex:0 1 auto;min-width:0}.tdo{order:2;flex:1 1 auto;min-width:0}.tdt{order:3;margin-left:auto;justify-content:flex-end}.tdbr{display:block;order:4;flex-basis:100%;height:0}
+.tdp{order:5}.tdi{order:6}.tdx{order:7}
+.tdo,.tdp,.tdi,.tdx{font-size:15px;color:var(--sub)}
+.tdp small{display:inline;margin-left:4px}
+.tdi small,.tdx small{position:static;width:auto;height:auto;overflow:visible;clip:auto;display:inline;margin-right:3px;font-size:15px;color:var(--muted)}
+}
 .hnt{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:8px 12px}
 .hnt .hnt-h{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--sub)}
 .hnt .hnt-s{margin:4px 0 0;font-size:13px;color:var(--sub);overflow-wrap:anywhere}
@@ -258,7 +297,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="kintai.js?v=2026-11-26.3"></script>
+<script src="kintai.js?v=2026-11-27.3"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-board.js?v=2026-11-25"></script>
 <script src="su-shell.js?v=2026-11-28"></script>
