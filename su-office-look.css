@@ -1,50 +1,84 @@
 /* su-office-look.css — 事務所の管理画面（勤怠管理 kintai.html・給与 payroll.html）の見た目を、代表者が使っている人事労務ソフトの画面の並びに寄せる（2026-11-27 本人指示）
  *
  * 寄せたのは並び・型・色の使い方だけ。他社のロゴ・アイコンの絵・製品名・書体は使わない（アイコンはこのファイルの中の自前の線の絵）。
- * ・PC（幅 900px 以上）: 左に縦のメニュー（今のタブを左へ立てる）・上に細い帯・その下に淡い青の題の帯（色の印＋画面の題＋右に文字のリンク）
+ * ・PC（幅 900px 以上）: 左に縦のメニュー（今のタブを左へ立てる）・上に1段の帯（← メニュー・色の印＋画面の題・使い方・右に役割と文字のリンク。2026-11-28 に2段を1段に詰めた）
  *   ・中身の上にパンくず・「← 年 1月…12月 →」の丸い月の並び（su-office-look.js が足す）
  * ・iPhone・iPad 縦（899px 以下）: 並びは今のまま。色・表の線・札の形だけ寄せる
- * ・表は横の線だけ・見出しの行は薄い灰。状態の札は枠だけ。次に押す塗りのボタンは青
+ * ・表は横の線だけ・見出しの行は薄い灰。状態の札は枠だけ。次に押す塗りのボタンは差し色（--sul-accent）
  * ・全部 @media screen の中。印刷の紙は変えない。HTML・保存・通信には触れない
  * ・su-theme.css・su-office.css と画面の <style> より後に読み、頭の html:root[…] で同じ指定より強くする
- * ・文字と地の差は 7:1 以上（青 #1946a8 は白地で 8.5:1・題の帯の地で 7.4:1。暗い表示の青 #9dbaff は地で 9:1）
+ * ・文字と地の差は 7:1 以上（2026-11-28 の色の組は、明るい表示・暗い表示とも全部の字と地の組を計算して 7:1 以上）
  */
+/* 題の前の印の線の絵（白い線＝濃い塗りの上・暗い線＝淡い塗りの上）。どちらを使うかは色の組（--sul-gk・--sul-gp）が決める */
+@media screen {
+  html:root[data-su-theme] {
+    --sul-gk-w: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='21' r='10.5' fill='none' stroke='%23fff' stroke-width='2.8'/%3E%3Cpath d='M20 14.5v6.8l4.4 3' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15 7.5h10' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E");
+    --sul-gk-d: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='21' r='10.5' fill='none' stroke='%23241419' stroke-width='2.8'/%3E%3Cpath d='M20 14.5v6.8l4.4 3' fill='none' stroke='%23241419' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15 7.5h10' stroke='%23241419' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E");
+    --sul-gp-w: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='7.5' y='11' width='25' height='18' rx='3' fill='none' stroke='%23fff' stroke-width='2.6'/%3E%3Cpath d='M15.5 14.5l4.5 5.5 4.5-5.5M20 20v6M16 21h8M16 24.5h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --sul-gp-d: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='7.5' y='11' width='25' height='18' rx='3' fill='none' stroke='%23241419' stroke-width='2.6'/%3E%3Cpath d='M15.5 14.5l4.5 5.5 4.5-5.5M20 20v6M16 21h8M16 24.5h8' fill='none' stroke='%23241419' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
 @media screen {
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) {
-    --sul-blue: #1946a8;        /* 次に押す塗り・選んだ月・リンク */
-    --sul-band: #e8f0fc;        /* 上の帯と題の帯 */
-    --sul-side: #f5f7fb;        /* 左のメニューの地 */
-    --sul-sel: #dce7fa;         /* 左のメニューで今いる所 */
-    --sul-hover: #eaf0f9;
-    --sul-sideline: #dde3ec;
-    --sul-icon: #3a5687;        /* メニューの線の絵（字ではないので 3:1 以上） */
-    --sul-th: #f2f4f7;          /* 表の見出しの行 */
-    --sul-rule: #e2e6ec;        /* 表の横の線 */
-    --sul-rule-faint: #eef1f5;  /* 月の一覧の日の縦の線（薄く） */
-    --sul-btnline: #c3ccd8;
-    --sul-guide: #eef3fa;       /* ホームの「進み具合」の地 */
-    --focus: var(--sul-blue);
-    --pri-tx: #fff;
-    --bg: #fff;
+    /* 色（グレージュ＋ピンク・2026-11-28 仮置き）: 面はグレージュ（暗い表示は無彩の灰）。ピンクは「次に押す塗り・選んだ月・題の印・今いる所の印・リンクの字」だけ（明るい表示は濃いピンクに白い字・暗い表示は淡いピンクに濃い字）。淡いピンクの面は使わない（赤い升・要対応とまぎれるため・読み手役の指摘）。状態の色（--ok・--warn・--ng・--wk）は画面の値のまま */
+    --bg: #fbfaf8;
+    --card: #ffffff;
+    --sul-band: #ece6df;
+    --sul-side: #f4f0eb;
+    --sul-sel: #e8e2dc;
+    --sul-hover: #eee8e1;
+    --sul-sideline: #ddd4ca;
+    --sul-th: #f3efea;
+    --sul-rule: #e6dfd7;
+    --sul-rule-faint: #efeae4;
+    --sul-btnline: #c9beb2;
+    --sul-guide: #f6f3ef;
+    --line: #d6cdc2;
+    --tag: #f1ece6;
+    --ink: #2a221f;
+    --sub: #493f3a;
+    --muted: #544a44;
+    --sul-icon: #6e5f57;
+    --sul-accent: #72264a;
+    --pri-tx: #ffffff;
+    --sul-fill: #72264a;
+    --sul-fill-tx: #ffffff;
+    --sul-gk: var(--sul-gk-w);
+    --sul-gp: var(--sul-gp-w);
+    --focus: var(--sul-accent);
+    --th: var(--sul-th);
+    --field: var(--card);
   }
 }
 @media screen and (prefers-color-scheme: dark) {
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]):not([data-ds="ops"]) {
-    --sul-blue: #9dbaff;
-    --sul-band: #172338;
-    --sul-side: #121a27;
-    --sul-sel: #22355a;
-    --sul-hover: #1b2840;
-    --sul-sideline: #2a3850;
-    --sul-icon: #9fb4d8;
-    --sul-th: #1c2533;
-    --sul-rule: #2c3647;
-    --sul-rule-faint: #222b38;
-    --sul-btnline: #3e4a5e;
-    --sul-guide: #151f30;
-    --focus: var(--sul-blue);
-    --pri-tx: #0d1320;
-    --bg: #10151d;
+    --bg: #161616;
+    --card: #202020;
+    --sul-band: #272626;
+    --sul-side: #1b1b1b;
+    --sul-sel: #363034;
+    --sul-hover: #2a2929;
+    --sul-sideline: #383636;
+    --sul-th: #262525;
+    --sul-rule: #353333;
+    --sul-rule-faint: #2a2828;
+    --sul-btnline: #4a4747;
+    --sul-guide: #1e1e1e;
+    --line: #474444;
+    --tag: #2a2828;
+    --ink: #eeeae8;
+    --sub: #d0cac7;
+    --muted: #cbc5c2;
+    --sul-icon: #c4bcb9;
+    --sul-accent: #f4b3cb;
+    --pri-tx: #1c1014;
+    --sul-fill: #f4b3cb;
+    --sul-fill-tx: #1c1014;
+    --sul-gk: var(--sul-gk-d);
+    --sul-gp: var(--sul-gp-d);
+    --focus: var(--sul-accent);
+    --th: var(--sul-th);
+    --field: var(--card);
   }
 }
 
@@ -52,15 +86,15 @@
   /* ── 見出しの帯（全部の幅）: 淡い青の地・字は濃い紺。中のボタンは枠の無い文字のボタン（押す所の高さ 44px はそのまま） ── */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr { background: var(--sul-band); color: var(--ink); border-bottom: 0; box-shadow: none; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .hdr-btn { background: transparent; border-color: transparent; box-shadow: none; color: var(--ink); font-weight: 600; border-radius: 8px; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .hdr-btn:hover { background: color-mix(in srgb, var(--sul-blue) 10%, transparent); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .hdr-btn:hover { background: color-mix(in srgb, var(--sul-accent) 10%, transparent); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .sync { background: transparent; border-color: transparent; color: var(--sub); }
   /* ログイン中の役割の札は、青の枠の丸い札 */
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .su-shell-role { background: var(--card); color: var(--sul-blue); box-shadow: inset 0 0 0 1px var(--sul-blue); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr .su-shell-role { background: var(--card); color: var(--sul-accent); box-shadow: inset 0 0 0 1px var(--sul-accent); }
   /* 題の前の色の印（自前の絵: 勤怠＝時計・給与＝円の札） */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr h1 { display: inline-flex; align-items: center; gap: 10px; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr h1::before { content: ""; flex: none; width: 28px; height: 28px; background: no-repeat center / contain; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app) .hdr.su-shell-hdr h1::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%231946a8'/%3E%3Ccircle cx='20' cy='21' r='10.5' fill='none' stroke='%23fff' stroke-width='2.8'/%3E%3Cpath d='M20 14.5v6.8l4.4 3' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M15 7.5h10' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E"); }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app) .hdr.su-shell-hdr h1::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%231946a8'/%3E%3Crect x='7.5' y='11' width='25' height='18' rx='3' fill='none' stroke='%23fff' stroke-width='2.6'/%3E%3Cpath d='M15.5 14.5l4.5 5.5 4.5-5.5M20 20v6M16 21h8M16 24.5h8' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr h1::before { content: ""; flex: none; width: 28px; height: 28px; border-radius: 25%; background: var(--sul-fill) no-repeat center / contain; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app) .hdr.su-shell-hdr h1::before { background-image: var(--sul-gk); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app) .hdr.su-shell-hdr h1::before { background-image: var(--sul-gp); }
   /* 給与へ・勤怠管理へ: 枠の無い文字のリンクに「›」 */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr #g-to-pay::after,
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .hdr.su-shell-hdr #p-to-kin::after { content: ""; width: 8px; height: 8px; margin-left: 10px; border-right: 2px solid currentColor; border-top: 2px solid currentColor; transform: rotate(45deg); flex: none; }
@@ -75,8 +109,8 @@
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app .btn, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app .btn,
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-dlg .btn, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-dlg .btn { border-radius: 8px; font-weight: 700; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app .btn:not(.pri):not(.ng), html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app .btn:not(.pri):not(.ng) { border-color: var(--sul-btnline); }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .btn.pri:not(.su-sub) { background-color: var(--sul-blue); border-color: var(--sul-blue); color: var(--pri-tx); }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .btn.pri:not(.su-sub):not(:disabled):hover { background-color: color-mix(in srgb, var(--sul-blue) 86%, #000); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .btn.pri:not(.su-sub) { background-color: var(--sul-fill); border-color: var(--sul-fill); color: var(--sul-fill-tx); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .btn.pri:not(.su-sub):not(:disabled):hover { background-color: color-mix(in srgb, var(--sul-fill) 88%, var(--sul-fill-tx)); }
 
   /* ── 状態の札: 地を塗らず、色の枠と色の字（言葉はそのまま） ── */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app .tag, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app .tag,
@@ -99,7 +133,7 @@
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-main details.it > summary { border: 0; }
 
   /* ── タブ（899px 以下）: 選んだタブの下の線を青に ── */
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app .tabs button[aria-selected="true"], html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app .tabs button[aria-selected="true"] { border-bottom-color: var(--sul-blue); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app .tabs button[aria-selected="true"], html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app .tabs button[aria-selected="true"] { border-bottom-color: var(--sul-accent); }
   /* 足した部品は PC だけで出す（下の 900px 以上で出す） */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-months { display: none; }
 
@@ -159,14 +193,14 @@
   }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button[hidden], html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button[hidden] { display: none !important; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button:hover, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button:hover { background: var(--sul-hover); }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button[aria-selected="true"], html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button[aria-selected="true"] { background: var(--sul-sel); font-weight: 700; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button[aria-selected="true"], html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button[aria-selected="true"] { background: var(--sul-sel); font-weight: 700; box-shadow: inset 4px 0 0 var(--sul-accent); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs .tab-n, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs .tab-n { margin-left: auto; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button::before, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button::before {
     content: ""; flex: none; width: 22px; height: 22px; background-color: var(--sul-icon);
     -webkit-mask: var(--sul-ic, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")) center / contain no-repeat;
     mask: var(--sul-ic, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")) center / contain no-repeat;
   }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button[aria-selected="true"]::before, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button[aria-selected="true"]::before { background-color: var(--sul-blue); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button[aria-selected="true"]::before, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button[aria-selected="true"]::before { background-color: var(--sul-accent); }
 
   /* パンくず（メニュー › 勤怠管理 › 今のタブ） */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb { display: block; padding: 10px 24px 0; font-size: 15px; }
@@ -174,7 +208,7 @@
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb li { display: inline-flex; align-items: center; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb li + li::before { content: ""; width: 7px; height: 7px; margin: 0 10px 0 4px; border-right: 2px solid var(--sub); border-top: 2px solid var(--sub); transform: rotate(45deg); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb a, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb button {
-    display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; border: 0; background: none; font: inherit; color: var(--sul-blue); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 2px; border: 0; background: none; font: inherit; color: var(--sul-accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
   }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb [aria-current="page"] { color: var(--ink); }
 
@@ -192,9 +226,9 @@
   }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb { min-width: 44px; height: 44px; color: var(--sub); font-size: 22px; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m:hover:not(:disabled), html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb:hover:not(:disabled) { background: var(--sul-hover); }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m[aria-pressed="true"] { background: var(--sul-blue); color: var(--pri-tx); font-weight: 700; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m[aria-pressed="true"] { background: var(--sul-fill); color: var(--sul-fill-tx); font-weight: 700; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m:disabled, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb:disabled { opacity: .4; cursor: not-allowed; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m:focus-visible, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb:focus-visible { outline: 3px solid var(--sul-blue); outline-offset: 2px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m:focus-visible, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb:focus-visible { outline: 3px solid var(--sul-accent); outline-offset: 2px; }
   /* 期間（〇月分の日付）は暦の印つきで月の並びの下に */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .bar.su-mbar:has(> .sul-months) > #g-period,
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .bar.su-mbar:has(> .sul-months) > #p-period { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 16px; }
@@ -209,14 +243,14 @@
 
   /* ホームの「この月分の進み具合」: 段を縦の行に並べ、今の段の左に青い帯。次に押すボタンは右下 */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow { background: var(--sul-guide); border: 1px solid var(--sul-sideline); border-radius: 8px; padding: 18px 20px; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow h3 { color: var(--sul-blue); font-size: 22px; margin-bottom: 14px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow h3 { color: var(--sul-accent); font-size: 22px; margin-bottom: 14px; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps { flex-direction: column; gap: 8px; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps li {
     flex: none; flex-direction: row; align-items: center; gap: 14px; text-align: left; padding: 12px 16px; min-height: 56px;
     background: var(--card); border: 1px solid var(--sul-rule); border-radius: 8px; color: var(--ink); font-weight: 700;
   }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps li + li::after { content: none; }
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps li.cur { box-shadow: inset 5px 0 0 var(--sul-blue); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps li.cur { box-shadow: inset 5px 0 0 var(--sul-accent); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps .su-st-s { margin-left: auto; font-weight: 500; color: var(--sub); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .hf-act { justify-content: flex-end; }
 }
@@ -258,11 +292,58 @@
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])),
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) { background: linear-gradient(to right, var(--sul-side) 207px, var(--sul-sideline) 207px, var(--sul-sideline) 208px, var(--bg) 208px); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .sui-band,
-  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .sui-band { width: auto; margin: 12px 24px 0 232px; border: 1px solid var(--sul-blue); border-radius: 8px; padding: 6px 6px 6px 14px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .sui-band { width: auto; margin: 12px 24px 0 232px; border: 1px solid var(--sul-accent); border-radius: 8px; padding: 6px 6px 6px 14px; }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .kv { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); }
   /* 給与の一覧: 左のメニューの分だけ狭くなるので、列の最小の幅を 0 にして中身の幅に収める（文字200% で横にはみ出さない。字は折り返す） */
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-main .ihd, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-main details.it > summary { grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)) minmax(0, 1fr); }
   html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-main details.it > summary > .tag { max-width: 100%; white-space: normal; }
+}
+
+/* ── 上部を詰める（2026-11-28 本人指示「画面上部がスペースを使いすぎているため、少しコンパクトにし、１画面で把握できる情報を増やせるよう調整せよ」）──
+ * ・PC（900px 以上）だけ。899px 以下（iPhone・iPad 縦）の並びと押す所の大きさは変えない
+ * ・見出しの2段（細い帯＋題の帯）を1段にまとめ、パンくず・月の並び・タブの縦の余白を減らす
+ * ・押す所を 44px より小さくするのは、マウスで使う端末（hover: hover かつ pointer: fine）の時だけ。指で触る PC・iPad 横は 44px のまま */
+@media screen and (min-width: 900px) {
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr { grid-template-columns: 208px auto auto minmax(0, 1fr) auto auto auto; padding: 2px 16px 2px 0; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > h1,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > h1 { grid-row: 1; grid-column: 2; padding: 0 4px 0 16px; font-size: 20px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > h1::before,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > h1::before { width: 30px; height: 30px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > .su-help-link,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > .su-help-link { grid-column: 3; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > .sync,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > .sync { grid-column: 5; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > .su-shell-role,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > .su-shell-role { grid-column: 6; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr > #g-to-pay,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr > #p-to-kin { grid-row: 1; grid-column: 7; margin-right: 0; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .hdr.su-shell-hdr::before,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .hdr.su-shell-hdr::before { content: none; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app:not([hidden]), html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app:not([hidden]) { min-height: calc(100vh - 52px); }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs { min-height: calc(100vh - 52px); padding-top: 6px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb { padding: 2px 24px 0; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .bar, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .bar { padding: 0 24px 6px; row-gap: 6px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > main, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > main { padding-top: 2px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-months { margin: 0; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #g-app:not([hidden])) > .sui-band,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) body:has(> #p-app:not([hidden])) > .sui-band { margin-top: 8px; padding-top: 2px; padding-bottom: 2px; border-color: var(--sul-btnline); }
+  /* ホームの進み具合と給与の手順の段階: 行の高さを詰める（中身・並び順は変えない・仮置き） */
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow { padding: 12px 16px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow h3 { font-size: 20px; margin-bottom: 8px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps { gap: 6px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-main .hflow .su-steps li { min-height: 48px; padding: 6px 16px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-main .su-steps { margin: 2px 0 8px; }
+}
+/* マウスで使う PC だけ: 押す所の高さを詰める（指で触る端末は 44px のまま） */
+@media screen and (min-width: 900px) and (hover: hover) and (pointer: fine) {
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb a, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-crumb button { min-height: 30px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-m { min-width: 42px; height: 40px; font-size: 20px; border-radius: 20px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yb { min-width: 36px; height: 36px; font-size: 20px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) .sul-yr { font-size: 22px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .bar .btn, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .bar .btn,
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .bar input, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .bar input { min-height: 36px; }
+  html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #g-app > .tabs > button, html:root[data-su-theme]:not([data-su-theme~="keep-hdr"]) #p-app > .tabs > button { min-height: 40px; }
 }
 
 /* 紙には足した部品を出さない（印刷の紙は今のまま） */
