@@ -118,15 +118,20 @@
   @media (max-width: 700px) {
     :root[data-su-theme] .su-mact { margin-left: 0; }
     /* 給与の一覧（iPhone の幅）: 1行目に氏名・差引（太字）・警告の札、2行目に総支給・控除・前月差を小見出しつきで横に（2026-11-26） */
-    :root[data-su-theme] details.it > summary { grid-template-columns: minmax(0, max-content) minmax(0, max-content) minmax(0, 1fr); grid-template-areas: "nm net tag" "g d p"; align-items: center; gap: 2px 6px; }
-    :root[data-su-theme] details.it > summary .nm { grid-area: nm; }
-    :root[data-su-theme] details.it > summary .num[data-l="差引"] { grid-area: net; font-size: 17px; }
+    /* 1行目と2行目で別の割り方にするため flex の折り返しにする（summary::after を改行に使う・DOM と data-l はそのまま・2026-11-27） */
+    :root[data-su-theme] details.it > summary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 2px; padding-left: 2px; padding-right: 2px; }
+    /* 一覧の箱だけ左右の余白を詰め、2行目の3つ（7桁まで）が小見出しと同じ行に収まる幅を作る（ほかの箱は今のまま） */
+    :root[data-su-theme] #p-main .cd:has(> details.it) { padding-left: 8px; padding-right: 8px; }
+    :root[data-su-theme] details.it > summary::after { content: ""; order: 4; flex-basis: 100%; height: 0; }
+    :root[data-su-theme] details.it > summary .nm { order: 1; flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+    :root[data-su-theme] details.it > summary .num[data-l="差引"] { order: 2; flex: none; font-size: 17px; }
     :root[data-su-theme] details.it > summary .num[data-l="差引"]::before { content: none; }
-    :root[data-su-theme] details.it > summary .num[data-l="総支給"] { grid-area: g; }
-    :root[data-su-theme] details.it > summary .num[data-l="控除"] { grid-area: d; }
-    :root[data-su-theme] details.it > summary .num[data-l="前月差"] { grid-area: p; }
-    :root[data-su-theme] details.it > summary .num:not([data-l="差引"]) { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; column-gap: 4px; font-size: 15px; color: var(--sub); }
-    :root[data-su-theme] details.it > summary > .tag { grid-area: tag; justify-self: end; }
+    :root[data-su-theme] details.it > summary > .tag { order: 3; flex: none; }
+    /* 2行目: 総支給は中身の幅で左・控除は残りの中ほど・前月差は中身の幅で右端（狭い幅では小見出しの下に折れてよい） */
+    :root[data-su-theme] details.it > summary .num[data-l="総支給"] { order: 5; flex: 0 1 auto; justify-content: flex-start; }
+    :root[data-su-theme] details.it > summary .num[data-l="控除"] { order: 6; flex: 1 1 auto; justify-content: center; }
+    :root[data-su-theme] details.it > summary .num[data-l="前月差"] { order: 7; flex: 0 1 auto; margin-left: auto; justify-content: flex-end; }
+    :root[data-su-theme] details.it > summary .num:not([data-l="差引"]) { min-width: 0; flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 3px; font-size: 15px; color: var(--sub); white-space: nowrap; }
     /* 右下の「不具合を報告」が末尾の中身に被らないよう、本文の下を空ける（2026-11-26） */
     :root[data-su-theme] #g-main, :root[data-su-theme] #p-main { padding-bottom: 96px; }
     /* iPhone 幅: 「◀ 月分 ▶」を1行に収める（「月分」の字は欄の読み上げ名 aria-label に任せて見せない・欄の字は 16px） */
