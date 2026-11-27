@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ja" data-su-theme>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-mzKzNApkmj/2rxLWHdzdofEx5QDm0eLLqcU/wxlLNUA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>事故報告書</title>
+<!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → 入居者マスタの読み取り → 印刷 → 窓 → 事故報告書の計算 -->
+<script src="su-errors.js?v=2026-11-21"></script>
+<script src="su-perf.js?v=2026-10-27"></script>
+<script src="su-app-gate.js?v=2026-11-28.2"></script>
+<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
+<script src="su-print.js?v=2026-11-13"></script>
+<script src="su-dialog.js?v=2026-11-14.2"></script>
+<script src="accident-report-calc.js?v=2026-11-28"></script>
+<style>
+/* 事故報告書（2026-11-28 本人指示）。画面は「つむぐケアの型」（su-theme.css の藍と生成り）でライト固定。
+   文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。塗りのボタンは「保存する」の1つだけ。
+   紙（.ar-*）は様式の写真を写した寸法（mm）で、画面の見本と印刷で同じ組み。紙の文字は mm で決め、収まらない欄だけ段階で縮める（zoom・transform は紙に使わない） */
+:root{
+  --bg:#FBF8F2; --surf:#FFFFFF; --surf2:#F4F0E8; --ink:#1F2A44; --ink2:#3D4557; --ink3:#4A5468;
+  --line:#E4DED2; --line2:#CFC7B8; --sel:#EEF0F5; --ng:#8f0c0c; --ng-l:#fdecea; --r:12px; --focus:#1F2A44;
+}
+:focus-visible{outline:3px solid var(--focus); outline-offset:2px}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
+*{box-sizing:border-box}
+html,body{margin:0; padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;
+  background:var(--bg); color:var(--ink); font-size:1.0625rem; line-height:1.6; overflow-wrap:anywhere; min-height:100dvh}
+button,input,select,textarea{font-family:inherit; font-size:1.0625rem; color:inherit}
+button{cursor:pointer; touch-action:manipulation}
+a{color:var(--ink)}
+[hidden]{display:none !important}
+h1,h2,h3{text-wrap:pretty}
+
+/* ── 見出し（色は su-theme.css が型にそろえる） ── */
+.hdr{position:sticky; top:0; z-index:50; padding:8px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.hdr h1{font-size:1.25rem; margin:0; font-weight:700; letter-spacing:.04em; flex:1; white-space:nowrap}
+.hdr-btn{display:inline-flex; align-items:center; min-height:44px; border-radius:8px; padding:6px 12px; font-size:1rem; text-decoration:none; white-space:nowrap}
+.hdr .sync{font-size:.9375rem; white-space:nowrap}
+.hdr .sync:empty{display:none}
+
+main{max-width:1880px; margin:0 auto; padding:14px 16px 80px}
+
+/* ── ボタン（塗りは「保存する」だけ。ほかは枠か文字だけ） ── */
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; min-width:44px; padding:8px 16px; border-radius:10px;
+  border:1.5px solid var(--ink); background:var(--surf); color:var(--ink); font-weight:700; white-space:nowrap; text-decoration:none}
+.btn:hover{background:var(--sel)}
+.btn:active{transform:scale(.97)}
+.btn:disabled{background:var(--surf2); border-color:var(--line2); color:var(--ink3); cursor:not-allowed; transform:none}
+.btn.pri{background:var(--ink); color:#fff}
+.btn.pri:hover{background:#141C2E}
+.btn.pri:disabled{background:var(--surf2); color:var(--ink3)}
+.btn.sm{padding:6px 12px; font-size:.9375rem}
+.btn.quiet{border-color:transparent; background:transparent; text-decoration:underline; font-weight:600}
+.btn.quiet:hover{background:var(--surf2)}
+.btn.warn{color:var(--ng)}
+
+.msg{margin:8px 0; padding:10px 14px; border-radius:10px; background:var(--ng-l); color:var(--ng); font-weight:700}
+.msg:empty{display:none}
+.sub{color:var(--ink2); font-size:.9375rem; margin:0 0 10px}
+.sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+.gate{background:var(--surf); border-radius:var(--r); padding:20px; border:1px solid var(--line)}
+input[type=text],input[type=search],input[type=date],input[type=number],input[type=tel],textarea{min-height:44px; border:1.5px solid var(--line2); border-radius:8px;
+  background:#fff; padding:8px 10px; width:100%}
+textarea{line-height:1.7; resize:vertical; min-height:96px; overflow:hidden}
+input:focus,textarea:focus{border-color:var(--ink)}
+
+/* ── 入居者を選ぶ前（主役＝選ぶ所・脇＝最近の事故報告書） ── */
+.who-bar{display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; margin:0 0 12px}
+.who-bar .who{display:flex; align-items:baseline; gap:10px; min-width:0; flex:1}
+.who-bar .who b{font-size:1.5rem; letter-spacing:.04em}
+.who-bar .who span{color:var(--ink2)}
+.home{display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); gap:24px; align-items:start}
+.home h2{font-size:1.25rem; margin:0 0 4px}
+.panel{background:var(--surf); border:1px solid var(--line); border-radius:var(--r); padding:18px}
+.search{width:min(440px,100%)}
+.res-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin:12px 0 0; padding:0; list-style:none}
+.res-list button{width:100%; height:100%; min-height:52px; text-align:left; border:1px solid var(--line); background:var(--surf); border-radius:10px; padding:6px 12px;
+  display:flex; gap:10px; align-items:baseline}
+.res-list button:hover{border-color:var(--ink); background:var(--sel)}
+.res-list .rm{color:var(--ink2); font-size:.9375rem; min-width:2.6em; font-variant-numeric:tabular-nums}
+.res-list .nm{font-weight:700}
+.recent{list-style:none; margin:8px 0 0; padding:0}
+.recent li + li{border-top:1px solid var(--line)}
+.recent button{width:100%; min-height:52px; display:grid; grid-template-columns:8.6em minmax(0,1fr) auto; gap:4px 12px; align-items:center;
+  text-align:left; background:none; border:0; padding:8px 6px; border-radius:8px}
+.recent button:hover{background:var(--sel)}
+.recent .dt{color:var(--ink2); font-variant-numeric:tabular-nums; font-size:.9375rem}
+.recent .nm{font-weight:700}
+.tag{display:inline-block; border:1.5px solid var(--ink); border-radius:999px; padding:0 10px; font-size:.9375rem; font-weight:700; white-space:nowrap; background:#fff}
+.tag.final{background:var(--ink); color:#fff}
+.empty{color:var(--ink2); padding:12px 4px}
+
+/* ── 入居者を選んだ後：左＝過去の報告／中＝入力／右＝紙 ── */
+.work{display:grid; grid-template-columns:190px minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start}
+.side{background:var(--surf2); border-radius:var(--r); padding:14px; position:sticky; top:76px; max-height:calc(100dvh - 92px); overflow:auto}
+.side h2{font-size:1rem; margin:0 0 8px; color:var(--ink2)}
+.side .new{width:100%; margin:0 0 12px; white-space:normal; padding:6px 8px; font-size:.9375rem}
+.past{list-style:none; margin:0; padding:0}
+.past li + li{margin-top:6px}
+.past button{width:100%; min-height:52px; text-align:left; border:1px solid var(--line); background:var(--surf); border-radius:10px; padding:6px 10px; display:block}
+.past button:hover{border-color:var(--ink)}
+.past button[aria-current=true]{border:2px solid var(--ink); background:var(--sel)}
+.past .k{font-weight:700}
+.past .d{display:block; color:var(--ink2); font-size:.9375rem; font-variant-numeric:tabular-nums}
+.past-tog{display:none; width:100%; min-height:44px; align-items:center; justify-content:space-between; border:1px solid var(--line2); background:var(--surf); border-radius:10px; padding:6px 12px; font-weight:700}
+.past-tog[aria-expanded=true]{border-color:var(--ink)}
+.bar .follow .row{gap:8px}
+.endzone{margin:24px 0 0; padding:16px 18px; border:1px dashed var(--line2); border-radius:var(--r); background:var(--surf)}
+.endzone p{margin:0 0 10px; color:var(--ink2); font-size:.9375rem}
+.btn.warn-line{border-color:var(--ng); color:var(--ng)}
+.btn.warn-line:hover{background:var(--ng-l)}
+.caprow{display:flex; gap:10px; align-items:center; justify-content:space-between; margin:0 0 8px}
+.caprow .cap{margin:0}
+.big{position:fixed; inset:0; z-index:150; background:var(--bg); display:flex; flex-direction:column}
+.big-hd{display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--surf)}
+.big-hd h2{font-size:1.125rem; margin:0}
+.big-hd .sub{margin:0; flex:1}
+.big-body{flex:1; overflow:auto; padding:16px; background:var(--surf2)}
+.big-body .pvwrap{margin:0 auto}
+/* 紙の上の丸を押す所は、見た目より少し広く（隣と重ならない範囲・画面だけ・印刷には効かない） */
+.pv .ar-o::after{content:''; position:absolute; left:-.3em; right:-.3em; top:-.45em; bottom:-.45em}
+.pv .ar-o.ar-tight::after{right:0}
+
+.desk{min-width:0}
+.bar{position:sticky; top:59px; z-index:20; background:var(--bg); padding:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; border-bottom:1px solid var(--line)}
+.bar .grp{display:flex; flex-direction:column; gap:4px}
+.bar .lb{font-size:.9375rem; font-weight:700; color:var(--ink2)}
+.seg{display:inline-flex; border:1.5px solid var(--ink); border-radius:10px; overflow:hidden}
+.seg button{min-height:44px; padding:6px 14px; border:0; background:#fff; font-weight:700; color:var(--ink)}
+.seg button + button{border-left:1.5px solid var(--ink)}
+.seg button[aria-pressed=true]{background:var(--ink); color:#fff}
+.bar .no{width:4.6em}
+.bar .date{display:flex; gap:6px; align-items:center}
+.bar .date input{width:11em}
+.bar .acts{display:flex; gap:8px; align-items:center; margin-left:auto; flex-wrap:wrap}
+.bar .state{font-size:.9375rem; color:var(--ink2); width:100%; order:9}
+.bar .state.dirty{color:var(--ink); font-weight:700}
+.panes{display:none; margin:10px 0 0}
+
+.form{display:flex; flex-direction:column; gap:16px; margin:14px 0 0}
+.card{background:var(--surf); border:1px solid var(--line); border-radius:var(--r); padding:16px 18px}
+.card > h2{font-size:1.125rem; margin:0 0 12px; display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+.card > h2 .miss{font-size:.9375rem; font-weight:700; color:var(--ink2); border:1px solid var(--line2); border-radius:999px; padding:0 10px}
+.card > h2 .miss:empty{display:none}
+.card > h2 .tool{margin-left:auto}
+.fld{margin:0 0 14px}
+.fld:last-child{margin-bottom:0}
+.fld > .lb{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; font-size:.9375rem; font-weight:700; color:var(--ink2); margin:0 0 6px}
+.fld > label.lb{cursor:default}
+.auto{font-size:.9375rem; font-weight:600; color:var(--ink2); background:var(--sel); border-radius:6px; padding:0 8px}
+.auto[hidden]{display:none}
+.hint{font-size:.9375rem; color:var(--ink2); font-weight:400}
+.g2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px}
+.g3{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0 14px}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.row .grow{flex:1; min-width:10em}
+.num{width:5.2em}
+.chips{display:flex; flex-wrap:wrap; gap:8px}
+.chip{min-height:44px; min-width:44px; justify-content:center; padding:6px 14px; border-radius:999px; border:1.5px solid var(--line2); background:#fff; color:var(--ink); font-weight:600;
+  display:inline-flex; align-items:center; gap:6px}
+.chip:hover{border-color:var(--ink)}
+.chip[aria-pressed=true]{background:var(--ink); border-color:var(--ink); color:#fff}
+.chip[aria-pressed=true]::before{content:'✓'; color:#fff; margin-left:-4px}
+.other{margin:8px 0 0; display:flex; gap:8px; align-items:center}
+.other .lbi{font-size:.9375rem; color:var(--ink2); white-space:nowrap}
+.agency{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px 14px; margin:8px 0 0}
+
+/* 紙の見本（右の列）。紙と同じ組みを縮めて見せる（画面だけ・印刷には効かない）。選択肢は紙の上を押しても丸が付く */
+.paperbox{position:sticky; top:76px; max-height:calc(100dvh - 92px); overflow:auto; background:var(--surf2); border-radius:var(--r); padding:12px}
+.paperbox .cap{font-size:.9375rem; color:var(--ink2); margin:0 0 8px}
+/* 読み込みの間に高さが変わって画面がずれないよう、先に場所を取っておく */
+.res-list,.recent{min-height:240px}
+.past{min-height:60px}
+.pvwrap{min-height:200px}
+.pvwrap{position:relative; overflow:hidden}
+.pv{transform-origin:0 0; width:210mm}
+/* 紙の余白は白い枠で描く（中の箱は絶対配置なので padding では動かない） */
+.pv .ar-page,.pv .ar-sheet2{border:solid #fff; border-width:10mm 10mm 11mm; margin:0 0 6mm; box-shadow:0 1px 4px rgba(31,42,68,.18); background:#fff}
+.pv .ar-sheet2{min-height:276mm}
+.pv .ar-o{cursor:pointer}
+.pv .ar-o:hover{background:rgba(31,42,68,.08)}
+
+#toast{position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 18px; border-radius:999px;
+  opacity:0; pointer-events:none; transition:opacity .2s; z-index:200; max-width:92vw}
+#toast.on{opacity:1}
+body.sur-has-fab main{padding-bottom:96px}
+
+/* ── 幅で並びを変える（PC 3列 → 中くらい 2列＋入力／紙の切り替え → iPad 縦・iPhone 1列） ── */
+@media (max-width:1279px){
+  .work{grid-template-columns:200px minmax(0,1fr)}
+  .panes{display:flex}
+  .paperbox{position:static; max-height:none}
+  .work[data-pane=form] .paperbox{display:none}
+  .work[data-pane=paper] .form{display:none}
+  .work .desk .paperbox{margin:14px 0 0}
+}
+@media (max-width:899px){
+  .home{grid-template-columns:1fr}
+  .work{grid-template-columns:1fr}
+  .side{position:static; max-height:none; padding:8px}
+  .past-tog{display:flex}
+  .side .pastbox{display:none; margin:10px 0 0}
+  .side.open .pastbox{display:block}
+  .past{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; min-height:0}
+  .past li + li{margin:0}
+  .past button{min-width:200px}
+  .bar{top:0; position:static}
+}
+@media (max-width:700px){
+  main{padding:10px 10px 96px}
+  .g2,.g3,.agency{grid-template-columns:1fr}
+  .hdr h1{font-size:1.125rem}
+  .who-bar .who b{font-size:1.25rem}
+  input,textarea{font-size:16px}
+  .recent button{grid-template-columns:1fr auto}
+  .recent .dt{grid-column:1 / -1}
+  .bar .acts{margin-left:0}
+}
+
+/* ═══ 紙（画面の見本と印刷で同じ組み・寸法は accident-report-calc.js の様式の写真から取った値） ═══ */
+.ar-paper{font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,sans-serif; color:#000; line-height:1.2;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact}
+.ar-page{position:relative; width:190mm; height:276mm; overflow:hidden; background:#fff; box-sizing:content-box}
+.ar-page + .ar-page,.ar-sheet2{break-before:page; page-break-before:always}
+.ar-tbl{position:absolute}
+.ar-c{position:absolute; box-sizing:border-box; border-right:.2mm solid #000; border-bottom:.2mm solid #000; background:#fff; display:flex; align-items:center}
+.ar-c.ar-lft{border-left:.2mm solid #000}
+.ar-c.ar-tp{border-top:.2mm solid #000}
+.ar-c.ar-bl{background:#DEEAF8; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+.ar-c.ar-nor{border-right:0}
+.ar-c.ar-ext{border-right:0; border-top:0; border-bottom:0}
+.ar-l.ar-nw{white-space:nowrap; padding-left:.6mm}
+.ar-b{position:absolute; box-sizing:border-box; display:flex; align-items:center}
+.ar-b.ar-row{white-space:nowrap}
+.ar-b.ar-ctr{justify-content:center}
+.ar-b.ar-rgt{justify-content:flex-end}
+.ar-b.ar-pad{padding:0 1.1mm}
+.ar-b.ar-note span{font-size:2.3mm}
+.ar-l{font-size:2.3mm; line-height:1.27; padding:0 .8mm; width:100%}
+.ar-l.ar-ctr{text-align:center}
+.ar-l.ar-stk{text-align:center; line-height:1.24; padding:0}
+.ar-l.ar-hint{padding-left:2mm}
+.ar-l.ar-sec1{padding:0 .3mm}
+.ar-l.ar-wide{padding:0 0 0 .3mm}
+.ar-v{width:100%; line-height:1.2; padding:0 .6mm}
+.ar-v.ar-ctr{text-align:center}
+.ar-o{position:relative; display:inline-block; line-height:1.2}
+/* 丸は文字の箱より一回り外を回す（楕円の内側に文字の四隅が入るよう、長い選択肢ほど左右に広げる＝文字の幅の 9%＋0.33 字・上下は 0.42 字） */
+.ar-o.ar-on::before{content:''; position:absolute; left:calc(-9% - .33em); right:calc(-9% - .33em); top:-.42em; bottom:-.42em; border:.6mm solid #000; border-radius:50%; pointer-events:none}
+/* 罫線・隣の選択肢が近い所（要介護度の並び・施設敷地内の建物外）は、角の丸い長円にして左右の張り出しを小さくする */
+.ar-o.ar-on.ar-pill::before{left:-.32em; right:-.32em; top:-.36em; bottom:-.36em; border-radius:999px}
+/* 「子の配偶者」は「子、」のすぐ右に続くので、左の張り出しを小さくして「子、」の丸と重ねない */
+.ar-o.ar-on.ar-pill.ar-near::before{left:-.16em}
+.ar-o.ar-on.ar-tight::before{left:-.45em; right:.3em}
+.ar-b.ar-ctr .ar-o{text-align:center}
+/* 2行の選択肢は行の間を詰め、上下は罫線に掛からない範囲で、左右を大きく取って四隅を楕円の内側に入れる */
+.ar-o.ar-two{line-height:1.0}
+.ar-o.ar-two.ar-on::before{left:calc(-18% - .1em); right:calc(-18% - .1em); top:-.42em; bottom:-.42em}
+/* 受診方法の行は低い（8mm）ので、上下を詰めた分だけ左右に広げる（左の罫線の内側に収まる幅） */
+.ar-o.ar-two.ar-on[data-g="consult"]::before{left:calc(-16% - .1em); right:calc(-16% - .1em); top:-.26em; bottom:-.36em; border-radius:30% / 50%}
+.ar-p{display:inline-block; line-height:1.2; flex:0 0 auto}
+.ar-p.ar-cl{margin-left:auto}
+.ar-fit{overflow:hidden; line-height:1.3}
+.ar-fit.ar-one{white-space:nowrap; width:100%; line-height:1.25}
+.ar-fit.ar-ctr{text-align:center}
+.ar-fit.ar-mid{width:100%; max-height:100%; text-align:center; white-space:pre-wrap}
+.ar-fit.ar-in{flex:1 1 0; min-width:0; white-space:nowrap; padding:0 .6mm; line-height:1.25; text-align:left}
+.ar-fit.ar-long{position:absolute; left:.9mm; right:.9mm; top:.7mm; bottom:.5mm; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.35}
+.ar-fit.ar-offs{width:100%; white-space:nowrap; line-height:1.3; max-height:100%; padding:.9mm 0}
+.ar-fit.ar-offs.ar-wrap{white-space:normal; line-height:1.38; padding:.35mm 0; max-height:calc(2.76em + .7mm)}
+.ar-offs .ar-o{margin:0 .5em}
+/* 小さな字の事業所名の丸は、様式の写真のとおり字より縦に大きく取る（字の上下を線で切らない） */
+.ar-offs .ar-o.ar-on::before{top:-.62em; bottom:-.62em; left:calc(-6% - .45em); right:calc(-6% - .35em)}
+.ar-gap{display:inline-block; width:1.6em}
+.ar-dot{display:inline-block; margin:0 .6em}
+.ar-u{display:inline-block; min-width:7.3mm; border-bottom:.25mm solid #000; text-align:center; line-height:1.05}
+.ar-red{color:#C62828; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+.ar-title{font-size:3.5mm; font-weight:700; letter-spacing:.02em}
+.ar-sub{font-size:2.2mm}
+.ar-sub i{font-style:normal; display:inline-block; min-width:1.4em; text-align:center}
+.ar-rk{position:absolute; box-sizing:border-box; border:.2mm solid #000}
+.ar-rk-a{height:100%; box-sizing:border-box; border-right:.2mm solid #000}
+/* 別紙（最小の大きさでも枠に収まらなかった欄の全文） */
+.ar-sheet2{width:190mm; box-sizing:content-box}
+.ar-s-h{font-size:4mm; margin:0 0 2mm; text-align:center; letter-spacing:.3em}
+.ar-s-w{font-size:2.8mm; margin:0 0 4mm}
+.ar-s-i{border:.2mm solid #000; margin:0 0 3mm; break-inside:auto}
+.ar-s-l{background:#DEEAF8; border-bottom:.2mm solid #000; font-size:2.6mm; padding:1mm 1.5mm; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+.ar-s-t{font-size:3mm; line-height:1.5; padding:1.5mm; white-space:pre-wrap; overflow-wrap:anywhere}
+
+/* ── 印刷（事故報告書の紙だけ・A4 縦・SUPrint の 'accident'）。文字の大きさは欄ごとに mm で決める（zoom・transform は使わない） ── */
+#a-print{display:none}
+@media print{
+  .hdr{position:static}
+  #toast{display:none !important}
+  body.su-print-accident{background:#fff !important}
+  body.su-print-accident #a-print{display:block}
+  #a-print .ar-o{cursor:auto}
+}
+</style>
+<link rel="stylesheet" href="su-theme.css?v=2026-11-27">
+<!-- ログインの役割の確かめの覆い（su-app-gate.js が後から読む型）を先に読み、覆いが出る時に画面がずれないようにする -->
+<link rel="stylesheet" href="su-app-gate.css?v=2026-11-27">
+<link rel="stylesheet" href="su-print.css?v=2026-11-13">
+<link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+</head>
+<body>
+
+<header class="hdr su-shell-hdr">
+  <a class="hdr-btn" href="index.html">← メニュー</a>
+  <h1>事故報告書</h1>
+  <span class="sync" id="a-sync" role="status" aria-live="polite"></span>
+  <span class="su-shell-role" hidden></span>
+</header>
+
+<main id="a-main">
+  <div class="gate" id="a-gate" hidden></div>
+
+  <section id="a-app" hidden>
+    <div class="who-bar">
+      <div class="who" id="a-who"><b>入居者を選んでください</b></div>
+      <button type="button" class="btn sm" data-act="home" id="a-home-btn" hidden>事故報告書の一覧へ</button>
+    </div>
+    <p class="msg" id="a-msg" role="alert"></p>
+
+    <!-- 入居者を選ぶ前：選ぶ所（主役）と最近の事故報告書 -->
+    <div class="home" id="a-home">
+      <section class="panel" aria-labelledby="a-pick-h">
+        <h2 id="a-pick-h">入居者を選ぶ</h2>
+        <p class="sub">選ぶと、氏名・年齢・性別・要介護度などを入居者マスタから入れて、新しい事故報告書を始めます。</p>
+        <input type="search" class="search" id="a-q" maxlength="40" autocomplete="off" placeholder="例：はなこ・203" aria-label="入居者を探す（名前・ふりがな・居室の番号）">
+        <ul class="res-list" id="a-res"></ul>
+      </section>
+      <section class="panel" aria-labelledby="a-recent-h">
+        <h2 id="a-recent-h">最近の事故報告書</h2>
+        <ul class="recent" id="a-recent"></ul>
+      </section>
+    </div>
+
+    <!-- 入居者を選んだ後 -->
+    <div class="work" id="a-work" data-pane="form" hidden>
+      <aside class="side" id="a-side" aria-labelledby="a-past-h">
+        <button type="button" class="past-tog" id="a-past-tog" data-act="past-tog" aria-expanded="false" aria-controls="a-pastbox"><span>この方の事故報告書 <span id="a-past-n">0</span>件</span><span aria-hidden="true">▾</span></button>
+        <div class="pastbox" id="a-pastbox">
+          <button type="button" class="btn new" data-act="new">＋ 新しい事故報告書</button>
+          <h2 id="a-past-h">この方の事故報告書</h2>
+          <ul class="past" id="a-past"></ul>
+        </div>
+      </aside>
+      <section class="desk" aria-label="事故報告書を書く">
+        <div class="bar" id="a-bar">
+          <div class="grp"><span class="lb" id="a-kind-lb">報告区分</span>
+            <div class="seg" role="group" aria-labelledby="a-kind-lb">
+              <button type="button" data-g="report" data-id="first" aria-pressed="false">第1報</button>
+              <button type="button" data-g="report" data-id="nth" aria-pressed="false">第n報</button>
+              <button type="button" data-g="report" data-id="final" aria-pressed="false">最終報告</button>
+            </div></div>
+          <div class="grp follow" id="a-follow" hidden><span class="lb">同じ事故の続き</span>
+            <div class="row"><button type="button" class="btn sm" data-act="follow-nth" id="a-follow-nth">この報告を写して第2報を作る</button>
+            <button type="button" class="btn sm" data-act="follow-final">この報告を写して最終報告を作る</button></div></div>
+          <div class="grp" id="a-no-grp" hidden><label class="lb" for="a-no">第何報</label><input type="number" class="no" id="a-no" min="2" max="99" inputmode="numeric"></div>
+          <div class="grp"><label class="lb" for="a-submit">提出日</label><div class="date"><input type="date" id="a-submit"><button type="button" class="btn sm" data-act="today-submit">今日</button></div></div>
+          <div class="acts">
+            <button type="button" class="btn" data-act="print">印刷</button>
+            <button type="button" class="btn pri" data-act="save" id="a-save">保存する</button>
+          </div>
+          <span class="state" id="a-state" role="status" aria-live="polite"></span>
+        </div>
+        <nav class="panes" role="tablist" aria-label="入力と紙の切り替え">
+          <div class="seg">
+            <button type="button" role="tab" data-pane="form" aria-pressed="true" aria-selected="true">入力</button>
+            <button type="button" role="tab" data-pane="paper" aria-pressed="false" aria-selected="false">紙の見た目</button>
+          </div>
+        </nav>
+        <p class="msg" id="a-dmsg" role="alert"></p>
+        <div class="form" id="a-form"></div>
+        <div class="endzone" id="a-endzone" hidden>
+          <p>この報告を出さないことにした時だけ使います。取り消した報告は一覧から消え、直せなくなります（記録としては残ります）。</p>
+          <button type="button" class="btn warn-line" data-act="cancel-report" id="a-cancel">この報告を取り消す</button>
+        </div>
+      </section>
+      <aside class="paperbox" id="a-paperbox" aria-label="紙の見た目（印刷と同じ）">
+        <div class="caprow"><p class="cap">紙の見た目（印刷と同じ）。丸の付く所は、ここを押しても選べます。</p>
+          <button type="button" class="btn sm" data-act="big-open" id="a-big-open">大きく開く</button></div>
+        <div class="pvwrap" id="a-pvwrap"><div class="pv" id="a-pv"></div></div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<!-- 紙を大きく開く（画面いっぱい・幅に合わせて読める大きさ。丸はここでも押して選べる） -->
+<div class="big" id="a-big" role="dialog" aria-modal="true" aria-labelledby="a-big-h" hidden>
+  <div class="big-hd"><h2 id="a-big-h">紙の見た目（大きく開いています）</h2><span class="sub">丸の付く所を押すと選べます。</span>
+    <button type="button" class="btn" data-act="big-close" id="a-big-close">閉じる</button></div>
+  <div class="big-body" id="a-big-body"><div class="pvwrap" id="a-bigwrap"><div class="pv" id="a-bigpv"></div></div></div>
+</div>
+<datalist id="a-hosp-list"></datalist>
+<div id="toast" role="status" aria-live="polite"></div>
+<!-- 印刷する紙（印刷の時だけ中身を作る・画面には出さない） -->
+<div id="a-print"></div>
+
+<script>
+'use strict';
+/* 事故報告書（2026-11-28 本人指示）。
+   ・保存先は共通 DB だけ（統合 0138 の acc_*）。Google（GAS）は使わない。入居者の名簿と1人分の基本の欄は入居者マスタから
+     SUResRead で読む（新しい保存先へ切り替えた後・事務所・管理者のログイン）。読んだ中身は端末に残さない
+   ・端末に残すのは狭い幅の「入力／紙の見た目」の切り替えだけ（acc_pane・決まった値だけ）
+   ・入居者を切り替えた瞬間に世代（gen）を上げ、遅れて届いた応答は捨てる（取り違えの守り・CLAUDE.md §2-5）
+   ・保存済みの報告を開いた時は、入居者マスタの今の値で上書きしない（「入居者マスタから入れ直す」を押した時だけ入れる）
+   ・外部の AI へは何も送らない */
+var C=window.AccidentReportCalc;
+var DEVICE_KEY='su_device_role', LS_PANE='acc_pane';
+var gen=0, view='boot', dbState='loading';
+var roster=[], recent=[], hospitals=[];
+var cur=null;          // 選んでいる方 {id,name,kana,room}（メモリだけ）
+var master=null;       // その方の入居者マスタの基本の欄（要る項目だけ・メモリだけ）。読めなかった時は {missing:true}
+var reports=[];        // その方の事故報告書（全部の列）
+var draft=null, base=null; // 書いている報告と、読み込んだ時（保存した時）の形
+var autoKeys={};       // 自動で入れた欄 → 'm'（入居者マスタから）か 'f'（施設情報から）。手で直すと外す
+var touched={};        // 手で直した事業所番号・所在地（事業所を選び直しても上書きしない）
+var over={};           // 紙で最小の大きさでも収まらず別紙へ回した欄
+var pane='form', printOn=false, saving=false, loading=false;
+
+function $(id){return document.getElementById(id)}
+var esc=C.esc;
+function toast(m){var t=$('toast');if(!t)return;t.textContent=m;t.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(function(){t.classList.remove('on')},3200)}
+function setSync(t){var e=$('a-sync');if(e)e.textContent=t||''}
+function setMsg(id,t){var e=$(id);if(!e)return;e.textContent=t||''}
+function note_(where,e){ try{ if(window.SUErrors&&typeof window.SUErrors.note==='function') window.SUErrors.note('事故報告書', e, 'acc:'+where); }catch(_){} }
+function getDeviceRole(){try{return localStorage.getItem(DEVICE_KEY)||'office'}catch(e){return'office'}}
+function isField(){return getDeviceRole()==='field'}
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){/* 私用モードなど */}}
+function confirm_(m){ return (window.SUDialog&&typeof window.SUDialog.confirm==='function')?window.SUDialog.confirm(m):Promise.resolve(window.confirm(m)); }
+function fac_(){ try{ return C.facOf(window.SUFacility?window.SUFacility.get():null); }catch(e){ return C.facOf(null); } }
+function today_(){ return C.todayJST(); }
+
+/* データベースの窓口。通信は rpc_ だけを通す */
+function db_(){ return window.SUAuth.client(); }
+function rpc_(name,args){
+  return Promise.resolve().then(function(){ return db_().rpc(name,args||{}); }).then(function(r){
+    if(r&&r.error) throw r.error;
+    return r?r.data:null;
+  });
+}
+function noDb_(e){ var c=e&&e.code; return c==='42P01'||c==='PGRST205'||c==='PGRST202'; }
+/* データベースの断りを職員に分かる言葉にする（コード・技術用語を出さない） */
+function friendly_(e){
+  var code=e&&e.code, m=String(e&&e.message||e||'');
+  if(e&&e.accText) return e.accText;
+  if(code==='42501'||/permission denied|row-level security/i.test(m)) return 'この操作をする権限がありません。事務所・管理者のアカウントでログインしているか確かめてください。';
+  if(code==='23514') return '入れた文字が長すぎるか、値の形が違います。入れた値を確かめてください。';
+  if(code==='22007'||code==='22008') return '日付の形が違います。日付を選び直してください。';
+  if(noDb_(e)) return '共通のデータベースに事故報告書の仕組みがまだありません（データベースの更新が必要です）。管理者に知らせてください。';
+  if(/failed to fetch|network|load failed|timeout|タイムアウト/i.test(m)) return '通信できませんでした。電波・Wi-Fi を確かめてから、もう一度試してください。';
+  return 'うまくいきませんでした。少し待ってから、もう一度試してください。';
+}
+var NG_TEXT={notfound:'この報告は見つかりませんでした。読み直してください。',cancelled:'取り消した報告は直せません。',badkey:'保存の形が今の仕組みと合いません。ページを読み込み直してください。',
+  badshape:'保存の形が今の仕組みと合いません。入れた値を確かめてください。',resident_change:'報告の対象の方は後から変えられません。',noresident:'入居者を選んでください。',noprev:'写した元の報告が見つかりませんでした。元の報告を開き直してから写してください。'};
+function ngText_(where,d){ var c=d&&typeof d.error==='string'?d.error:''; note_(where,{message:'ok:false '+(c||'no-error')}); return NG_TEXT[c]||'保存できませんでした。もう一度試してください。'; }
+
+/* 入居者マスタの読み取り（SUResRead）。新しい保存先へ切り替えた後に、ログインした事務所・管理者が読む。
+   Google の読み取りの道は使わない（この画面は Google の接続先を持たない）ので、Google へ回る時は断りの文にする */
+function resRead_(body){
+  var noGas=function(){ var e=new Error('nogas'); e.accText='入居者マスタを読めませんでした。事務所・管理者のアカウントでログインしているか確かめてください（入居者マスタを新しい保存先へ切り替えた後に使えます）。'; return Promise.reject(e); };
+  if(!window.SUResRead) return noGas();
+  /* 切り替えスイッチ（su-backend.json）を、この画面を開いて最初の読み取りの前に1回だけ読む（ほかの画面を開いていない端末でも、
+     スイッチの控えが無いまま Google の道と判定しないように） */
+  if(!resRead_.flags) resRead_.flags=Promise.resolve().then(function(){ return typeof window.SUResRead.refreshFlags==='function'?window.SUResRead.refreshFlags():null; }).then(null,function(e){ note_('切り替えスイッチ',e); });
+  return resRead_.flags.then(function(){ return window.SUResRead.call(body,noGas,{screen:'accident-report'}); });
+}
+
+/* ═══════════ 起動・端末の用途・ログインの役割 ═══════════ */
+function showFieldOnly_(){
+  view='field';
+  $('a-app').hidden=true;
+  var g=$('a-gate'); g.hidden=false;
+  g.innerHTML='<h2>この画面は事務所のパソコンで使います</h2><p>この端末は「現場」として設定されているため、事故報告書は開きません。</p><p><a class="btn" href="index.html">メニューへ戻る</a></p>';
+}
+function boot_(){
+  gen++;
+  if(isField()){ showFieldOnly_(); return Promise.resolve('field'); }
+  /* ログインの役割の確かめ（su-app-gate.js）。端末の用途の止めの後・記録を読む前に確かめる。開けない時は何も読まない */
+  if(!window.SUAppGate){
+    document.body.textContent='';
+    var gp=document.createElement('p'); gp.textContent='ログインを確かめる部品を読み込めませんでした。ページを読み込み直してください。';
+    document.body.appendChild(gp);
+    return Promise.resolve('nogate');
+  }
+  return window.SUAppGate.run('accident-report',{dirty:function(){ return isDirty_(); }}).then(function(ok){
+    if(!ok){ view='gate'; return 'gate'; }
+    return startApp_();
+  });
+}
+function startApp_(){
+  view='app';
+  definePrint_();
+  $('a-gate').hidden=true; $('a-app').hidden=false;
+  pane=C.pickPane(lsGet(LS_PANE));
+  showHome_();
+  try{ if(window.SUPerf) window.SUPerf.ready(); }catch(e){ note_('速さの記録', e); }
+  return loadHome_().then(function(){ openFromUrl_(); return 'app'; });
+}
+/* 入居者マスタからの受け渡し（?resident=<利用者No>）。番号は形を確かめ、名簿にいる方だけを開く。名前は URL から受けない */
+function openFromUrl_(){
+  var id='';
+  try{ id=new URLSearchParams(location.search).get('resident')||''; }catch(e){ id=''; }
+  if(!/^[0-9A-Za-z_-]{1,32}$/.test(id)) return;
+  var hit=false; roster.forEach(function(r){ if(r.id===id) hit=true; });
+  if(!hit){ setMsg('a-msg','入居者マスタから渡された方が名簿に見つかりませんでした。下の一覧から選んでください。'); return; }
+  pickResident_(id);
+}
+/* 名簿と最近の事故報告書（医療機関の候補も）を読む */
+function loadHome_(){
+  var my=gen;
+  dbState='loading'; setSync('読み込んでいます…'); setMsg('a-msg','');
+  var pList=rpc_('acc_list',{p_resident:null}).then(function(d){
+    if(my!==gen) return;
+    if(!d||d.ok!==true) throw {accText:'事故報告書の一覧を読めませんでした。読み直してください。'};
+    recent=Array.isArray(d.reports)?d.reports:[]; takeHosp_(d); dbState='ok';
+  });
+  var pRos=resRead_({action:'getRoster'}).then(function(d){
+    if(my!==gen) return;
+    roster=(d&&Array.isArray(d.roster)?d.roster:[]).filter(function(r){ return r&&r.active!==false; })
+      .map(function(r){ return {id:String(r.id),name:String(r.name||''),kana:String(r.kana||''),room:String(r.room||''),active:true}; });
+  });
+  return Promise.all([pList.then(function(){return null},function(e){ if(my===gen){ dbState='ng'; note_('一覧',e); } return e; }),
+                      pRos.then(function(){return null},function(e){ if(my===gen) note_('名簿',e); return e; })])
+    .then(function(errs){
+      if(my!==gen) return;
+      var e=errs.filter(Boolean)[0];
+      setSync('');
+      if(e) setMsg('a-msg',friendly_(e));
+      paintHome_();
+    });
+}
+function takeHosp_(d){
+  hospitals=C.hospitalChoices(d&&d.hospitals);
+  var dl=$('a-hosp-list'); if(!dl) return;
+  dl.textContent='';
+  hospitals.forEach(function(h){ var o=document.createElement('option'); o.value=h.name; dl.appendChild(o); });
+}
+
+/* ═══════════ 入居者を選ぶ前（主役＝選ぶ所・脇＝最近の事故報告書） ═══════════ */
+function showHome_(){
+  clearConflict_(); closeBig_();
+  cur=null; master=null; reports=[]; draft=null; base=null; autoKeys={}; touched={}; over={};
+  setLoading_(false);
+  $('a-home').hidden=false; $('a-work').hidden=true; $('a-home-btn').hidden=true;
+  $('a-who').textContent=''; var b=document.createElement('b'); b.textContent='入居者を選んでください'; $('a-who').appendChild(b);
+  paintHome_();
+}
+function kindTag_(r){ return '<span class="tag'+(r.report_kind==='final'?' final':'')+'">'+esc(C.kindLabel(r.report_kind,r.report_no))+'</span>'; }
+function paintHome_(){
+  var list=C.searchResidents(roster,$('a-q').value);
+  $('a-res').innerHTML=list.length?list.map(function(r){
+    return '<li><button type="button" data-act="pick" data-id="'+esc(r.id)+'"><span class="rm">'+esc(r.room)+'</span><span class="nm">'+esc(r.name)+'</span></button></li>';
+  }).join(''):'<li class="empty">'+(roster.length?'見つかりません。名前・ふりがな・居室の番号で探してください。':'入居者の名簿を読めていません。')+'</li>';
+  var rows=C.sortReports(recent).slice(0,30);
+  $('a-recent').innerHTML=rows.length?rows.map(function(r){
+    return '<li><button type="button" data-act="open-recent" data-rid="'+esc(r.resident_id)+'" data-aid="'+esc(r.id)+'">'+
+      '<span class="dt">'+esc(C.mdw(r.occurred_on)||'発生日なし')+'</span><span class="nm">'+esc(r.resident_name||'（名前なし）')+'</span>'+kindTag_(r)+'</button></li>';
+  }).join(''):'<li class="empty">まだ事故報告書はありません。左で入居者を選ぶと書き始められます。</li>';
+}
+
+/* ═══════════ 入居者を選ぶ ═══════════ */
+function pickResident_(id,openId){
+  var go=function(){
+    var r=null; roster.forEach(function(x){ if(x.id===String(id)) r=x; });
+    if(!r){ recent.forEach(function(v){ if(!r&&String(v.resident_id)===String(id)) r={id:String(v.resident_id),name:String(v.resident_name||''),room:''}; }); }
+    if(!r) return;
+    gen++; var my=gen;
+    clearConflict_(); closeBig_(); cur=r; master=null; reports=[]; draft=null; base=null; autoKeys={}; touched={}; over={};
+    $('a-home').hidden=true; $('a-work').hidden=false; $('a-home-btn').hidden=false;
+    paintWho_(); setMsg('a-msg',''); setMsg('a-dmsg','');
+    $('a-form').innerHTML='<p class="empty">読み込んでいます…</p>'; $('a-past').innerHTML=''; $('a-pv').innerHTML='';
+    setLoading_(true); setSync('読み込んでいます…');
+    var pR=rpc_('acc_list',{p_resident:r.id}).then(function(d){
+      if(my!==gen) return;
+      if(!d||d.ok!==true) throw {accText:'この方の事故報告書を読めませんでした。読み直してください。'};
+      /* 取り違えの守り: 選んだ方の報告だけを持つ */
+      reports=C.sortReports((Array.isArray(d.reports)?d.reports:[]).filter(function(x){ return x&&String(x.resident_id)===r.id; })); takeHosp_(d);
+    });
+    var pM=resRead_({action:'getSection',id:r.id,section:'basic'}).then(function(d){
+      if(my!==gen) return;
+      var s=d&&d.section;
+      /* 取り違えの守り: 返ってきた方の番号が選んだ方と違えば使わない */
+      if(!s||String(s.id)!==r.id){ master={missing:true}; return; }
+      master={name:str_(s.name)||r.name,birthDate:str_(s.birthDate),gender:str_(s.gender),admissionDate:str_(s.admissionDate),insurer:str_(s.insurer),careLevel:str_(s.careLevel),dementia:str_(s.dementia)};
+    });
+    return Promise.all([pR.then(function(){return null},function(e){return e}),pM.then(function(){return null},function(e){return e})]).then(function(rs){
+      if(my!==gen) return;
+      setSync('');
+      if(rs[1]){ note_('入居者マスタ',rs[1]); master={missing:true,text:friendly_(rs[1])}; }
+      if(rs[0]){ note_('報告',rs[0]); setMsg('a-msg',friendly_(rs[0])); dbState='ng'; } else dbState='ok';
+      var target=null;
+      if(openId) reports.forEach(function(v){ if(String(v.id)===String(openId)) target=v; });
+      if(target) openReport_(target); else newReport_();
+      setLoading_(false);
+      buildForm_(); paintAll_();
+      if(master&&master.missing&&!target) setMsg('a-dmsg',(master.text||'入居者マスタを読めませんでした。')+' 3 対象者は手で入れてください。');
+    });
+  };
+  if(isDirty_()) return confirm_('保存していない書きかけがあります。保存せずに別の方へ移りますか？').then(function(ok){ if(ok) go(); });
+  go();
+}
+function str_(v){ return v==null?'':(typeof v==='object'?'':String(v)); }
+function paintWho_(){
+  var w=$('a-who'); w.textContent='';
+  if(!cur){ var b0=document.createElement('b'); b0.textContent='入居者を選んでください'; w.appendChild(b0); return; }
+  var b=document.createElement('b'); b.textContent=cur.name+' 様'; w.appendChild(b);
+  if(cur.room){ var s=document.createElement('span'); s.textContent='居室 '+cur.room; w.appendChild(s); }
+}
+/* 読み込み中は書く所を丸ごと止める（押せる・書ける瞬間を作らない） */
+function setLoading_(on){ loading=!!on; var w=$('a-work'); if(w){ w.inert=loading; w.setAttribute('aria-busy',String(loading)); } lockSave_(); }
+var cancelling=false;
+function lockSave_(){ var b=$('a-save'); if(b) b.disabled=loading||saving||cancelling||dbState!=='ok'; }
+
+/* ═══════════ 報告を開く・新しく始める ═══════════ */
+function openReport_(row){ clearConflict_(); draft=C.fromRow(row); base=C.fromRow(row); autoKeys={}; touched={}; over={}; }
+function takeAuto_(a){ draft.data=a.data; a.auto.forEach(function(k){ autoKeys[k]='m'; }); (a.autoFac||[]).forEach(function(k){ autoKeys[k]='f'; }); }
+function newReport_(){
+  clearConflict_();
+  draft=C.blankReport(cur,today_()); autoKeys={}; touched={}; over={};
+  takeAuto_(C.fromResident(draft.data,(master&&!master.missing)?master:{},fac_(),today_()));
+  base=JSON.parse(JSON.stringify(draft));   // 入居者マスタから入れただけの新しい報告は「変更あり」にしない（保存はまだ）
+}
+function isDirty_(){ return !!(draft&&base&&!C.sameReport(draft,base)); }
+
+/* ═══════════ 入力の画面（欄と選択肢は accident-report-calc.js の定義から描く） ═══════════ */
+function chips_(g,cls){
+  var O=C.OPTS[g], f=fac_();
+  return '<div class="chips'+(cls?' '+cls:'')+'" role="group" aria-label="'+esc(O.label)+'">'+O.opts.map(function(o){
+    var lb=o.chip||String(o.label).replace(/\n/g,'');
+    if(g==='offices') lb=(f.offices[o.id]&&f.offices[o.id].name)||o.label;
+    return '<button type="button" class="chip" data-g="'+esc(g)+'" data-id="'+esc(o.id)+'" aria-pressed="false">'+esc(lb)+'</button>';
+  }).join('')+'</div>';
+}
+/* 「その他（　）」などの括弧の中の欄（選んだ時だけ出す） */
+function other_(g,id,label){
+  var o=C.optOf(g,id), k=o.other;
+  return '<div class="other" data-other-of="'+esc(g+':'+id)+'" hidden><label class="lbi" for="f-'+esc(k)+'">'+esc(label)+'</label><input type="text" id="f-'+esc(k)+'" data-k="'+esc(k)+'" maxlength="'+C.TEXT_MAX[k]+'"></div>';
+}
+function autoMark_(k){ return '<span class="auto" data-auto-for="'+esc(k)+'" hidden>入居者マスタから</span>'; }
+function txt_(k,label,opt){
+  opt=opt||{};
+  return '<div class="fld"><label class="lb" for="f-'+esc(k)+'">'+esc(label)+(opt.auto?autoMark_(k):'')+(opt.hint?'<span class="hint">'+esc(opt.hint)+'</span>':'')+'</label>'+
+    (opt.area?'<textarea id="f-'+esc(k)+'" data-k="'+esc(k)+'" rows="'+(opt.rows||4)+'" maxlength="'+C.TEXT_MAX[k]+'"></textarea>':
+      '<input type="'+(opt.type||'text')+'" id="f-'+esc(k)+'" data-k="'+esc(k)+'" maxlength="'+C.TEXT_MAX[k]+'"'+(opt.list?' list="'+esc(opt.list)+'"':'')+(opt.type==='tel'?' inputmode="tel"':'')+'>')+'</div>';
+}
+function date_(k,label,opt){
+  opt=opt||{};
+  return '<div class="fld"><label class="lb" for="f-'+esc(k)+'">'+esc(label)+(opt.auto?autoMark_(k):'')+'</label><div class="row"><input type="date" id="f-'+esc(k)+'" data-k="'+esc(k)+'" class="grow">'+
+    (opt.today?'<button type="button" class="btn sm" data-act="today" data-k="'+esc(k)+'">今日</button>':'')+'</div></div>';
+}
+function choice_(g,label,opt){
+  opt=opt||{};
+  return '<div class="fld"><span class="lb" id="lb-'+esc(g)+'">'+esc(label)+(opt.multi?'<span class="hint">（当てはまる物を全部）</span>':'')+(opt.auto?autoMark_(g):'')+'</span>'+chips_(g)+(opt.after||'')+'</div>';
+}
+function card_(n,title,body,tool){
+  return '<section class="card" aria-labelledby="sec-'+n+'"><h2 id="sec-'+n+'">'+n+'　'+esc(title)+'<span class="miss" data-miss="'+n+'"></span>'+(tool||'')+'</h2>'+body+'</section>';
+}
+function buildForm_(){
+  if(!draft){ $('a-form').innerHTML=''; return; }
+  var h='';
+  h+=card_(1,'事故状況',
+    choice_('severity','事故状況の程度',{multi:true,after:other_('severity','other','その他の内容')})+
+    '<div data-other-of="severity:death" hidden>'+date_('deathDate','死亡に至った場合 死亡年月日')+'</div>');
+  h+=card_(2,'事業所の概要',
+    txt_('corpName','法人名',{auto:true})+
+    choice_('offices','事業所（施設）名',{multi:true,auto:true})+
+    '<div class="g2">'+txt_('officeNo','事業所番号',{auto:true,hint:'事業所を1つ選ぶと入ります'})+'<div></div></div>'+
+    choice_('serviceKinds','サービス種別',{multi:true,auto:true})+
+    txt_('officeAddress','所在地',{auto:true}));
+  h+=card_(3,'対象者',
+    '<div class="g3">'+txt_('name','氏名',{auto:true})+'<div class="fld"><label class="lb" for="f-age">年齢'+autoMark_('age')+'<span class="hint">発生日の時点</span></label><div class="row"><input type="number" id="f-age" data-k="age" class="num" min="0" max="139" inputmode="numeric"><span>歳</span></div></div>'+'<div></div></div>'+
+    choice_('gender','性別',{auto:true})+
+    '<div class="g2">'+date_('serviceStart','サービス提供開始日',{auto:true})+txt_('insurer','保険者',{auto:true})+'</div>'+
+    choice_('addressKind','住所',{auto:true,after:other_('addressKind','other','その他の住所')})+
+    choice_('careLevel','要介護度',{auto:true})+
+    choice_('dementia','認知症高齢者の日常生活自立度',{auto:true}),
+    '<button type="button" class="btn sm tool" data-act="refill">入居者マスタから入れ直す</button>');
+  h+=card_(4,'事故の概要',
+    '<div class="fld"><span class="lb" id="lb-occur">発生日時<span class="hint">24時間表記</span></span><div class="row">'+
+      '<input type="date" id="f-occurDate" data-k="occurDate" aria-label="発生日" style="width:11em">'+
+      '<input type="number" id="f-occurHour" data-k="occurHour" class="num" min="0" max="23" inputmode="numeric" aria-label="発生の時"><span>時</span>'+
+      '<input type="number" id="f-occurMin" data-k="occurMin" class="num" min="0" max="59" inputmode="numeric" aria-label="発生の分"><span>分頃</span>'+
+      '<button type="button" class="btn sm" data-act="now">今</button></div></div>'+
+    choice_('place','発生場所',{multi:true,after:other_('place','other','その他の場所')})+
+    choice_('kind','事故の種別',{multi:true,after:other_('kind','other','その他の種別')})+
+    txt_('detail','発生時状況、事故内容の詳細',{area:true,rows:6})+
+    txt_('special','その他 特記すべき事項',{area:true,rows:2}));
+  h+=card_(5,'事故発生時の対応',
+    txt_('response','発生時の対応',{area:true,rows:5})+
+    choice_('consult','受診方法',{multi:true,after:other_('consult','other','その他の方法')})+
+    '<div class="g2">'+txt_('hospName','受診先の医療機関名',{list:'a-hosp-list'})+txt_('hospTel','連絡先（電話番号）',{type:'tel'})+'</div>'+
+    txt_('diagName','診断名')+
+    choice_('diag','診断内容',{multi:true,after:other_('diag','fracture','骨折の部位')+other_('diag','other','その他の内容')})+
+    txt_('treatment','検査、処置等の概要',{area:true,rows:3}));
+  h+=card_(6,'事故発生後の状況',
+    txt_('status','利用者の状況',{area:true,rows:5})+
+    choice_('familyRel','家族等への報告　報告した家族等の続柄',{multi:true,after:other_('familyRel','other','その他の続柄')})+
+    '<div class="g2">'+date_('familyDate','家族等への報告年月日',{today:true})+'<div></div></div>'+
+    choice_('agencies','連絡した関係機関（連絡した場合のみ）',{multi:true,after:'<div class="agency">'+C.OPTS.agencies.opts.map(function(o){
+      return '<div class="other" data-other-of="'+esc('agencies:'+o.id)+'" hidden><label class="lbi" for="f-'+esc(o.other)+'">'+esc(o.sub)+'</label><input type="text" id="f-'+esc(o.other)+'" data-k="'+esc(o.other)+'" maxlength="'+C.TEXT_MAX[o.other]+'"></div>';
+    }).join('')+'</div>'})+
+    txt_('followup','本人、家族、関係先等への追加対応予定',{area:true,rows:3}));
+  h+=card_(7,'事故の原因分析',txt_('cause','本人要因、職員要因、環境要因の分析',{area:true,rows:6,hint:'できるだけ具体的に'}));
+  h+=card_(8,'再発防止策',txt_('prevention','手順変更、環境変更、その他の対応、再発防止策の評価時期および結果等',{area:true,rows:6,hint:'できるだけ具体的に'}));
+  h+=card_(9,'その他',txt_('note','特記すべき事項',{area:true,rows:3}));
+  $('a-form').innerHTML=h;
+  syncForm_();
+}
+/* 書いている報告（draft）の値を入力の画面へ映す（描き直さない＝打っている欄の焦点と文字の位置を動かさない） */
+function syncForm_(){
+  if(!draft) return;
+  var d=draft.data;
+  Array.prototype.forEach.call(document.querySelectorAll('#a-form [data-k]'),function(el){
+    var k=el.getAttribute('data-k'); if(el.tagName==='BUTTON') return;
+    var v=d[k]==null?'':String(d[k]);
+    if(el.value!==v) el.value=v;
+    if(el.tagName==='TEXTAREA') grow_(el);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-g][data-id]'),function(el){
+    var g=el.getAttribute('data-g'), id=el.getAttribute('data-id');
+    var on=g==='report'?draft.report_kind===id:C.isOn(d,g,id);
+    if(el.classList.contains('ar-o')) return;   // 紙の上の印は紙を描き直す時に入る
+    el.setAttribute('aria-pressed',String(on));
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-other-of]'),function(el){
+    var p=el.getAttribute('data-other-of').split(':'); el.hidden=!C.isOn(d,p[0],p[1]);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-auto-for]'),function(el){ var w=autoKeys[el.getAttribute('data-auto-for')]; el.hidden=!w; if(w) el.textContent=w==='f'?'施設情報から':'入居者マスタから'; });
+  $('a-no-grp').hidden=draft.report_kind!=='nth';
+  if($('a-no').value!==String(draft.report_no||'')) $('a-no').value=String(draft.report_no||'');
+  if($('a-submit').value!==draft.submit_date) $('a-submit').value=draft.submit_date||'';
+  paintMissing_();
+}
+function grow_(ta){ try{ ta.style.height='auto'; ta.style.height=Math.max(96,ta.scrollHeight+4)+'px'; }catch(_){} }
+function paintMissing_(){
+  if(!draft) return;
+  var m=C.missing(draft.data);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-miss]'),function(el){ var n=m[el.getAttribute('data-miss')]||0; el.textContent=n?'未記入 '+n:''; });
+}
+function paintState_(){
+  var s=$('a-state'); if(!s||!draft) return;
+  var dirty=isDirty_();
+  s.className='state'+(dirty?' dirty':'');
+  s.textContent=dirty?'● 保存していない変更があります':(draft.id?'保存済み':'まだ保存していません');
+  $('a-endzone').hidden=!draft.id;
+  $('a-follow').hidden=!(draft.id&&!dirty);
+  var fn=$('a-follow-nth'); if(fn&&draft.id) fn.textContent='この報告を写して第'+C.nextNo(draft)+'報を作る';
+  lockSave_();
+}
+function paintPast_(){
+  var pn=$('a-past-n'); if(pn) pn.textContent=String(reports.length);
+  $('a-past').innerHTML=reports.length?reports.map(function(r){
+    var me=draft&&String(draft.id)===String(r.id);
+    return '<li><button type="button" data-act="open" data-aid="'+esc(r.id)+'" aria-current="'+me+'"><span class="k">'+esc(C.kindLabel(r.report_kind,r.report_no))+'</span>'+
+      '<span class="d">発生 '+esc(C.mdw(r.occurred_on)||'日付なし')+'</span><span class="d">提出 '+esc(C.mdw(r.submit_date)||'なし')+'</span></button></li>';
+  }).join(''):'<li class="empty">まだこの方の事故報告書はありません。</li>';
+}
+function paintAll_(){
+  if(!cur||!draft) return;
+  syncForm_(); paintPast_(); paintState_(); paintPane_(); paintPaper_();
+}
+function paintPane_(){
+  var w=$('a-work'); w.setAttribute('data-pane',pane);
+  Array.prototype.forEach.call(document.querySelectorAll('.panes [data-pane]'),function(b){ var on=b.getAttribute('data-pane')===pane; b.setAttribute('aria-pressed',String(on)); b.setAttribute('aria-selected',String(on)); });
+  /* 狭い幅では紙の見本を入力の列の中へ移す（同じ箱を動かす） */
+  var narrow=window.matchMedia&&window.matchMedia('(max-width:1279px)').matches;
+  var box=$('a-paperbox'), desk=document.querySelector('.desk');
+  if(narrow&&box.parentNode!==desk) desk.appendChild(box);
+  if(!narrow&&box.parentNode===desk) $('a-work').appendChild(box);
+}
+
+/* ═══════════ 紙の見本（画面）と、欄ごとの文字の大きさ ═══════════ */
+function paperModel_(){ return {data:draft.data,kind:draft.report_kind,no:draft.report_no,submit:draft.submit_date,fac:fac_(),over:over}; }
+/* 枠に収まるまで文字を段階で下げる。最小でも収まらない欄の鍵を返す（別紙へ回す）。測れない（見えていない）時は null */
+/* 欄が収まっているか: 欄の中のはみ出し（縦・横）に加え、欄そのものと閉じ括弧が欄の箱（.ar-b・.ar-c）の外へ出ていないか
+   （行ごと折り返して外へ出た・閉じ括弧が押し出された、も収まっていないと数える） */
+function fits_(el){
+  if(el.scrollHeight>el.clientHeight+1||el.scrollWidth>el.clientWidth+1) return false;
+  var box=el.closest('.ar-b,.ar-c'); if(!box) return true;
+  var b=box.getBoundingClientRect(), r=el.getBoundingClientRect(), tol=1;
+  var inside=function(x){ return x.left>=b.left-tol&&x.right<=b.right+tol&&x.top>=b.top-tol&&x.bottom<=b.bottom+tol; };
+  if(!inside(r)) return false;
+  var cl=el.nextElementSibling; if(cl&&cl.classList.contains('ar-cl')&&!inside(cl.getBoundingClientRect())) return false;
+  return true;
+}
+function fitPaper_(root){
+  var els=root.querySelectorAll('.ar-fit'), bad={}, measured=false;
+  Array.prototype.forEach.call(els,function(el){
+    if(!el.offsetParent&&el.getClientRects().length===0) return;
+    measured=true;
+    var steps=String(el.getAttribute('data-fs')||'').split(',').map(Number).filter(function(x){ return x>0; });
+    var tryAll=function(){ for(var i=0;i<steps.length;i++){ el.style.fontSize=steps[i]+'mm'; if(fits_(el)) return true; } return false; };
+    el.classList.remove('ar-wrap');
+    var ok=tryAll();
+    /* 事業所（施設）名の行は、最小でも1行に入らない時だけ2行に折って測り直す（それでも入らなければ別紙） */
+    if(!ok&&el.getAttribute('data-wrap')==='1'){ el.classList.add('ar-wrap'); ok=tryAll(); }
+    /* 別紙へ回した欄（「別紙のとおり」）は、別紙の判定に残す（収まっても外さない） */
+    if((!ok&&el.getAttribute('data-nosheet')!=='1')||el.getAttribute('data-sheet')==='1') bad[el.getAttribute('data-fit')]=true;
+  });
+  return measured?bad:null;
+}
+/* 紙を描いて収める（別紙へ回す欄が変わったら1回だけ描き直す） */
+function renderPaper_(root){
+  /* いつも「別紙なし」で描いて測り、収まらない欄があればその欄だけ別紙へ回して描き直す（前の判定を持ち越さない）。
+     測れない（見えていない）時は前の判定のまま描く */
+  var keep=over; over={};
+  root.innerHTML=C.paperHtml(paperModel_());
+  var bad=fitPaper_(root);
+  if(bad===null){ over=keep; root.innerHTML=C.paperHtml(paperModel_()); return; }
+  over=bad;
+  if(Object.keys(bad).length){ root.innerHTML=C.paperHtml(paperModel_()); fitPaper_(root); }
+}
+var paperTimer=null;
+function paintPaper_(){
+  clearTimeout(paperTimer); paperTimer=null;
+  if(!draft) return;
+  var pv=$('a-pv'), wrap=$('a-pvwrap');
+  renderPaper_(pv);
+  /* 枠の幅に合わせて縮めて見せる（画面だけ。印刷の紙は縮めない） */
+  var w=wrap.clientWidth||0, full=pv.scrollWidth||1;
+  var s=w>0?Math.min(1,w/full):0.5;
+  pv.style.transform='scale('+s+')';
+  wrap.style.height=Math.ceil(pv.scrollHeight*s)+'px';
+  if(bigOpen) paintBig_();
+}
+/* 紙を大きく開く（画面の幅に合わせる・読める大きさ。最大は実寸の1.6倍） */
+var bigOpen=false, bigBack=null;
+function paintBig_(){
+  var pv=$('a-bigpv'), wrap=$('a-bigwrap'), body=$('a-big-body');
+  renderPaper_(pv);
+  var w=Math.max(200,(body.clientWidth||800)-32), full=pv.scrollWidth||1, s=Math.min(1.6,w/full);
+  pv.style.transform='scale('+s+')';
+  wrap.style.width=Math.ceil(full*s)+'px'; wrap.style.height=Math.ceil(pv.scrollHeight*s)+'px';
+}
+function openBig_(){ if(!draft) return; bigBack=document.activeElement; bigOpen=true; $('a-big').hidden=false; document.body.style.overflow='hidden'; paintBig_(); try{ $('a-big-close').focus(); }catch(_){} }
+function closeBig_(){ if(!bigOpen) return; bigOpen=false; $('a-big').hidden=true; $('a-bigpv').innerHTML=''; document.body.style.overflow=''; if(bigBack) try{ bigBack.focus(); }catch(_){} }
+function paperSoon_(){ clearTimeout(paperTimer); paperTimer=setTimeout(paintPaper_,160); }
+
+/* ═══════════ 押した・入れた ═══════════ */
+function setKind_(k){
+  if(C.REPORT_KINDS.indexOf(k)<0||!draft) return;
+  draft.report_kind=k;
+  if(k==='nth'&&!/^\d{1,2}$/.test(String(draft.report_no||''))) draft.report_no='2';
+  if(k!=='nth') draft.report_no='';
+  changed_();
+}
+function toggle_(g,id){
+  if(!draft||loading) return;
+  if(g==='report') return setKind_(id);
+  var prev=draft.data.offices.slice(), pNo=draft.data.officeNo, pAd=draft.data.officeAddress;
+  var d=C.toggle(draft.data,g,id);
+  if(g==='offices'){
+    var f=fac_(), keepNo=touched.officeNo?d.officeNo:null, keepAd=touched.officeAddress?d.officeAddress:null;
+    d=C.linkOffices(d,prev,f);
+    if(keepNo!==null) d.officeNo=keepNo;
+    if(keepAd!==null) d.officeAddress=keepAd;
+    if(d.officeNo!==pNo) delete autoKeys.officeNo;
+    if(d.officeAddress!==pAd) delete autoKeys.officeAddress;
+  }
+  delete autoKeys[g];
+  draft.data=d;
+  changed_();
+}
+function changed_(){ syncForm_(); paintState_(); paintPaper_(); }
+
+document.addEventListener('click',function(ev){
+  var t=ev.target.closest('[data-act],[data-g],[data-pane]'); if(!t||view!=='app') return;
+  if(t.hasAttribute('data-g')&&t.hasAttribute('data-id')){ ev.preventDefault(); if(cancelling) return; return toggle_(t.getAttribute('data-g'),t.getAttribute('data-id')); }
+  if(t.hasAttribute('data-pane')&&!t.hasAttribute('data-act')){ pane=C.pickPane(t.getAttribute('data-pane')); lsSet(LS_PANE,pane); paintPane_(); if(pane==='paper') paintPaper_(); return; }
+  var a=t.getAttribute('data-act');
+  /* 取り消しの通信中は、報告を開く・保存・写す・印刷などを止める（応答が来るまで） */
+  if(cancelling&&/^(pick|open-recent|home|new|open|follow-nth|follow-final|save|print|cancel-report|reload-report|refill)$/.test(a)) return;
+  if(a==='big-open') return openBig_();
+  if(a==='big-close') return closeBig_();
+  if(a==='past-tog'){ var sd=$('a-side'), op=!sd.classList.contains('open'); sd.classList.toggle('open',op); t.setAttribute('aria-expanded',String(op)); return; }
+  if(a==='pick') return pickResident_(t.getAttribute('data-id'));
+  if(a==='open-recent') return pickResident_(t.getAttribute('data-rid'),t.getAttribute('data-aid'));
+  if(a==='home'){ var back=function(){ gen++; showHome_(); setMsg('a-msg',''); loadHome_(); }; if(isDirty_()) return confirm_('保存していない書きかけがあります。保存せずに一覧へ戻りますか？').then(function(ok){ if(ok) back(); }); return back(); }
+  if(a==='new'||a==='open'||a==='follow-nth'||a==='follow-final'){
+    var aid=t.getAttribute('data-aid');
+    var mk=function(){
+      setMsg('a-dmsg','');
+      if(a==='new') newReport_();
+      else if(a==='open'){ var x=null; reports.forEach(function(r){ if(String(r.id)===aid) x=r; }); if(!x) return; openReport_(x); }
+      else { var src=null; reports.forEach(function(r){ if(String(r.id)===String(draft.id)) src=r; }); if(!src) return;
+        clearConflict_(); draft=C.followUp(src,a==='follow-final'?'final':'nth',today_()); base=JSON.parse(JSON.stringify(draft)); autoKeys={}; touched={}; over={};
+        toast(C.kindLabel(draft.report_kind,draft.report_no)+'を作りました。直してから保存してください'); }
+      buildForm_(); paintAll_();
+      try{ window.scrollTo(0,0); }catch(_){}
+    };
+    if(a==='open'&&draft&&String(draft.id)===aid) return;
+    if(isDirty_()) return confirm_('保存していない書きかけがあります。保存せずに移りますか？').then(function(ok){ if(ok) mk(); });
+    return mk();
+  }
+  if(a==='save') return save_();
+  if(a==='print') return print_();
+  if(a==='cancel-report') return cancelReport_();
+  if(a==='reload-report'){
+    var row=showConflict_.row;
+    if(!row||!cur||!draft||String(row.resident_id)!==String(cur.id)||String(row.id)!==String(draft.id)){ clearConflict_(); return; }
+    reports=C.sortReports(reports.map(function(r){ return String(r.id)===String(row.id)?row:r; }));
+    openReport_(row); clearConflict_(); setMsg('a-dmsg',''); buildForm_(); paintAll_(); return;
+  }
+  if(a==='today'){ var k=t.getAttribute('data-k'); if(!draft||!k) return; setDate_(k,today_()); return; }
+  if(a==='today-submit'){ if(!draft) return; draft.submit_date=today_(); changed_(); return; }
+  if(a==='now'){ if(!draft) return; var n=C.nowJST(); setDate_('occurDate',n.date); draft.data.occurHour=n.hour; draft.data.occurMin=n.min; changed_(); return; }
+  if(a==='refill'){
+    if(!draft) return;
+    if(!master||master.missing){ setMsg('a-dmsg',(master&&master.text)||'入居者マスタを読めていないため、入れ直せません。画面を読み込み直してください。'); return; }
+    takeAuto_(C.fromResident(draft.data,master,fac_(),today_())); touched={};
+    toast('入居者マスタと施設情報から入れ直しました'); changed_(); return;
+  }
+});
+/* 日付を入れた時（発生日は年齢を数え直す。手で直した年齢は上書きしない） */
+function setDate_(k,v){
+  if(k==='occurDate'&&master&&!master.missing){ draft.data.age=C.ageAfterDateChange(draft.data.age,master.birthDate,draft.data.occurDate,v,today_()); }
+  draft.data[k]=v; delete autoKeys[k];
+  changed_();
+}
+document.addEventListener('input',function(ev){
+  var t=ev.target;
+  if(t.id==='a-q'){ paintHome_(); return; }
+  if(!draft||view!=='app') return;
+  if(t.id==='a-no'){ draft.report_no=String(t.value||'').replace(/\D/g,'').slice(0,2); paintState_(); paperSoon_(); return; }
+  if(t.id==='a-submit'){ draft.submit_date=t.value||''; paintState_(); paperSoon_(); return; }
+  var k=t.getAttribute&&t.getAttribute('data-k'); if(!k) return;
+  if(t.type==='date'){ if(k==='occurDate'&&master&&!master.missing) { draft.data.age=C.ageAfterDateChange(draft.data.age,master.birthDate,draft.data.occurDate,t.value,today_()); var ag=$('f-age'); if(ag&&ag.value!==draft.data.age) ag.value=draft.data.age; }
+    draft.data[k]=t.value||''; }
+  else draft.data[k]=String(t.value==null?'':t.value).slice(0,C.TEXT_MAX[k]||4000);
+  delete autoKeys[k]; touched[k]=1;
+  var m=document.querySelector('[data-auto-for="'+k+'"]'); if(m) m.hidden=true;
+  /* 医療機関の候補を選んだ（名前が候補と同じ）時は、電話が空なら候補の電話を入れる */
+  if(k==='hospName'){ hospitals.forEach(function(h){ if(h.name===String(t.value).trim()&&h.tel&&!String(draft.data.hospTel||'').trim()){ draft.data.hospTel=h.tel; var e=$('f-hospTel'); if(e) e.value=h.tel; } }); }
+  if(t.tagName==='TEXTAREA') grow_(t);
+  paintMissing_(); paintState_(); paperSoon_();
+});
+document.addEventListener('keydown',function(ev){
+  if(ev.key==='Escape'&&bigOpen){ ev.preventDefault(); closeBig_(); return; }
+  /* Cmd/Ctrl+S もボタンと同じ止めを通す（読み込み中・読めなかった時は保存しない） */
+  if((ev.metaKey||ev.ctrlKey)&&(ev.key==='s'||ev.key==='S')&&view==='app'&&draft){ ev.preventDefault(); var sb=$('a-save'); if(!loading&&sb&&!sb.disabled) save_(); }
+});
+window.addEventListener('resize',function(){ if(view==='app'&&draft){ paintPane_(); paperSoon_(); } });
+/* 別のタブで端末の用途が「現場」に変わったら、読み込み直して起動の止めに任せる（CLAUDE.md §2-5） */
+window.addEventListener('storage',function(ev){ if(ev.key===DEVICE_KEY&&isField()&&view!=='field'){ try{ location.reload(); }catch(e){ note_('用途の切り替え',e); } } });
+window.addEventListener('beforeunload',function(ev){ if(isDirty_()){ ev.preventDefault(); ev.returnValue=''; } });
+
+/* ═══════════ 保存・取り消し ═══════════ */
+function save_(){
+  if(saving||!draft||!cur) return Promise.resolve(false);
+  var errs=C.checkReport(draft);
+  if(errs.length){ setMsg('a-dmsg',errs.join(' ')); return Promise.resolve(false); }
+  if(String(draft.resident_id)!==String(cur.id)){ setMsg('a-dmsg','書いている報告と選んでいる方が合いません。読み直してください。'); return Promise.resolve(false); }
+  saving=true; lockSave_(); setMsg('a-dmsg',''); setSync('保存しています…');
+  var my=gen, sent=draft, body=C.toSave(draft,fac_()), rev=draft.id?draft.rev:null;
+  return rpc_('acc_save',{p_row:body,p_rev:rev}).then(function(d){
+    if(my!==gen) return false;
+    if(d&&d.ok===true&&d.row){
+      var row=d.row, i=-1;
+      reports.forEach(function(v,k){ if(String(v.id)===String(row.id)) i=k; });
+      if(i>=0) reports[i]=row; else reports.push(row);
+      reports=C.sortReports(reports);
+      /* 保存の間に別の報告を開いた・新しく始めた時は、今の下書きに触らない。同じ報告なら、保存の間に打った分を残す */
+      if(draft===sent){ base=C.fromRow(row); draft.id=base.id; draft.rev=base.rev; base.data=C.normData(body.data); }
+      toast('保存しました'); setSync(''); if(draft===sent) clearConflict_();
+      refreshRecent_();
+      paintPast_(); paintState_();
+      return true;
+    }
+    if(d&&d.conflict){
+      setSync('');
+      if(draft!==sent) return false;
+      setMsg('a-dmsg','ほかの人（または別の画面）がこの報告を先に直しました。書いた内容は残っています。控えてから「読み直す」を押すと、今の内容を開きます。');
+      showConflict_(d.row);
+      return false;
+    }
+    setSync(''); setMsg('a-dmsg',ngText_('保存',d)); return false;
+  }).catch(function(e){
+    if(my!==gen) return false;
+    note_('保存',e); setSync(''); setMsg('a-dmsg',friendly_(e)); return false;
+  }).then(function(r){ saving=false; lockSave_(); return r; });
+}
+function showConflict_(row){
+  showConflict_.row=row||null;
+  var acts=document.querySelector('#a-bar .acts');
+  if(!acts||$('a-reload')) return;
+  var b=document.createElement('button'); b.type='button'; b.className='btn sm'; b.id='a-reload'; b.textContent='読み直す'; b.setAttribute('data-act','reload-report');
+  acts.insertBefore(b,acts.firstChild);
+}
+/* 競合の読み直しを外す（方・報告を替えた時・保存できた時）。別の方の行を開けるボタンを残さない */
+function clearConflict_(){ showConflict_.row=null; var rb=$('a-reload'); if(rb) rb.remove(); }
+function refreshRecent_(){
+  var my=gen;
+  rpc_('acc_list',{p_resident:null}).then(function(d){ if(my!==gen||!d||d.ok!==true) return; recent=Array.isArray(d.reports)?d.reports:[]; takeHosp_(d); }).catch(function(e){ note_('一覧の読み直し',e); });
+}
+function cancelReport_(){
+  if(!draft||!draft.id) return;
+  confirm_('この事故報告書（'+C.kindLabel(draft.report_kind,draft.report_no)+'）を取り消します。取り消した報告は一覧から消え、直せなくなります（記録としては残ります）。よろしいですか？').then(function(ok){
+    if(!ok) return;
+    if(!draft||!draft.id||cancelling) return;
+    var my=gen, id=draft.id;
+    cancelling=true; lockSave_(); setSync('取り消しています…');
+    rpc_('acc_cancel',{p_id:id,p_rev:draft.rev}).then(function(d){
+      if(my!==gen) return;
+      setSync('');
+      var same=!!(draft&&String(draft.id)===String(id));   // 送った時の報告をまだ開いている時だけ画面を片づける
+      if(d&&d.ok===true){ reports=reports.filter(function(v){ return String(v.id)!==String(id); }); toast('取り消しました'); refreshRecent_();
+        if(same){ newReport_(); buildForm_(); paintAll_(); } else paintPast_(); return; }
+      if(!same) return;
+      if(d&&d.conflict){ setMsg('a-dmsg','ほかの人が先に直しました。読み直してから取り消してください。'); showConflict_(d.row); return; }
+      setMsg('a-dmsg',ngText_('取り消し',d));
+    }).catch(function(e){ if(my!==gen) return; note_('取り消し',e); setSync(''); setMsg('a-dmsg',friendly_(e)); })
+      .then(function(){ cancelling=false; lockSave_(); });
+  });
+}
+
+/* ═══════════ 印刷（事故報告書の紙・A4 縦・2ページ＋入りきらない欄の別紙） ═══════════ */
+var printPages=2;
+function definePrint_(){
+  if(!window.SUPrint||definePrint_.done) return;
+  definePrint_.done=true;
+  /* 様式に題と事業所名があるので、右上の施設名・印刷日の印は付けない（様式を変えない）。
+     欄ごとの文字の大きさと別紙は、印刷の規則が当たり幅が紙に固定された後（measure の中）で測って決める */
+  window.SUPrint.define('accident',{label:'事故報告書',paper:'A4 portrait',margin:10,root:'#a-print',clearDelay:60000,
+    fit:{mode:'none',measure:function(){
+      var p=$('a-print'); renderPaper_(p);
+      var pg=p.querySelector('.ar-page'), sh=p.querySelector('.ar-sheet2');
+      var ph=pg?pg.getBoundingClientRect().height:1;
+      printPages=2+(sh?Math.max(1,Math.ceil((sh.getBoundingClientRect().height-1)/ph)):0);
+      return {need:{w:p.scrollWidth,h:p.scrollHeight}};
+    }},
+    pagesOf:function(){ return printPages; },
+    when:function(){ return printOn&&view==='app'; },
+    before:function(){ var p=$('a-print'); if(p) p.innerHTML=C.paperHtml(paperModel_()); },
+    after:function(){ var p=$('a-print'); if(p) p.innerHTML=''; printOn=false; }});
+}
+function print_(){
+  if(view!=='app'||!draft) return;
+  if(!window.SUPrint){ toast('印刷の部品を読み込めていません。ページを読み込み直してください'); return; }
+  var go=function(){
+    if(view!=='app'||!draft) return;
+    printOn=true;
+    try{ window.SUPrint.print('accident'); }catch(e){ note_('印刷', e); }
+    if(!document.body.classList.contains('su-printing')) printOn=false;
+  };
+  var gate=function(){ if(!window.SUPrint.facGate){ go(); return; } window.SUPrint.facGate(go,function(msg){ toast(msg); }); };
+  /* 保存していないまま印刷を押したら、先に保存する（保存できなければ刷らない） */
+  if(!draft.id||isDirty_()){
+    if(loading||saving||dbState!=='ok'){ setMsg('a-dmsg','保存できない状態のため印刷しません。読み込み直してから試してください。'); return; }
+    return save_().then(function(ok){ if(ok) gate(); });
+  }
+  gate();
+}
+
+function init_(){
+  var go=function(){ boot_().catch(function(e){ note_('起動',e); var g=$('a-gate'); g.hidden=false; g.textContent='事故報告書を開けませんでした。ページを読み込み直してください。'; }); };
+  if(window.SUFacility&&typeof window.SUFacility.onReady==='function') window.SUFacility.onReady(go); else go();
+}
+init_();
+</script>
+<!-- 見出しの「使い方」と役割の札・インターネットにつながっていない時の帯（画面だけ・通信と保存には触れない） -->
+<script src="su-shell.js?v=2026-11-28.2"></script>
+<script src="su-net.js?v=2026-11-12.2"></script>
+<!-- 現場から不具合を1タップで報告する共有部品（全画面共通）。画面の動き・保存・印刷には触れない -->
+<script src="su-report.js?v=2026-11-23.2" data-tool="事故報告書"></script>
+</body>
+</html>
