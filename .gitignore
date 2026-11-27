@@ -78,6 +78,7 @@
 # 勤怠の日ごとの補助項目の通し試験（2026-11-25・統合 0127・関数の無い時と有る時・通信は全部偽物・架空の職員）
 !/check/kintai_extras_e2e.mjs
 !/check/kintai_views_e2e.mjs
+!/check/kintai_list_e2e.mjs
 !/check/build-holidays-fixture.mjs
 !/check/kintai_board_e2e.mjs
 !/check/kintai_shaho_e2e.mjs
