@@ -101,6 +101,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .need-box { margin: 0 0 10px; }
 .need-box .need { display: block; width: 100%; min-height: 44px; text-align: left; padding: 10px 14px; border-radius: 10px; border: 2px solid var(--warn); background: var(--warn-l); color: var(--warn); font: inherit; font-weight: 700; cursor: pointer; }
 .need-box .need::after { content: " ›"; }
+/* 帯で送った先の日の箱は、上に貼り付く見出しの下で止める（--hdr-h は画面が見出しの高さを測って入れる・測れない時は 2段の見出しの高さ） */
+.day { scroll-margin-top: calc(var(--hdr-h, 112px) + 8px); }
 .need-box .need:focus-visible, .day:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
 #p-req > h2.sh { margin-top: 24px; }   /* 「出した申請」の見出しの上を空ける（2026-11-27） */
 @media print {

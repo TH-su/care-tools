@@ -312,7 +312,9 @@ say('— 2026-11-27: 確かめが要る日・見た目の直し —');
   t('帯の箱は月の合計の箱の上（月の切り替えの下）・閉じる時に捨てる', /<div id="need-box" class="need-box" role="status" hidden><\/div>\s*<div class="cd" id="days-head"><\/div>/.test(H) && /clear\(\$\('need-box'\)\); \$\('need-box'\)\.hidden = true;/.test(J));
   t('予定も打刻も無い月は合計を出さずに空の箱だけ', /if \(!rows\.length\) \{ head\.appendChild\(el\('p', 'muted empty', 'この月分の予定と打刻はまだありません。'\)\); return; \}/.test(J));
   t('月の切り替えは塗らない（淡い地と下線）・塗りは上のタブだけ', /\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri-l\);/.test(CSS) && !/\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri\);/.test(CSS));
-  t('有給: 黄の箱は「いちばん早く消える残り」だけ（時間単位の注意・年5日は注記）', (J.match(/'msg warn'/g) || []).length === 1 && /el\('p', 'msg warn', 'いちばん早く消える残り: '/.test(J));
+  /* 審査役の指摘（2026-11-27）: 時間単位の有休の注意は、残りの数を読み違えないよう黄の箱に戻した。黄の箱はこの2つまで・年5日は注記のまま */
+  t('有給: 黄の箱は「いちばん早く消える残り」と時間単位の有休の注意の2つだけ（年5日は注記）', (J.match(/'msg warn'/g) || []).length === 2 && /el\('p', 'msg warn', 'いちばん早く消える残り: '/.test(J) && /el\('p', 'msg warn', S\.HOURLY_NOTE\)/.test(J) && /v\.ob5Warn \? 'help em' : 'muted'/.test(J));
+  t('帯で送る先の日の箱は、見出しの高さ（--hdr-h・画面が測る）の分だけ下で止める', /\.day \{ scroll-margin-top: calc\(var\(--hdr-h, 112px\) \+ 8px\); \}/.test(CSS) && /function syncHdr\(\)/.test(J) && /syncHdr\(\); t\.scrollIntoView/.test(J));
 }
 
 say('\n' + (ng ? '✗ 失敗 ' + ng + ' 件' : '✓ 全部合格') + '（' + ok + ' 件合格）');
