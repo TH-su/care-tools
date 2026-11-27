@@ -191,7 +191,7 @@ const pressFn = fn('press', 'updCode'), updFn = fn('updCode', 'lookup');
 t('数字・消すを押した時はテンキーを描き直さない（●の欄と決定だけ・textContent で書く。速い連打を落とさない）', /code \+= k;\s*updCode\(\);\s*\}/.test(pressFn) && !/paint(Pass|Code)\(\)/.test(pressFn) && /box\.textContent = /.test(updFn) && /ok\.disabled = !KintaiCalc\.isCode\(code\)/.test(updFn) && !/innerHTML/.test(updFn));
 t('重ね押しの守りは画面が入れ替わった時だけ（同じ画面の中では paintAt を進めない）', /function mark\(\) \{ if \(\$\('k-main'\)\.getAttribute\('data-v'\) !== view\) paintAt = Date\.now\(\);/.test(KC));
 /* ★総点検（2026-11-20）: 名前で選んだ控えの照合を足したので ?v= を 2026-11-20 に上げた（CLAUDE.md の決まり）。期待をその版に改めた */
-t('kintai-clock.js の読み込みは ?v=2026-11-25.1', /<script src="kintai-clock\.js\?v=2026-11-25\.1"><\/script>/.test(HC));
+t('kintai-clock.js の読み込みは ?v=2026-11-28', /<script src="kintai-clock\.js\?v=2026-11-28"><\/script>/.test(HC));
 
 console.log('\n— 9. 打刻画面の v3.1（画面の並び・今日の打刻） —');
 const recentFn = fn('loadRecent', 'paintRecent'), paintRecentFn = fn('paintRecent', 'paintFoot');
