@@ -254,7 +254,7 @@ try {
     });
     const sv = await p.evaluate(() => Array.from(document.querySelectorAll('#g-main .hflow .su-steps li')).map((li) => { const s = li.querySelector('.su-st-s'), r = li.getBoundingClientRect(); return { fs: parseFloat(getComputedStyle(li).fontSize), sub: s ? getComputedStyle(s).display !== 'none' && s.getBoundingClientRect().width > 0 : false, txt: li.textContent, top: Math.round(r.top) }; }));
     const vert = sv.length === 3 && sv[0].top < sv[1].top && sv[1].top < sv[2].top;
-    t('8. 手順の段: 幅' + w + (z !== 1 ? '・文字200%' : '') + (dark ? '・暗い表示' : '') + ' で3段とも名前と状態が読める（字 15px 以上）' + (w <= 420 ? '・縦に並ぶ' : '・横に並ぶ'), sv.length === 3 && sv.every((x) => x.fs >= 15 && x.sub) && (w <= 420 ? vert : !vert), sv);
+    t('8. 手順の段: 幅' + w + (z !== 1 ? '・文字200%' : '') + (dark ? '・暗い表示' : '') + ' で3段とも名前と状態が読める（字 15px 以上）' + (w <= 420 || w >= 900 ? '・縦に並ぶ' : '・横に並ぶ'), sv.length === 3 && sv.every((x) => x.fs >= 15 && x.sub) && (w <= 420 || w >= 900 ? vert : !vert), sv);   /* PC（900px 以上）は段を縦の行に並べる（su-office-look.css・本人指示 2026-11-27） */
     t('8. 進み具合: 幅' + w + (z !== 1 ? '・文字200%' : '') + (dark ? '・暗い表示' : '') + ' で横はみ出し 0・押す所 44px 以上・字 15px 以上', m.doc <= 0 && m.right <= 0.5 && m.btnH >= 44 && m.small.length === 0, m);
     if (w === 390 && z === 1) await shot(p, 'kintai.home.can-lock.ph', true);
     if (dark) await shot(p, 'kintai.home.can-lock.dark', true);
