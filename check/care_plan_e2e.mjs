@@ -16,6 +16,8 @@
  *   (10) 使い始めのスイッチ（cs_plan_status）が切の時は予約のボタンを出さず切替の見張りもしない・強制保存は前の計画で上書きしない
  *   (9) 版の印の門（偽物）: 今の画面の保存には印が付いて通る・部品を読ませない端末は予約のあるデータを送らず帯を出す・
  *       古い版と断られると帯を出して送り直さない・Google の道とログインなしでは予約のボタンが出ない
+ *   (12) 口 cs_plan_gate の答えが3秒に間に合わず印なしで送って oldapp → 確かめ直して印つきで1回だけ送り直して通る／
+ *        印つきで oldapp の時は送り直さない／口が「なし」のままなら1回で止まる／送り直しても oldapp なら2本で止まる（2026-11-27 反証）
  * どの流れも、画面のエラー（pageerror）が出たら失敗にする。成功で exit 0、1つでも落ちたら exit 1。
  */
 import fs from 'node:fs';
@@ -558,6 +560,112 @@ if (run(11)) {
     t('(11) 端末の控え・サーバーに保存した中身に版の印が入らない', !(await lsRaw(page)).includes('csAppVer') && !JSON.stringify(env.st.sbKv.data).includes('csAppVer'));
     await page.close();
   } finally { endChecks(env, '(11)'); await env.context.close(); }
+}
+
+/* ═════ (12) 印なしで送って oldapp の時の確かめ直しと1回の送り直し（2026-11-27 反証） ═════ */
+if (run(12)) {
+  const plan = { id: 'pl_r', from: LATER, careLevel: '', baseLevel: '要介護1', note: '', events: [], updatedAt: '2026-11-01T00:00:00.000Z' };
+  const gateCalls = (env) => env.st.rpc.filter((r) => r.fn === 'cs_plan_gate').length;
+  const bandOn = (page) => page.evaluate(() => { const w = document.getElementById('cs-app-warn'); return !!w && w.style.display !== 'none' && /この画面は古い版です/.test(w.textContent); });
+  /* (12a) 口の答えが4.5秒遅れる・送る時にまだ確かめていない → 3秒で印なしで送る → oldapp → 確かめの答えを待って印つきで1回送り直す */
+  {
+    console.log('\n— (12a) 口の答えが3秒に間に合わず印なしで送って oldapp → 確かめ直して印つきで1回送り直して通る —');
+    const env = await makeEnv({ db: baseDb((me) => { me.nextPlans = [plan]; }), flags: ROUTED, rpc: {
+      cs_plan_gate: async () => { await sleep(4500); return GATE.csPlanGate(); },
+    } });
+    try {
+      const page = await openCs(env);
+      await waitFor(() => env.st.rpc.some((r) => r.fn === 'cs_plan_gate'), 15000);
+      await sleep(5500);
+      const n0 = env.st.sbKv.log ? env.st.sbKv.log.length : 0;
+      const g0 = gateCalls(env);
+      const r = await page.evaluate(async () => {
+        const me = DB.residents.find((x) => x.id === 'fl01'); me.events[0].notes = '送り直しの架空の直し'; saveDB();
+        if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+        csPlanGate_ = { yes: false, noAt: 0, p: null };   /* 送る時にまだ確かめていない形にする */
+        const t0 = Date.now(); const ok = await SYNC.push(); return { ok, ms: Date.now() - t0, oldApp: !!SYNC._oldApp, dirty: SYNC._dirty === true, retry: !!SYNC._oldAppRetry };
+      });
+      const log = (env.st.sbKv.log || []).slice(n0);
+      t('(12a) 送信はちょうど2本: 印なしで oldapp → 印つき（2026112701）で通る', log.length === 2 && log[0].ver === null && log[0].result === 'oldapp' && log[1].ver === 2026112701 && log[1].result === 'ok', log);
+      t('(12a) 口の確かめは送信の間に1本だけ（確かめの最中の答えを待つ）', gateCalls(env) - g0 === 1, gateCalls(env) - g0);
+      t('(12a) 保存は成功（' + r.ms + 'ミリ秒）・古い版の印を立てない・未送信が残らない・送り直しの印は戻る', r.ok === true && r.oldApp === false && r.dirty === false && r.retry === false && r.ms >= 4000, r);
+      t('(12a) 帯「この画面は古い版です」は出ない', !(await bandOn(page)));
+      t('(12a) サーバーに直しが入り、端末の控え・サーバーに版の印が入らない', env.st.sbKv.data.residents.find((x) => x.id === 'fl01').events[0].notes === '送り直しの架空の直し'
+        && !(await lsRaw(page)).includes('csAppVer') && !JSON.stringify(env.st.sbKv.data).includes('csAppVer'));
+      await page.close();
+    } finally { endChecks(env, '(12a)'); await env.context.close(); }
+  }
+  /* (12b) 印つきで oldapp（本当に古い版と断られた）→ 送り直さない */
+  {
+    console.log('\n— (12b) 印つきで送って oldapp の時は送り直さない —');
+    const env = await makeEnv({ db: baseDb((me) => { me.nextPlans = [plan]; }), flags: ROUTED, forceOld: true });
+    try {
+      const page = await openCs(env);
+      await waitFor(() => page.evaluate(() => csPlanGate_.yes === true), 15000);
+      const n0 = env.st.sbKv.log ? env.st.sbKv.log.length : 0;
+      const g0 = gateCalls(env);
+      const r = await page.evaluate(async () => {
+        const me = DB.residents.find((x) => x.id === 'fl01'); me.events[0].notes = '印つきの架空の直し'; saveDB();
+        if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+        const ok = await SYNC.push(); return { ok, oldApp: !!SYNC._oldApp, dirty: SYNC._dirty === true };
+      });
+      await sleep(1500);
+      const log = (env.st.sbKv.log || []).slice(n0);
+      t('(12b) 送信は1本だけ（印つき・oldapp）・送り直さない', log.length === 1 && log[0].ver === 2026112701 && log[0].result === 'oldapp', log);
+      t('(12b) 口を確かめ直さない', gateCalls(env) === g0, [g0, gateCalls(env)]);
+      t('(12b) 止めて案内（古い版の印・未送信は端末に残る・帯が出る）', r.ok === false && r.oldApp === true && r.dirty === true && await bandOn(page), r);
+      await page.close();
+    } finally { endChecks(env, '(12b)'); await env.context.close(); }
+  }
+  /* (12c) 口が無い（答えがエラー）ままで予約あり → 印なしで oldapp → 確かめ直しても「なし」→ 1回で止める */
+  {
+    console.log('\n— (12c) 口が「なし」のまま印なしで送って oldapp → 確かめ直しても「なし」なら1回で止める —');
+    const env = await makeEnv({ db: baseDb((me) => { me.nextPlans = [plan]; }), flags: ROUTED, rpc: {
+      cs_plan_gate: () => ({ __status: 404, body: { code: 'PGRST202', message: 'Could not find the function', details: null, hint: null } }),
+    } });
+    try {
+      const page = await openCs(env);
+      await waitFor(() => env.st.rpc.some((r) => r.fn === 'cs_plan_gate'), 15000);
+      await sleep(1500);
+      /* 起動の後の最初の送信（起動の時に送る時はその送信・送らない時は下の送信）で、印なし→oldapp→確かめ直し→止める、になる。
+         どちらの時も、送信は全部で1本・口の確かめは起動の時の1本と確かめ直しの1本で2本 */
+      const r = await page.evaluate(async () => {
+        const me = DB.residents.find((x) => x.id === 'fl01'); me.events[0].notes = 'なしの架空の直し'; saveDB();
+        if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+        const ok = await SYNC.push(); return { ok, oldApp: !!SYNC._oldApp, dirty: SYNC._dirty === true, yes: csPlanGate_.yes };
+      });
+      await sleep(1500);
+      const log = env.st.sbKv.log || [];
+      t('(12c) 送信は全部で1本だけ（印なし・oldapp）', log.length === 1 && log[0].ver === null && log[0].result === 'oldapp', log);
+      t('(12c) 5分の間でも口を1回確かめ直した（起動の時と合わせて2本・答えは「なし」）', gateCalls(env) === 2 && r.yes === false, [gateCalls(env), r.yes]);
+      t('(12c) 止めて案内（古い版の印・未送信は端末に残る・帯が出る）', r.ok === false && r.oldApp === true && r.dirty === true && await bandOn(page), r);
+      await page.close();
+    } finally { endChecks(env, '(12c)'); await env.context.close(); }
+  }
+  /* (12d) 口の答えが4.5秒遅れる・門がいつも oldapp → 印なしで oldapp → 確かめ直して印つきで送り直しても oldapp → そこで止める（送り直しは1回だけ） */
+  {
+    console.log('\n— (12d) 送り直しても oldapp なら、送信2本（印なし→印つき）で止めて案内する —');
+    const env = await makeEnv({ db: baseDb((me) => { me.nextPlans = [plan]; }), flags: ROUTED, forceOld: true, rpc: {
+      cs_plan_gate: async () => { await sleep(4500); return GATE.csPlanGate(); },
+    } });
+    try {
+      const page = await openCs(env);
+      /* 起動の後の最初の送信（起動の時に送る時はその送信・送らない時は下の送信）で、印なし→oldapp→確かめ直し→印つきで送り直し→oldapp→止める、になる */
+      const r = await page.evaluate(async () => {
+        const me = DB.residents.find((x) => x.id === 'fl01'); me.events[0].notes = '二度断られる架空の直し'; saveDB();
+        if (SYNC._pushTimer) { clearTimeout(SYNC._pushTimer); SYNC._pushTimer = null; }
+        if (!csPlanGate_.yes) csPlanGate_ = { yes: false, noAt: 0, p: null };   /* 送る時にまだ確かめていない形にする */
+        const ok = await SYNC.push(); return { ok, oldApp: !!SYNC._oldApp, dirty: SYNC._dirty === true, retry: !!SYNC._oldAppRetry };
+      });
+      await waitFor(() => page.evaluate(() => !!SYNC._oldApp && !SYNC._busy), 20000);
+      await page.evaluate(() => SYNC.push());
+      await sleep(1500);
+      const log = env.st.sbKv.log || [];
+      t('(12d) 送信は全部でちょうど2本: 印なしで oldapp → 印つきで oldapp（3本目は送らない）', log.length === 2 && log[0].ver === null && log[0].result === 'oldapp' && log[1].ver === 2026112701 && log[1].result === 'oldapp', log);
+      t('(12d) 止めて案内（古い版の印・未送信は端末に残る・帯が出る・送り直しの印は戻る）', await page.evaluate(() => !!SYNC._oldApp && SYNC._dirty === true && !SYNC._oldAppRetry) && await bandOn(page), r);
+      await page.close();
+    } finally { endChecks(env, '(12d)'); await env.context.close(); }
+  }
 }
 
 await browser.close();

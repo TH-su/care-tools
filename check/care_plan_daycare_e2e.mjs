@@ -12,6 +12,11 @@
  *   5〜7 送る時にまだ確かめていない（確かめの答えが遅れる）: 0.8秒遅れ・予約あり … 答えを待って印が付く／6秒遅れ・予約あり … 約3秒で打ち切って印なしで送り、
  *        門が oldapp で断る／0.8秒遅れ・予約なし … 待たずに印なしで送る（送る直前に画面の確かめの覚え dcrGate_ を「まだ確かめていない」へ戻して作る）
  * 送信は画面の通信の入口（gasCall）を page.evaluate で直接呼ぶ（画面のコードは変えない）。データはすべて架空。通信は全部横取りし、外へは出ない。
+ *   8〜10 保存の本物の道（queueFlags → runSaver）で、印なしで送って oldapp の時（2026-11-27 反証）:
+ *        8 口の答えが4.5秒遅れる（3秒に間に合わない）… 印なしで oldapp → 口を確かめ直して印つきで1回だけ送り直して通る（送信はちょうど2本・取り消しの知らせなし）
+ *        9 口はあるが門がいつも oldapp（本当に古い版）… 印つきで oldapp → 送り直さない（送信1本・口を確かめ直さない）
+ *        10 口が無い（答えがエラー）・予約あり … 印なしで oldapp → 確かめ直しても「なし」→ 送信1本で止めて知らせる
+ *        11 口の答えが4.5秒遅れる・門がいつも oldapp … 印なしで oldapp → 印つきで送り直しても oldapp → 送信2本で止めて知らせる
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -137,6 +142,106 @@ await scene({ title: '4 口が無い・予約なし', gate: false, withPlan: fal
 await scene({ title: '5 送る時にまだ確かめていない・答えが0.8秒遅れる・予約あり', gate: true, withPlan: true, dirty: false, delay: 800 });
 await scene({ title: '6 送る時にまだ確かめていない・答えが6秒遅れる・予約あり', gate: true, withPlan: true, dirty: false, delay: 6000 });
 await scene({ title: '7 送る時にまだ確かめていない・答えが0.8秒遅れる・予約なし', gate: true, withPlan: false, dirty: false, delay: 800 });
+
+/* 8〜10: 保存の本物の道（queueFlags → runSaver）で、印なしで送って oldapp の時の確かめ直しと1回の送り直し */
+async function saverScene({ title, delay = 0, gateNone = false, forceOld = false }) {
+  console.log('\n— ' + title + ' —');
+  const db = planDb(true);
+  const st = { kv: { data: JSON.parse(JSON.stringify(db)), rev: 5, log: [] }, ext: [], errors: [], gateCalls: 0 };
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Tokyo', locale: 'ja-JP' });
+  const seed = { ...F.storage('office'), su_backend_flags: JSON.stringify(ROUTED) };
+  await context.addInitScript(({ s }) => {
+    try {
+      if (localStorage.getItem('__dc_seeded') === '1') return;
+      for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v);
+      localStorage.setItem('__dc_seeded', '1');
+    } catch (e) { /* 何もしない */ }
+  }, { s: seed });
+  /* 知らせ（トースト）を読み込みの初めから控える（画面のコードは変えず、#toast に出た文を写すだけ） */
+  await context.addInitScript(() => {
+    window.__toasts = [];
+    new MutationObserver(() => { const el = document.getElementById('toast'); const tx = el ? el.textContent : ''; if (tx && window.__toasts[window.__toasts.length - 1] !== tx) window.__toasts.push(tx); })
+      .observe(document, { subtree: true, childList: true, characterData: true });
+  });
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+  const sbBase = F.supabase({ sb: [] }, 'office');
+  const rpc = {
+    kv_get: () => ({ rev: st.kv.rev, data: st.kv.data, mode: 'live', updatedAt: '' }),
+    kv_head: (b) => { const revs = {}; (b.p_keys || []).forEach((k) => { revs[k] = k === 'care_schedule_v2' ? st.kv.rev : 0; }); return { revs }; },
+    kv_put: (b) => GATE.kvPut(st.kv, b, { forceOld }),
+    cs_plan_gate: async () => {
+      st.gateCalls++;
+      if (gateNone) return { __status: 404, body: { code: 'PGRST202', message: 'Could not find the function', details: null, hint: null } };
+      if (delay) await sleep(delay);
+      return GATE.csPlanGate();
+    },
+  };
+  await context.route('**/*', async (route) => {
+    const req = route.request();
+    const u = req.url();
+    if (u.startsWith(srv.url + '/')) {
+      if (/^[^?]*\/su-backend\.json(\?|$)/.test(u.slice(srv.url.length))) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ROUTED) });
+      return route.continue();
+    }
+    if (u.startsWith(F.SYNC_URL)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, server: 'silverunix-sync' }) });
+    if (u.startsWith(F.MASTER_URL)) return route.abort();
+    if (u.startsWith(F.SB + '/')) {
+      if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      const m = /\/rest\/v1\/rpc\/([a-z0-9_]+)$/.exec(new URL(u).pathname);
+      if (!m || !rpc[m[1]]) return sbBase(route);
+      let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch (e) { b = {}; }
+      const out = await rpc[m[1]](b);
+      if (out && out.__status) return route.fulfill({ status: out.__status, contentType: 'application/json', headers: cors, body: JSON.stringify(out.body) });
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(out) });
+    }
+    st.ext.push(req.method() + ' ' + u.slice(0, 160));
+    return route.abort();
+  });
+  context.on('page', (page) => { page.on('pageerror', (e) => st.errors.push(String(e && e.message).slice(0, 200))); page.on('dialog', (d) => d.accept().catch(() => {})); });
+  const page = await context.newPage();
+  try {
+    await page.goto(srv.url + '/daycare-roster.html', { waitUntil: 'load' });
+    await page.waitForFunction(() => typeof queueFlags === 'function' && !!window.SUKv && typeof DB !== 'undefined' && DB && Array.isArray(DB.residents) && DB.residents.length > 1, null, { timeout: 20000 });
+    await sleep(1500 + delay);   /* 起動の時に始まった確かめが終わるまで待つ */
+    const n0 = st.kv.log.length, g0 = st.gateCalls;
+    const r = await page.evaluate(async (resetGate) => {
+      if (resetGate) dcrGate_ = { yes: false, noAt: 0, p: null };   /* 送る時にまだ確かめていない形にする */
+      const me = DB.residents[1];
+      const want = !me.lunchMed;
+      const t0 = Date.now();
+      window.__toasts = [];
+      queueFlags([{ rid: me.id, masterId: me.masterId, name: me.name }], 'lunchMed', want, '昼食薬');
+      while (saverRunning) await new Promise((ok) => setTimeout(ok, 50));
+      return { ms: Date.now() - t0, want, rid: me.id, pending: pendingFlags.size, toasts: window.__toasts.slice() };
+    }, !!delay);
+    await sleep(500);
+    const log = st.kv.log.slice(n0);
+    const srvMe = st.kv.data.residents.find((x) => x.id === r.rid);
+    if (delay && forceOld) {
+      t('送信はちょうど2本: 印なしで oldapp → 印つき（2026112701）でも oldapp（3本目は送らない）', log.length === 2 && log[0].ver === null && log[0].result === 'oldapp' && log[1].ver === 2026112701 && log[1].result === 'oldapp', log);
+      t('止めて知らせる（「この画面は古い版です。読み込み直してください」・変更を取り消す）・サーバーは変わらない', r.toasts.some((x) => /保存できませんでした。?.*この画面は古い版です。読み込み直してください/.test(x)) && !!srvMe && !!srvMe.lunchMed !== r.want, { toasts: r.toasts, srv: srvMe && srvMe.lunchMed });
+    } else if (delay) {
+      t('送信はちょうど2本: 印なしで oldapp → 印つき（2026112701）で通る', log.length === 2 && log[0].ver === null && log[0].result === 'oldapp' && log[1].ver === 2026112701 && log[1].result === 'ok', log);
+      t('口の確かめは送信の間に1本だけ（確かめの最中の答えを待つ）', st.gateCalls - g0 === 1, st.gateCalls - g0);
+      t('保存が通り（' + r.ms + 'ミリ秒）、サーバーに昼食薬の印が入る・未送信が残らない', !!srvMe && !!srvMe.lunchMed === r.want && r.pending === 0 && !Object.prototype.hasOwnProperty.call(st.kv.data, 'csAppVer'), { r, srv: srvMe && srvMe.lunchMed });
+      t('「保存しました」が出て、取り消しの知らせは出ない', r.toasts.some((x) => /を保存しました/.test(x)) && !r.toasts.some((x) => /保存できませんでした|古い版/.test(x)), r.toasts);
+    } else {
+      const wantVer = forceOld ? 2026112701 : null;
+      t('送信は1本だけ（版の印は ' + (wantVer === null ? '無い' : wantVer) + '・oldapp）・送り直さない', log.length === 1 && log[0].ver === wantVer && log[0].result === 'oldapp', log);
+      if (forceOld) t('印つきで断られた時は口を確かめ直さない', st.gateCalls === g0, [g0, st.gateCalls]);
+      else t('口が「なし」の時は、5分の間でも1回確かめ直す', st.gateCalls - g0 === 1, [g0, st.gateCalls]);
+      t('止めて知らせる（「この画面は古い版です。読み込み直してください」・変更を取り消す）・サーバーは変わらない', r.toasts.some((x) => /保存できませんでした。?.*この画面は古い版です。読み込み直してください/.test(x)) && !!srvMe && !!srvMe.lunchMed !== r.want, { toasts: r.toasts, srv: srvMe && srvMe.lunchMed });
+    }
+  } finally {
+    t('画面のエラーなし', st.errors.length === 0, st.errors);
+    t('横取りしていない外への通信なし', st.ext.length === 0, st.ext);
+    await context.close();
+  }
+}
+await saverScene({ title: '8 保存の道・口の答えが4.5秒遅れる・予約あり → 印なしで oldapp → 確かめ直して印つきで1回送り直して通る', delay: 4500 });
+await saverScene({ title: '9 保存の道・印つきで oldapp（本当に古い版）→ 送り直さない', forceOld: true });
+await saverScene({ title: '10 保存の道・口が無い（答えがエラー）・予約あり → 印なしで oldapp → 確かめ直しても「なし」で止める', gateNone: true });
+await saverScene({ title: '11 保存の道・口の答えが4.5秒遅れる・門がいつも oldapp → 印つきで送り直しても oldapp なら2本で止める', delay: 4500, forceOld: true });
 
 await browser.close();
 await srv.close();
