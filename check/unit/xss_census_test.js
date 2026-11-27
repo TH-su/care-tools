@@ -660,6 +660,7 @@ const CENSUS = {
   "su-facility.js": [],
   "su-intro.js": [],
   "su-net.js": [],   /* 帯の文は固定の文を textContent で入れる（2026-11-12） */
+  "su-office-look.js": [],   /* パンくず・丸い月の並びの文は textContent で入れる（2026-11-27） */
   "su-dialog.js": [],   /* 窓の文は呼ぶ側の文を textContent で入れる・innerHTML は使わない（2026-11-12） */
   "su-shell.js": [],   /* 役割の札の文は固定の3つの文を textContent で入れる（2026-11-12） */
   "su-resident-hop.js": [],
