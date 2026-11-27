@@ -1,6 +1,8 @@
-/* su-app-gate.js の覆いの画面（2026-10-29）。画面ごとの CSS と混ざらないよう、名前は sug- で始める */
+/* su-app-gate.js の覆いの画面（2026-10-29）。画面ごとの CSS と混ざらないよう、名前は sug- で始める。
+   覆いの箱（su-app-gate.js が作る div#su-app-gate.sug）の決まりは id で絞る（裸の .sug が打刻の画面の勧めるボタン button.sug に当たり、全画面のボタンになったため・2026-11-27）。
+   :where() で包み、強さは前の .sug のまま（su-theme.css の型の色が今までどおり上に効き、覆いの見え方を変えない） */
 html.sug-on, html.sug-on body { overflow: hidden !important; }
-.sug {
+:where(#su-app-gate).sug {
   position: fixed; inset: 0; z-index: 2147483000;
   background: #f8f9fa; color: #202124;
   display: flex; align-items: flex-start; justify-content: center;
@@ -37,11 +39,11 @@ html.sug-on, html.sug-on body { overflow: hidden !important; }
 .sug-cd { overflow-wrap: anywhere; }
 .sug-btn { max-width: 100%; white-space: normal; text-align: center; }
 @media (max-width: 360px) {
-  .sug { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  :where(#su-app-gate).sug { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
   .sug-cd { padding: 16px 12px; margin-top: 16px; }
   .sug-btn { width: 100%; padding: 10px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .sug-spin::before { animation: none; } }
 /* 覆っている間は、下の画面を画面にも紙にも出さない（組み立て前の画面が狭い幅ではみ出さない・覗き見されない）。外せば元どおり出る */
 html.sug-on body > :not(#su-app-gate) { display: none !important; }
-@media print { .sug { position: static; } html.sug-on, html.sug-on body { overflow: visible !important; } }
+@media print { :where(#su-app-gate).sug { position: static; } html.sug-on, html.sug-on body { overflow: visible !important; } }
