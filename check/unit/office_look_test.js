@@ -28,7 +28,7 @@ t('次に押す塗りの青は印 su-sub の付いたボタンに当てない', 
 
 console.log('\n— 2. 読む画面と公開 —');
 for (const [n, h] of [['勤怠管理', KH], ['給与', PH]]) {
-  t(n + ': </head> の直前で CSS と JS（defer）を読む', /<link rel="stylesheet" href="su-office-look\.css\?v=2026-11-27">\n<script src="su-office-look\.js\?v=2026-11-27" defer><\/script>\n<\/head>/.test(h));
+  t(n + ': </head> の直前で CSS と JS（defer）を読む', /<link rel="stylesheet" href="su-office-look\.css\?v=2026-11-28">\n<script src="su-office-look\.js\?v=2026-11-27" defer><\/script>\n<\/head>/.test(h));
 }
 const others = fs.readdirSync(ROOT).filter((f) => /\.html$/.test(f) && f !== 'kintai.html' && f !== 'payroll.html').filter((f) => /su-office-look/.test(read(f)));
 t('ほかの画面は読まない', others.length === 0, others);
