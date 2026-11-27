@@ -1559,6 +1559,40 @@ async function opened(opt) {
     t('15-9 innerHTML は増やしていない（選ぶ一覧 pickerHtml_ の中に描く）', /impHtml_\(\)\+impcHtml_\(\)/.test(cutF(S, 'pickerHtml_')));
   }
 
+  {
+    /* 16. 録音から作った議事録のファイルを開く → 貼り付けと同じ道で振り分ける・端末に残さない */
+    const EVIL = '<img src=x onerror=alert(1)>';
+    const bad = (h) => /<img/i.test(h) || /<script/i.test(h) || /["']\s*on[a-z]+\s*=/i.test(h);
+    const T = await opened();
+    await T.ctx.openNew_('');
+    const h = T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur);
+    t('16 貼り付けの箱に「録音から作った議事録のファイル（.txt）を開く」とファイルの選び口（ラベル付き）を出す',
+      /<label class="fl" for="cm-paste-file">または、録音から作った議事録のファイル（\.txt）を開く<\/label><input type="file" id="cm-paste-file" accept="\.txt,text\/plain">/.test(h));
+    const file = (s) => ({ size: s.length * 3, text: () => Promise.resolve(s) });
+    const tgt = (f) => ({ id: 'cm-paste-file', files: f ? [f] : [], value: 'x', getAttribute() { return null; } });
+    const ev = tgt(file('﻿◆利用者名：' + EVIL + '\n◆結論：ファイルの結論\n◆出席者：\n本人／架空　一郎'));
+    T.ctx.onEdChange_({ target: ev }); await settle(); await settle();
+    t('16 開いたファイルを各欄へ振り分ける（頭の BOM を外す）', T.ctx.ed.rec.conclusion === 'ファイルの結論' && T.ctx.ed.rec.sourceName === EVIL && T.ctx.ed.paste.charAt(0) === '◆', T.ctx.ed.rec);
+    t('16 選び口の値を空に戻す（同じファイルをもう一度選べる）', ev.value === '');
+    t('16 ファイルの中身を esc を通して描く', !bad(T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur)));
+    const allowed = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
+    t('16 開いたファイルの中身を端末に書かない', T.writes.every(allowed), T.writes);
+    const U = await opened();
+    await U.ctx.openNew_('');
+    U.ctx.onEdChange_({ target: tgt(file('   \n')) }); await settle();
+    t('16 空のファイルは「ファイルに文字がありません」と出して欄に入れない', /ファイルに文字がありません/.test(U.ctx.ed.msg));
+    U.ctx.onEdChange_({ target: tgt({ size: CALC.INPUT_MAX * 4 + 1, text: () => Promise.resolve('◆結論：x') }) }); await settle();
+    t('16 大きすぎるファイルは読まずに断る', /ファイルが大きすぎます/.test(U.ctx.ed.msg) && U.ctx.ed.rec.conclusion !== 'x');
+    U.ctx.onEdChange_({ target: tgt({ size: 10, text: () => Promise.reject(new Error('read')) }) }); await settle();
+    t('16 読めない時は「ファイルを読めませんでした」', /ファイルを読めませんでした/.test(U.ctx.ed.msg));
+    const V = await opened();
+    await V.ctx.openNew_('');
+    let release; const slow = { size: 10, text: () => new Promise((ok) => { release = ok; }) };
+    V.ctx.onEdChange_({ target: tgt(slow) }); await settle();
+    const e0 = V.ctx.ed; V.ctx.ed = Object.assign({}, e0); release('◆結論：遅れて届いた'); await settle(); await settle();
+    t('16 読んでいる間に別の記録へ移ったら、届いた中身を捨てる', V.ctx.ed.rec.conclusion !== '遅れて届いた' && e0.rec.conclusion !== '遅れて届いた');
+  }
+
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
   process.exit(fail ? 1 : 0);
 })().catch((e) => { say('✗ 試験そのものが止まりました: ' + (e && e.stack || e)); process.exit(1); });
