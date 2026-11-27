@@ -194,6 +194,14 @@ main[data-v="pass"] #k-panel .back{margin-top:24px;color:var(--sub);border-style
 @media screen and (min-width: 900px){
   main[data-v="pass"] #k-panel .who{font-size:clamp(24px,3.2vw,34px)}
 }
+/* 「名前が出ない時は 番号で打刻」を見つけやすくする（代表者の決定 2026-11-28・大きさと位置は仮置き。文言・動きは変えない）
+   ・待受で、出勤・退勤の大きなボタンのすぐ下に、同じ横幅いっぱい・高さ 64px・濃い枠のボタンにする（主役の出勤・退勤より低く・字も小さく）
+   ・狭い幅では「番号」の途中で折らず、空白の所で2行にする
+   ・色は出勤（青）・退勤（赤）と取り違えない中立の色（地は --card・字は --ink・枠は --sub）。画面だけで、印刷は変えない */
+@media screen{
+  main[data-v="home"] #k-panel .h-code{width:100%;min-width:0;min-height:64px;margin:0;padding:6px 20px;font-size:22px;font-weight:700;line-height:1.3;word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance;border:2px solid var(--sub);border-radius:16px;background:var(--card);color:var(--ink);touch-action:manipulation}
+  main[data-v="home"] #k-panel .h-code:active{background:var(--press)}
+}
 </style>
 </head>
 <body>
