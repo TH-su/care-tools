@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-thS4oCT0z6lMzNJvz7EHCWrR0YX3q0N0trF6Tc5ZDn8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-ceFmIVVTbqHVzd/zFZWzGpGh3Khp3SR8ZptVjqtQmOk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 書類（PDF）を左の枠に出すため、この画面だけ CSP の frame-src に blob: を足す（check/csp.mjs が読む印） -->
@@ -1047,7 +1047,11 @@ function putRow_(row,rev){
     return 'ng';
   });
 }
+/* 送っている間の印（連打で同じ版を2回送る・同じ連絡を2行入れるのを止める）。押したボタンも送り終えるまで押せなくする */
+var basicBusy=false, contactBusy=false;
+function actBusy_(act,on){ var bs=document.querySelectorAll('[data-act="'+act+'"]'); for(var i=0;i<bs.length;i++){ bs[i].disabled=!!on; if(on) bs[i].setAttribute('aria-disabled','true'); else bs[i].removeAttribute('aria-disabled'); } }
 function saveBasic_(){
+  if(basicBusy) return Promise.resolve('busy');
   var a=rowById_(curId); if(!a) return Promise.resolve('none');
   var row=readBasicSafe_(a);
   if(!isPending_(a)&&!row.name){ dMsg_('氏名を入れてください。'); return Promise.resolve('bad'); }
@@ -1055,6 +1059,8 @@ function saveBasic_(){
   if(!isPending_(a)&&bi.state==='bad'){ dMsg_(bi.note+'。保存していません。'); return Promise.resolve('bad'); }
   dMsg_('保存しています…','busy');
   var sid=a.id;
+  basicBusy=true; actBusy_('save-basic',true);
+  var end=function(r){ basicBusy=false; actBusy_('save-basic',false); return r; };
   return putRow_(row,a.rev).then(function(r){
     if(curId!==sid){ if(r==='ok') paintAll_(); return r; }   /* 返事を待つ間に別の方を開いた: その方の打ちかけ・板には触らない */
     if(r==='ok'){ clearDrafts_('f-'); edDirty=hasDraft_(); paintAll_(); paintDetail_(); dMsg_('保存しました。','ok'); }
@@ -1062,7 +1068,7 @@ function saveBasic_(){
     else if(r==='pending'){ paintDetail_(); dMsg_(PENDING_MSG+'。','warn'); }
     else if(r==='ng') dMsg_('保存できませんでした。');
     return r;
-  },function(e){ atsNote_('基本情報の保存', e); dMsg_(friendly_(e)); return 'error'; });
+  },function(e){ atsNote_('基本情報の保存', e); dMsg_(friendly_(e)); return 'error'; }).then(end);
 }
 function newApplicant_(){
   var body='<div class="fi"><label for="d-nname">氏名</label><input id="d-nname" type="text" maxlength="80"></div>'+
@@ -1149,17 +1155,27 @@ function loadContacts_(id){
   })['catch'](function(e){ if(my!==gen||curId!==id) return; atsNote_('連絡の記録の読込', e); dMsg_(friendly_(e)); });
 }
 function addContact_(){
+  if(contactBusy) return Promise.resolve(false);
   var a=rowById_(curId); if(!a) return Promise.resolve(false);
   var sum=val_('c-sum'), dir=val_('c-dir')==='in'?'in':'out', ch=val_('c-ch');
   if(!sum){ dMsg_('内容を入れてください。'); return Promise.resolve(false); }
   var my=gen, id=a.id, at=new Date().toISOString();
+  contactBusy=true; actBusy_('add-contact',true);
   return Promise.resolve().then(function(){ return db_().from('ats_contacts').insert({applicant_id:id,at:at,channel:ch,direction:dir,summary:sum.slice(0,2000)}); }).then(function(r){
     if(r&&r.error) throw r.error;
     if(my!==gen) return false;
     var cur=rowById_(id);
-    var first=(dir==='out'&&cur&&!cur.first_contact_at)?putRow_({id:id,first_contact_at:at},cur.rev):Promise.resolve('ok');
-    return first.then(function(){ if(curId===id) clearDrafts_('c-'); paintAll_(); return loadContacts_(id); }).then(function(){ dMsg_('連絡を記録しました。','ok'); return true; });
-  })['catch'](function(e){ atsNote_('連絡の記録', e); dMsg_(friendly_(e)); return false; });
+    /* 連絡の行はもう入っている。最初の連絡の時刻が入らなかった時は、そう知らせる（押し直すと連絡が2行になるため、行は入ったと伝える） */
+    var first=(dir==='out'&&cur&&!cur.first_contact_at)?putRow_({id:id,first_contact_at:at},cur.rev).then(null,function(e){ atsNote_('最初の連絡の時刻', e); return 'error'; }):Promise.resolve('ok');
+    return first.then(function(fr){ if(curId===id) clearDrafts_('c-'); paintAll_(); return loadContacts_(id).then(function(){ return fr; }); }).then(function(fr){
+      if(fr==='ok') dMsg_('連絡を記録しました。','ok');
+      else if(fr==='conflict') dMsg_('連絡を記録しました。最初の連絡の時刻は、他で直されていたため入っていません（画面を読み込み直してから確かめてください）。','warn');
+      else if(fr==='stale') dMsg_('連絡を記録しました。最初の連絡の時刻は、画面を読み込み直してから確かめてください。','warn');
+      else if(fr==='pending') dMsg_('連絡を記録しました。最初の連絡の時刻は、'+PENDING_MSG+'。','warn');
+      else dMsg_('連絡を記録しました。最初の連絡の時刻は入りませんでした（画面を読み込み直してから確かめてください）。','warn');
+      return true;
+    });
+  })['catch'](function(e){ atsNote_('連絡の記録', e); dMsg_(friendly_(e)); return false; }).then(function(v){ contactBusy=false; actBusy_('add-contact',false); return v; });
 }
 
 /* ── 書類（履歴書などの PDF・0035・2026-10-29 本人指示「pdf を d&d で保存できる機能」）──
