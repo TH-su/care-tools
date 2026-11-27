@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-kp1BmRXcShmHtaqs8da3gBEcDlzHvxafUkDszAhE4DA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-s2qZAqv2GMYrxJSxzcCd7jucLGHlvHWIinpOScOV++c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.2, user-scalable=yes">
 <meta http-equiv="Cache-Control" content="no-store">
 <meta name="robots" content="noindex,nofollow">
@@ -782,7 +782,7 @@ body.su-print-staff24 #rp-print, body.su-print-staff24range #rp-print { display:
 <!-- 同期データの保存先の切り替え（統合 0005）。スイッチは su-backend.json -->
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="su-roster.js?v=2026-11-17"></script>
-<script src="su-res-read.js?v=2026-11-16"></script>
+<script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-kv-shadow.js?v=2026-11-16"></script>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <script src="su-print.js?v=2026-11-13"></script>
@@ -2904,6 +2904,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* detailBase（週間計画の最後の投影値）も一緒に運ぶ。これが欠けると detailDirty の解除弁が
            * 働かず、以後その札へ週間計画の正当な更新が永久に届かなくなる。 */
           if (cand.detailBase !== undefined && patch.detailBase === undefined) patch.detailBase = cand.detailBase;
+          if (cand.detailLocal && patch.detailLocal === undefined) patch.detailLocal = true;   /* その日だけの直しの印も運ぶ（2026-11-27） */
         }
         /* サービスコードの移譲: 捨て札がユーザー編集済み(svcDirty=週間計画へ未反映)で svcCode を持つなら残し札へ移譲。
          * 手動編集コードが weekly由来札(旧category)に負けて消えるのを防ぐ。残し札自身が編集済み(best.svcDirty)なら
@@ -4812,6 +4813,115 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     return { tasks: out, done: doneOut, placed: placed, trayed: trayed, kept: kept, made: made, singles: movedSingles, displaced: nDisplaced };
   }
 
+  /* ── その日に効く週間計画の予定（2026-11-27）──
+   * 週間計画の利用者は「予約した次の計画」nextPlans（from の日から効く events）と取り消しの印 planGone を持つ。
+   * 盤面の日 ymd が予約の from 以降なら、その予約の events で盤面を作る（切替日より先の日を切替の前に開いた時のため）。
+   * 週間計画の care-plan-calc.js の eventsFor と同じ答えにする（並び: from 昇順→updatedAt 新しい順→id 大きい順。
+   * 効く予約: object・id が空でない文字・from が実在する YYYY-MM-DD・events が配列・planGone に無い・同じ id／同じ from の2つ目は落とす）。
+   * from <= ymd の効く予約のうち from が最大の物の events。無ければ利用者の events（配列でなければ []）。例外を出さない。 */
+  function cpIsObj_(x) { return !!x && typeof x === 'object' && !Array.isArray(x); }
+  function cpStr_(x) { return x === undefined || x === null ? '' : String(x); }
+  function cpMs_(s) { var t = Date.parse(cpStr_(s)); return isNaN(t) ? -Infinity : t; }
+  function cpIsYmd_(s) {
+    if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    var y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+    if (m < 1 || m > 12 || d < 1) return false;
+    var dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+  }
+  function cpCmp_(a, b) {
+    var fa = cpStr_(a && a.from), fb = cpStr_(b && b.from);
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    var ua = cpMs_(a && a.updatedAt), ub = cpMs_(b && b.updatedAt);
+    if (ua !== ub) return ua > ub ? -1 : 1;
+    var ia = cpStr_(a && a.id), ib = cpStr_(b && b.id);
+    return ia === ib ? 0 : (ia > ib ? -1 : 1);
+  }
+  /* その日に効く予約（無ければ null）。careEventsFor と careRefPlanDue が使う1つの選び方 */
+  function carePlanDue_(res, ymd) {
+    if (!cpIsObj_(res) || !Array.isArray(res.nextPlans) || !cpIsYmd_(ymd)) return null;
+    var gone = {}, seenId = {}, seenFrom = {}, best = null, i;
+    var gl = Array.isArray(res.planGone) ? res.planGone : [];
+    for (i = 0; i < gl.length; i++) if (cpIsObj_(gl[i]) && typeof gl[i].id === 'string') gone[gl[i].id] = 1;
+    var plans = res.nextPlans.slice().sort(cpCmp_);
+    for (i = 0; i < plans.length; i++) {
+      var p = plans[i];
+      if (!(cpIsObj_(p) && typeof p.id === 'string' && p.id !== '' && cpIsYmd_(p.from) && Array.isArray(p.events)) ||
+          gone[p.id] || seenId[p.id] || seenFrom[p.from]) continue;
+      seenId[p.id] = 1; seenFrom[p.from] = 1;
+      if (p.from <= ymd) best = p;   /* from の昇順なので最後に当たった物が from 最大 */
+    }
+    return best;
+  }
+  function careEventsFor(res, ymd) {
+    try {
+      var cur = cpIsObj_(res) && Array.isArray(res.events) ? res.events : [];
+      var best = carePlanDue_(res, ymd);
+      return best ? best.events : cur;
+    } catch (e) {
+      return cpIsObj_(res) && Array.isArray(res.events) ? res.events : [];
+    }
+  }
+  /* 札（ref＝weeklyRef）の利用者に、その日（ymd）予約が効いているか（支援内容を週間計画へ書き戻さない印・2026-11-27）。
+   * evId のある札は evId の持ち主（現行の events か、その日に効く予約の events にその id がある方）だけで決める。
+   * 氏名（空白を除いて）で決めるのは evId の無い札だけで、退去した方（movedOut）は数えない。
+   * ymd が日付でない・予約の無いデータでは false。例外を出さない。 */
+  function careRefPlanDue(db, ref, ymd) {
+    try {
+      if (!db || !Array.isArray(db.residents) || !ref || !cpIsYmd_(ymd)) return false;
+      var norm = function (x) { return String(x == null ? '' : x).replace(/[\s　]/g, ''); };
+      var i, j, r, evs, cur, own;
+      for (i = 0; i < db.residents.length; i++) {
+        r = db.residents[i];
+        if (!cpIsObj_(r) || !carePlanDue_(r, ymd)) continue;
+        if (ref.evId) {
+          own = false;
+          cur = Array.isArray(r.events) ? r.events : [];
+          for (j = 0; j < cur.length && !own; j++) if (cur[j] && cur[j].id === ref.evId) own = true;
+          evs = careEventsFor(r, ymd);
+          for (j = 0; j < evs.length && !own; j++) if (evs[j] && evs[j].id === ref.evId) own = true;
+          if (own) return true;
+        } else if (ref.residentName !== undefined && !r.movedOut && norm(r.name) === norm(ref.residentName)) {
+          return true;
+        }
+      }
+      return false;
+    } catch (e) { return false; }
+  }
+  /* この利用者にその日（ymd）予約が効いているか（真偽）。例外を出さない */
+  function carePlanDueRes(res, ymd) { try { return !!carePlanDue_(res, ymd); } catch (e) { return false; } }
+  /* 現行の予定 ev（同じ物）を持つ利用者。無ければ null。例外を出さない */
+  function careOwnerOf(db, ev) {
+    try {
+      if (!db || !Array.isArray(db.residents) || !ev) return null;
+      for (var i = 0; i < db.residents.length; i++) {
+        var r = db.residents[i], evs = r && Array.isArray(r.events) ? r.events : [];
+        for (var j = 0; j < evs.length; j++) if (evs[j] === ev) return r;
+      }
+      return null;
+    } catch (e) { return null; }
+  }
+  /* 札の evId が、現行の events には無く予約の events にだけあるか（書き戻しの相手探しの止めに使う）。
+   * 予約は効く・効かないを問わず生のまま見る（取り消した直後の札も現行の別の予定へ書き込ませない）。例外を出さない。 */
+  function careEvIdOnlyInPlans(db, evId) {
+    try {
+      if (!db || !Array.isArray(db.residents) || evId === undefined || evId === null || evId === '') return false;
+      var i, j, k, r, evs, inPlan = false;
+      for (i = 0; i < db.residents.length; i++) {
+        r = db.residents[i];
+        if (!r) continue;
+        evs = Array.isArray(r.events) ? r.events : [];
+        for (j = 0; j < evs.length; j++) if (evs[j] && evs[j].id === evId) return false;
+        var ps = Array.isArray(r.nextPlans) ? r.nextPlans : [];
+        for (j = 0; j < ps.length && !inPlan; j++) {
+          var pe = ps[j] && Array.isArray(ps[j].events) ? ps[j].events : [];
+          for (k = 0; k < pe.length; k++) if (pe[k] && pe[k].id === evId) { inPlan = true; break; }
+        }
+      }
+      return inPlan;
+    } catch (e) { return false; }
+  }
+
   var api = {
     SVC: SVC,
     SVC_CODES: SVC_CODES,
@@ -4888,7 +4998,12 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     sameBuildingExtMap: sameBuildingExtMap,
     sameBuildingKindMap: sameBuildingKindMap,
     sameBuildingPeople: sameBuildingPeople,
-    sameBuildingPeriods: sameBuildingPeriods
+    sameBuildingPeriods: sameBuildingPeriods,
+    careEventsFor: careEventsFor,
+    careEvIdOnlyInPlans: careEvIdOnlyInPlans,
+    careRefPlanDue: careRefPlanDue,
+    carePlanDueRes: carePlanDueRes,
+    careOwnerOf: careOwnerOf
   };
 
   /* ── 同一建物減算の割合の見張り（2026-10-16 本人指示・本人選択「集計の画面に、押した時だけ」）──
@@ -6390,14 +6505,16 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 
   /* 週間ケア計画(care_schedule_v2 JSON) → 当日タスク生成（未配置）
    * dow: 0=月..6=日（jsDay からは (jsDay+6)%7 で変換） */
-  function weeklyToTasks(careDb, dow) {
+  /* ymd（開いている日付）を渡した時は、予約した次の計画を持つ方だけ、その日に効く予定（M.careEventsFor）で札を作る（2026-11-27）。
+   * 渡さない時・予約の無い方は今までどおり events */
+  function weeklyToTasks(careDb, dow, ymd) {
     var tasks = [], errors = [];
     if (!careDb || !careDb.residents || !careDb.residents.length) {
       return { tasks: tasks, errors: [{ reason: '利用者データがありません' }] };
     }
     for (var i = 0; i < careDb.residents.length; i++) {
       var res = careDb.residents[i];
-      var events = res.events || [];
+      var events = (ymd !== undefined && res && Array.isArray(res.nextPlans)) ? M.careEventsFor(res, ymd) : (res.events || []);
       for (var j = 0; j < events.length; j++) {
         var ev = events[j];
         if (ev.dayOfWeek !== dow) continue;
@@ -12245,6 +12362,67 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   /* ===== 週次支援マスタ／週間計画(care_schedule_v2)連携 ===== */
   var MASTER_KEY = 'ws_weekly_master_v1';
   var CARE_KEY = 'care_schedule_v2';
+  /* 週間計画の「アプリの版」の印（2026-11-27・チーフの決定）。共通 DB の kv_put は、予約した次の計画（nextPlans）か planGen 1 以上の利用者がいる
+   * 週間計画を、最上位の csAppVer がこれより古い（または無い）書き込みで断る（oldapp）＝古い版の画面が切り替えた後の計画へ前の計画での直しを書かない。
+   * 印は新しい保存先へ送るその時の写しにだけ付ける（端末の保存・控え・Google へは付けない・受け取った印は捨てる。サーバーも保存の前に取り除く） */
+  var CS_APP_VER = 2026112701;
+  /* 週間計画の中身から印（csAppVer）を取り除く（受け取った中身・端末の中身に紛れた時）。同じ物を返す */
+  function careStripAppVer_(data) {
+    if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'csAppVer')) delete data.csAppVer;
+    return data;
+  }
+  /* 印を付けてよいかの確かめ（反証レビュー 2026-11-27）。共通 DB の口 cs_plan_gate（移行 0136 で足す・引数なし・ログインしていれば
+   * {ok:true, minAppVer} を返す）が答えた時だけ「あり」。0136 より前の本番の kv_put は印を除かずに保存する＝開いたままの古い版の画面が
+   * 取り込んで送り返し、サーバーの門（oldapp）が効かなくなるため、口が答えない間は印なしで送る（改修前と同じ本文）。
+   * 覚えるのはメモリだけ。「あり」は覚えたまま、「なし」・エラーは5分たってから確かめ直す。ログインの部品がまだ無い時は確かめず覚えない */
+  var CS_GATE_RETRY_MS = 5 * 60 * 1000, CS_GATE_WAIT_MS = 3000, CS_GATE_CAP_MS = 15000;
+  var csGate_ = { ok: false, at: 0, busy: null };
+  function csGateKnown_() { return csGate_.ok === true; }
+  /* 口に聞く（聞いている途中なら同じ答えを待つ）。cb(true/false) を必ず1回だけ呼ぶ。例外を外に出さない。
+   * waitMs: ログインの部品（SUAuth）がまだ読み込まれていない時に、その間だけ待つ（su-kv.js の送信も部品を待ってから送るため・
+   * 予約のある週間計画を送る時だけ使う）。待っても無ければ「確かめられない」で false（覚えない） */
+  function csGateCheck_(cb, waitMs) {
+    var done = typeof cb === 'function' ? cb : function () {};
+    if (csGate_.ok) { done(true); return; }
+    if (csGate_.busy) { csGate_.busy.push(done); return; }
+    if (csGate_.at && Date.now() - csGate_.at < CS_GATE_RETRY_MS) { done(false); return; }
+    var c = null;
+    try { if (window.SUAuth && typeof window.SUAuth.client === 'function') c = window.SUAuth.client() || null; } catch (e) { c = null; }
+    if (!c || typeof c.rpc !== 'function') {
+      if (typeof waitMs === 'number' && waitMs > 0) { setTimeout(function () { csGateCheck_(done, waitMs - 200); }, 200); return; }
+      done(false); return;
+    }
+    var waiters = [done], settled = false, tm = null;
+    csGate_.busy = waiters;
+    function fin(v) {
+      if (settled) return;
+      settled = true;
+      if (tm) clearTimeout(tm);
+      if (v) csGate_.ok = true; else csGate_.at = Date.now();
+      csGate_.busy = null;
+      for (var i = 0; i < waiters.length; i++) { try { waiters[i](!!v); } catch (eW) {} }
+    }
+    tm = setTimeout(function () { fin(false); }, CS_GATE_CAP_MS);   /* 答えが返らないまま待ち続けない */
+    try {
+      Promise.resolve(c.rpc('cs_plan_gate')).then(function (r) {
+        fin(!!(r && !r.error && r.data && r.data.ok === true));
+      }, function (e) {
+        try { if (typeof wsNote_ === 'function') wsNote_('週間計画の版の口', e); } catch (eN) {}
+        fin(false);
+      });
+    } catch (e) { fin(false); }
+  }
+  /* 予約した次の計画（nextPlans が空でない）か planGen 1 以上の利用者がいる＝サーバーが印を求める週間計画 */
+  function careNeedsAppVer_(data) {
+    var rs = data && Array.isArray(data.residents) ? data.residents : [];
+    for (var i = 0; i < rs.length; i++) {
+      var r = rs[i];
+      if (!r || typeof r !== 'object') continue;
+      if (Array.isArray(r.nextPlans) && r.nextPlans.length) return true;
+      if (r.planGen !== null && r.planGen !== undefined && Number(r.planGen) >= 1) return true;   /* 数の文字でも数える（待つ側に倒す） */
+    }
+    return false;
+  }
   /* serviceDict(サービスコード辞書・書き手=care-schedule)の適用メモ化シグネチャ。
    * 同一辞書(v+codes)の再適用（renderAll毎の loadCareDb 等）を抑止＝無駄な extendSvc 呼びを避ける。 */
   var svcDictSig_ = '';
@@ -12271,7 +12449,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var raw = localStorage.getItem(CARE_KEY);
       if (raw) {
         var p = JSON.parse(raw);
-        if (p && p.residents) { applySvcDict_(p); return p; }
+        if (p && p.residents) { if (typeof careStripAppVer_ === 'function') careStripAppVer_(p); applySvcDict_(p); return p; }   /* 紛れた版の印は持ち込まない（2026-11-27） */
       }
     } catch (e) { wsNote_('週間計画の読み込み', e); }
     return null;
@@ -12293,6 +12471,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     try {
       var old = localStorage.getItem(CARE_KEY);
       if (old) localStorage.setItem(CARE_KEY + '_backup_ws', old);
+      if (typeof careStripAppVer_ === 'function') careStripAppVer_(db);   /* 版の印は端末に残さない（反証レビュー 2026-11-27） */
       localStorage.setItem(CARE_KEY, JSON.stringify(db));
       try { schedulePushCare(); } catch (e2) {}
       return true;
@@ -12334,22 +12513,28 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    * care_schedule_v2 の該当eventを引き detail=contents.join('・') を反映→保存＋クラウドpush。
    * seed/master由来(evId無し)や evIdドリフトでも確実に書き戻る＝保存が元に戻る不具合を根治(双方向同期)。 */
   /* ref から care_schedule_v2 の該当 event を引く（①evId完全一致→②(正規化氏名,dow,visit,開始時刻)照合）。
-   * writeBackCareDetail_ とジャーナル再適用(replayCareOps_)で共用。 */
-  function findCareEventByRef_(db, ref) {
+   * writeBackCareDetail_ とジャーナル再適用(replayCareOps_)で共用。
+   * ymd（札のある日付）を渡した時は、予約した次の計画を持つ利用者だけ、その日に効く予定（M.careEventsFor）から引く
+   * （本日のみ削除の署名を盤面と同じ予定から作る・2026-11-27）。渡さない時・予約の無い利用者は今までどおり現行の events */
+  function findCareEventByRef_(db, ref, ymd) {
     if (!db || !db.residents || !ref) return null;
     var norm = function (s) { return String(s == null ? '' : s).replace(/[\s　]/g, ''); };
+    var evsOf = function (r) { return (ymd !== undefined && Array.isArray(r.nextPlans)) ? M.careEventsFor(r, ymd) : (r.events || []); };
     var target = null, i, j, res, evs, ev;
     if (ref.evId) {                                    /* ① evId 完全一致 */
       for (i = 0; i < db.residents.length && !target; i++) {
-        evs = db.residents[i].events || [];
+        evs = evsOf(db.residents[i]);
         for (j = 0; j < evs.length; j++) { if (evs[j].id === ref.evId) { target = evs[j]; break; } }
       }
+      /* 予約した次の計画の予定から来た札（evId が予約の events にだけある）は相手なし＝書き戻さない。
+       * 氏名＋曜日＋開始時刻の照合で現行の別の予定へ書き込ませない（2026-11-27） */
+      if (!target && M.careEvIdOnlyInPlans(db, ref.evId)) return null;
     }
     if (!target && ref.residentName !== undefined) {   /* ② (正規化氏名, dow, visit, 開始時刻) 照合＝R3で一意 */
       for (i = 0; i < db.residents.length && !target; i++) {
         res = db.residents[i];
         if (norm(res.name) !== norm(ref.residentName)) continue;
-        evs = res.events || [];
+        evs = evsOf(res);
         for (j = 0; j < evs.length; j++) {
           ev = evs[j];
           if (ev.serviceType !== 'visit' || ev.dayOfWeek !== ref.dow) continue;
@@ -12361,21 +12546,33 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
   }
   /* 戻り値: 週間計画へ確実に反映できたら true（対象event発見＝書込 or 既に一致）／
    * 対象event未発見で書き戻せなかったら false（呼出側は detailDirty で ws編集を保護する）。 */
-  function writeBackCareDetail_(ref, contents) {
+  function writeBackCareDetail_(ref, contents, ymd) {
     if (!ref || weeklyDry_) return false;   /* 試しに数えている間は週間計画へ書かない */
     /* 案を表示中は週間計画（毎週の予定）へ書かない（2026-10-22 反証レビュー指摘: 案は下書きなのに、案で直した支援の内容が週間計画へ書き戻り、
      * 案を消しても戻らなかった）。false＝書き戻せていない印（detailDirty）が案の札に残り、本番にした後の照合で書き戻る */
     if (typeof ui !== 'undefined' && ui.altId) return false;
     var db = loadCareDb();
     if (!db || !db.residents) return false;
+    /* 札のある日（ymd）に予約した次の計画が効いている利用者は書き戻さない（現行にも予約にも書かない・2026-11-27）。
+     * 盤面は予約の予定で作っているので、現行へ書くと今日の計画が変わり、予約へ書く道は持たない。false＝保護の印（detailDirty）が札に残る */
+    if (ymd !== undefined && M.careRefPlanDue(db, ref, ymd)) return false;
     var detail = (contents && contents.length) ? contents.join('・') : '';
     var target = findCareEventByRef_(db, ref);
     if (!target) return false;                         /* 週間計画側に該当eventなし＝書戻せず */
+    if (ymd !== undefined && M.carePlanDueRes(M.careOwnerOf(db, target), ymd)) return false;   /* 照合で入った相手の方に予約が効く日も書かない */
     if ((target.detail || '') === detail) return true; /* 既に一致＝週間計画は同期済み */
+    /* 記録した時のその方の計画の版（planGen・数でなければ 0）。再適用は版が違えば当てない（2026-11-27） */
+    var opGen_ = 0, gi_, gj_, gev_;
+    for (gi_ = 0; gi_ < db.residents.length; gi_++) {
+      gev_ = (db.residents[gi_] && db.residents[gi_].events) || [];
+      for (gj_ = 0; gj_ < gev_.length; gj_++) if (gev_[gj_] === target) { opGen_ = db.residents[gi_].planGen; break; }
+    }
+    if (!(typeof opGen_ === 'number' && isFinite(opGen_) && opGen_ >= 0 && Math.floor(opGen_) === opGen_)) opGen_ = 0;
     recordCareOp_({ t: 'detail',
                     ref: { residentName: ref.residentName, dow: ref.dow, start: ref.start, evId: ref.evId || null },
                     contents: (contents || []).slice(),
-                    base: (target.detail || '') });   /* ★書き換える前の週間計画の値＝再適用の土台（3-way） */
+                    base: (target.detail || ''),   /* ★書き換える前の週間計画の値＝再適用の土台（3-way） */
+                    planGen: opGen_ });
     target.detail = detail;
     /* ★週間計画の著者印を更新する（2026-09-12）。週間計画は「印の新しい側」を採るため、
      * ここで押さないと現場の正当な編集が弾かれる。押す＝この書き戻しも人の入力として扱う。 */
@@ -13030,7 +13227,8 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     for (i = 0; i < careDb.residents.length; i++) {
       var res = careDb.residents[i];
       if (res.movedOut) continue; /* 退去者の予定は当日盤面に追加しない */
-      var evs = res.events || [];
+      /* 開いている日に効く予定（予約した次の計画の from 以降ならその予約の events・2026-11-27）。予約の無い利用者は今までどおり events */
+      var evs = M.careEventsFor(res, ui.currentDate) || [];
       for (j = 0; j < evs.length; j++) {
         var ev = evs[j];
         if (ev.dayOfWeek !== dow || ev.serviceType !== 'visit') continue;
@@ -13112,7 +13310,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * ただし ws側で内容を編集し週間計画へ未反映(detailDirty)の間は、旧detailの再投影で巻き戻さない
        * (先祖返り/項目減少の根治)。週間計画が追いついたら(sameContents)保護を解除して通常同期へ復帰。 */
       var newContents = detailToContents_(ev2.detail);
-      if (t.detailDirty) {
+      if (t.detailLocal) {
+        /* その日だけの直し（予約した次の計画が効く日に書き戻しを止めた札・2026-11-27）: 週間計画と同期しない。
+         * 切替の後も書き戻さず、表示もワークスケジュールで入れた内容のまま（印の無い札は下の今までの動き） */
+      } else if (t.detailDirty) {
         if (sameContents_(t.contents, newContents)) {
           patch.detailDirty = false;                 /* 週間計画が追いついた＝保護解除 */
         } else if (ev2.id) {
@@ -13125,9 +13326,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
             patch.contents = newContents;                  /* 週間計画の内容を表示に採る */
             try { toast('週間計画で支援内容が変わっていたため、ワークスケジュール側の入力は反映しませんでした（週間計画の内容を表示します）', true); } catch (eT2) {}
           } else {
-            var wbFixed = false;
-            try { wbFixed = writeBackCareDetail_({ residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id }, t.contents); } catch (eWbC) {}
+            var wbFixed = false, wbRef_ = { residentName: t.residentName, dow: dow, start: ev2.start, evId: ev2.id };
+            try { wbFixed = writeBackCareDetail_(wbRef_, t.contents, ui.currentDate); } catch (eWbC) {}
             if (wbFixed) { patch.detailDirty = false; patch.detailBase = null; }
+            else if (M.careRefPlanDue(careDb, wbRef_, ui.currentDate)) patch.detailLocal = true;   /* 予約が効く日の直し＝その日だけの直しとして残す */
           }
         }
       } else if (!sameContents_(t.contents, newContents)) {
@@ -13271,6 +13473,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           if (!sameContents_(kept_.contents, orig_.contents)) { upd_.contents = kept_.contents; hasUpd_ = true; }
           if (kept_.checks !== orig_.checks) { upd_.checks = kept_.checks; hasUpd_ = true; }
           if (kept_.detailDirty !== orig_.detailDirty) { upd_.detailDirty = kept_.detailDirty; hasUpd_ = true; }
+          if (kept_.detailLocal !== orig_.detailLocal) { upd_.detailLocal = kept_.detailLocal; hasUpd_ = true; }   /* その日だけの直しの印（2026-11-27） */
           /* サービスコードの移譲(dedupCareSlotsが編集済み捨て札→残し札へ移した svcCode/svcDirty)も反映＝
            * INIT_DAY経路と対称にし、reconcile経路で編集コードが取りこぼされ先祖返りが再発するのを防ぐ。 */
           if (kept_.svcCode !== orig_.svcCode) { upd_.svcCode = kept_.svcCode; hasUpd_ = true; }
@@ -14078,8 +14281,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 週間計画の記載が置き換わった（実害:「デイ/返却」→「返却」）。 */
       var needWb_ = careDetailWriteBackNeeded_(kind, beforeTask, patch.contents);
       if (kind === 'care' && !needWb_) wbOk = true;   /* 書き戻す必要が無い＝同期済み扱い */
+      /* その日だけの直しの札（detailLocal）は、切替の後に直しても週間計画へ書き戻さない（2026-11-27） */
+      if (needWb_ && beforeTask && beforeTask.detailLocal) needWb_ = false;
       if (needWb_) {
-        try { wbOk = writeBackCareDetail_(beforeTask.weeklyRef, patch.contents); } catch (eW) {}
+        try { wbOk = writeBackCareDetail_(beforeTask.weeklyRef, patch.contents, ui.currentDate); } catch (eW) {}
       }
       /* ★サービス区分は週間計画アプリが正本（2026-09-12 本人裁定）＝ここからは書き戻さない。
        * ws で区分を変えた時は、書き戻す代わりに「区分は週間計画で変えてください」と伝える
@@ -14094,6 +14299,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
        * 区分(svcDirty)の保護は 2026-09-12 に廃止した（区分の正本は週間計画）。 */
     if (kind === 'care') {
       patch.detailDirty = !wbOk;
+      /* 予約した次の計画が効く日に書き戻しを止めた直しは「その日だけの直し」として印を付ける（照合からも書き戻さない・2026-11-27） */
+      if (!wbOk && beforeTask && beforeTask.weeklyRef && !beforeTask.detailLocal &&
+          M.careRefPlanDue(loadCareDb(), beforeTask.weeklyRef, ui.currentDate)) patch.detailLocal = true;
       /* 書き戻せなかった入力は、あとで再挑戦する時の土台（編集前に週間計画から来ていた内容）も持つ。
        * 土台と週間計画の現在値が食い違ったら、それは人が週間計画で直した＝押し込まない（3-way）。 */
       patch.detailBase = patch.detailDirty
@@ -14252,7 +14460,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       $('imResult').textContent = '先にシフト（出勤者）を取り込んでください'; return;
     }
     var dow = careDow(ui.currentDate);
-    var r = IM.weeklyToTasks(db, dow);
+    var r = IM.weeklyToTasks(db, dow, ui.currentDate);   /* 開いている日に効く予定（予約した次の計画）で札を作る（2026-11-27） */
     if (!r.tasks.length) {
       $('imResult').textContent = '当日曜日の訪問介護予定がありません' +
         (r.errors.length ? '（' + r.errors[0].reason + '…）' : '');
@@ -16084,6 +16292,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       var now = Date.now();
       var changed = false, i, op, r, ev, detail, keep, kept = [];
       var lunchDropped = false;   /* ほかの端末の後の変更を優先して、昼食薬の切替を取り下げたか */
+      var genDropped = 0;   /* 計画が切り替わったため当てずに捨てた支援内容の直しの数（2026-11-27） */
       for (i = 0; i < p.ops.length; i++) {
         op = p.ops[i];
         keep = false;
@@ -16091,6 +16300,17 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
           /* 鮮度切れ＝drop（keepしない） */
         } else if (op.t === 'detail') {
           ev = findCareEventByRef_(db, op.ref);
+          if (ev) {
+            /* 計画の版（planGen）が記録した時と違う控えは当てずに捨てる＝切り替えた後の計画を前の計画での直しで書き換えない（2026-11-27）。
+             * 版を持たない古い控えは、その方の今の版が 0（版の項目なし）の時だけ今までどおり当てる */
+            var gNow_ = 0, ri_, rj_, rev_;
+            for (ri_ = 0; ri_ < db.residents.length; ri_++) {
+              rev_ = (db.residents[ri_] && db.residents[ri_].events) || [];
+              for (rj_ = 0; rj_ < rev_.length; rj_++) if (rev_[rj_] === ev) { gNow_ = db.residents[ri_].planGen; break; }
+            }
+            if (!(typeof gNow_ === 'number' && isFinite(gNow_) && gNow_ >= 0 && Math.floor(gNow_) === gNow_)) gNow_ = 0;
+            if (typeof op.planGen === 'number' ? op.planGen !== gNow_ : gNow_ !== 0) { ev = null; genDropped++; }
+          }
           if (ev) {
             detail = (op.contents && op.contents.length) ? op.contents.join('・') : '';
             /* ★土台照合（3-way・2026-09-12）: ws で編集した後に週間計画側が変わっていたら
@@ -16131,6 +16351,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       }
       if (kept.length !== p.ops.length) { p.ops = kept; saveCareOps_(p); }   /* 不要opを掃く */
       if (lunchDropped) { try { toast('ほかの端末で昼食薬が変えられたため、この端末の切替は取り下げました'); } catch (eT) {} }
+      if (genDropped) { try { toast('計画が切り替わったため、切り替える前に入れた支援内容の直し ' + genDropped + '件は、新しい計画には反映していません（盤面は新しい計画の内容になります）'); } catch (eTg) {} }
       if (changed) saveCareDb(db);   /* saveCareDb→schedulePushCare＝マージ結果を自動再送 */
     } finally { careReplay_ = false; }
   }
@@ -17271,6 +17492,13 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       SUKv.call(payload, function (p) { return new Promise(function (res) { p.__raw = true; gasCall(p, res); }); })
         .then(function (j) { try { cb(j); } catch (e) {} }, function () { try { cb(null); } catch (e) {} });
       return;
+    }
+    /* 週間計画の版の印（csAppVer）は新しい保存先だけの物＝Google へ送る本文からは外す（今までと同じ形で送る・2026-11-27） */
+    if (payload && payload.action === 'put' && payload.key === 'care_schedule_v2' && payload.data && typeof payload.data === 'object' &&
+        Object.prototype.hasOwnProperty.call(payload.data, 'csAppVer')) {
+      var gd_ = {}, gk_;
+      for (gk_ in payload.data) if (Object.prototype.hasOwnProperty.call(payload.data, gk_) && gk_ !== 'csAppVer') gd_[gk_] = payload.data[gk_];
+      payload.data = gd_;
     }
     payload.token = settings.token;
     /* cb は必ず1回だけ。1試行15秒・最大3試行（1.5s→4.0s待ち）＝最悪でも約50秒で必ず応答する。
@@ -19696,18 +19924,58 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var tab = careEditingElsewhere_();
     return { pending: !!(own || tab), known: known, tabOnly: !!(tab && !own) };
   }
+  var careOldApp_ = false;   /* サーバーが週間計画の書き込みをこの画面の版で断った（oldapp）。読み込み直すまで送り直さない（2026-11-27） */
+  /* サーバーが週間計画の中身を「古い計画」と断った（planstale・2026-11-27）。手元の中身は信用せず、サーバーの今の版を取り直して丸ごと採る。
+   * carePullForce_: 次の取得では版が同じでもサーバーを採る（採った時に降ろす）。carePlanStaleAdopted_: 断られた後にサーバーを採った（送れたら降ろす）。
+   * 採った後にもう一度断られたら送るのを止め、読み込み直しの知らせに乗せる（同じ中身を送って断られ続ける輪にしない） */
+  var carePullForce_ = false, carePlanStaleAdopted_ = false;
   function pushCareNow() {
     carePushQueued_ = false;   /* バッジ用の記録だけ（送信の判定には使わない） */
     if (!syncOn()) return;
+    if (typeof careOldApp_ !== 'undefined' && careOldApp_) return;
     if (carePushBusy_) { carePushAgain_ = true; return; }
     var raw = '';
     try { raw = localStorage.getItem(CARE_KEY) || ''; } catch (e) { wsNote_('pushCare.read', e); }
     if (!raw) return;
     var data = null;
     try { data = JSON.parse(raw); } catch (e) { return; }
+    if (typeof careStripAppVer_ === 'function') careStripAppVer_(data);
     var opsMax = careOpsMaxSeq_();   /* 送信時点までのcare編集op＝成功でジャーナルから除去 */
     carePushBusy_ = true;
     try { updateSyncBadge_(); } catch (eSb) {}
+    /* 版の印は、共通 DB の口 cs_plan_gate が答えた時だけ付ける（反証レビュー 2026-11-27）。確かめていない・なし・エラーは印なし＝改修前と同じ本文。
+     * 送信は待たせない。ただし印を求められる週間計画（予約・planGen 1 以上）で、まだ確かめていない時だけ答えを最大3秒待つ（無ければ印なしで送り、
+     * サーバーの oldapp の断りは今ある扱いに任せる）。Google へ送ると決まっている時は確かめない（gasCall が外すので本文は改修前と同じ） */
+    var gateOn = (typeof csGateKnown_ === 'function') && csGateKnown_();
+    var toGas = (typeof kvRoute_ === 'function') && kvRoute_(CARE_KEY) === 'gas';
+    if (gateOn || toGas || typeof csGateCheck_ !== 'function') { careSend_(gateOn); return; }
+    if (!(typeof careNeedsAppVer_ === 'function' && careNeedsAppVer_(data))) { csGateCheck_(); careSend_(false); return; }
+    var waited = false, wt = null;
+    function afterWait(v) {
+      if (waited) return;
+      waited = true;
+      if (wt) clearTimeout(wt);
+      function stop() {
+        carePushBusy_ = false;
+        try { updateSyncBadge_(); } catch (eSb2) {}
+        if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
+      }
+      if (!syncOn()) { stop(); return; }
+      /* 待っている間に取り込み（adoptCare）や編集で手元が変わりうる＝送る写しと控えの番号は、送るその時に取り直す
+       * （待つ前の写しを後の版の番号で送ると、競合にならずに古い中身で上書きするため・反証レビュー 2026-11-27） */
+      var raw2 = '', data2 = null;
+      try { raw2 = localStorage.getItem(CARE_KEY) || ''; } catch (eR) { wsNote_('pushCare.read', eR); }
+      if (raw2) { try { data2 = JSON.parse(raw2); } catch (eP) { data2 = null; } }
+      if (!data2 || raw2 === lastPushed.care) { stop(); return; }   /* 消えた・壊れた・もう送る物が無い */
+      if (typeof careStripAppVer_ === 'function') careStripAppVer_(data2);
+      raw = raw2; data = data2; opsMax = careOpsMaxSeq_();
+      careSend_(!!v);
+    }
+    wt = setTimeout(function () { afterWait(false); }, (typeof CS_GATE_WAIT_MS === 'number') ? CS_GATE_WAIT_MS : 3000);
+    csGateCheck_(afterWait, (typeof CS_GATE_WAIT_MS === 'number') ? CS_GATE_WAIT_MS : 3000);
+    return;
+    function careSend_(withVer) {
+    if (withVer && typeof CS_APP_VER === 'number') data.csAppVer = CS_APP_VER;   /* 送るその時の写しにだけ版の印を付ける（Google へ送る時は gasCall が外す・2026-11-27） */
     gas({ action: 'put', key: CARE_KEY, rev: loadRevs().care || 0, data: data }, function (j) {
       carePushBusy_ = false;
       carePushFailed_ = !(j && j.ok);   /* 断り・競合・通信失敗はどれも、まだ送れていない */
@@ -19718,6 +19986,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         dropCareOpsThrough_(opsMax);
         noteSyncSuccess_();
         careWipeNotified_ = false;   /* 一度成功したら次の拒否も必ず知らせる（繰り返し失敗を無言にしない） */
+        if (typeof carePlanStaleAdopted_ !== 'undefined') carePlanStaleAdopted_ = false;
       } else if (j && (j.conflict || j.error === 'bathwipe' || j.error === 'visitwipe')) {
         /* bathwipe/visitwipe（2026-08-05 追加のサーバー側ガード）＝通所の入浴や訪問が一度に大量に
            消える書き込みをサーバーが拒否した。拒否された以上サーバー側が正しいので、競合と同じ経路で
@@ -19731,12 +20000,26 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
         pullCareNow(true);   /* adoptCare がジャーナル再適用→マージ結果を自動再送 */
       } else if (j && isAuthBlockErr_(j.error)) {
         noteAuthBlock_(j.error);   /* ログイン・権限で断られた＝再試行しない（2026-10-11） */
+      } else if (j && j.error === 'planstale') {
+        /* 手元の週間計画が古い計画のまま（古い版のタブが書いた等）とサーバーが断った（2026-11-27）。未送信の控えは残す */
+        if (typeof carePlanStaleAdopted_ !== 'undefined' && carePlanStaleAdopted_) {
+          if (typeof careOldApp_ !== 'undefined') careOldApp_ = true;   /* 採った後も断られた＝送るのを止めて読み込み直しを案内する */
+          if (typeof handleOldAppReject_ === 'function') handleOldAppReject_(null);
+        } else {
+          if (typeof carePullForce_ !== 'undefined') carePullForce_ = true;
+          pullCareNow(true);   /* 版が同じでもサーバーを丸ごと採る→控えの再適用（計画の版の門つき）は今までどおり */
+        }
+      } else if (j && j.error === 'oldapp') {
+        /* 古い版の画面の書き込みをサーバーが断った（2026-11-27）。送り直さず、日データと同じ知らせ（読み込み直し）に乗せる。未送信の控えは残す */
+        if (typeof careOldApp_ !== 'undefined') careOldApp_ = true;
+        if (typeof handleOldAppReject_ === 'function') handleOldAppReject_(null);
       } else {
         showOfflineIfPersistent_();
         scheduleRetry_();
       }
       if (carePushAgain_) { carePushAgain_ = false; schedulePushCare(); }
     });
+    }   /* careSend_ の終わり */
   }
   /* ══ 週間計画の未送信編集を踏まない（2026-08-31 追加）══════════════════════════
      事故: 週間計画で入力した支援が消える／変更が全部元に戻る、が現場で続いた。
@@ -19801,6 +20084,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
       if (!carePendingTimer_) carePendingTimer_ = setInterval(careFlushPendingAdopt_, 2000);
       return;
     }
+    if (typeof careStripAppVer_ === 'function') careStripAppVer_(data);   /* 受け取った中身に紛れた版の印は保存・送り返しに持ち込まない（2026-11-27） */
     var raw = '';
     try {
       raw = JSON.stringify(data);
@@ -19814,6 +20098,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     saveRevsPatch({ care: rev });
     lastPushed.care = raw;
     if (typeof noteCareSeal_ === 'function') noteCareSeal_(raw, rev, route0);   /* 起動の軽い道の印（2026-10-28）。この後の再適用で手元が変われば、印と指紋が合わず次の起動は全文を取る */
+    if (typeof carePullForce_ !== 'undefined' && carePullForce_) { carePullForce_ = false; carePlanStaleAdopted_ = true; }   /* planstale の後にサーバーを採った（2026-11-27） */
     /* サーバー版採用でローカル未送信のcare編集（詳細/入院/昼薬）が巻き戻らないよう再適用（冪等）。
      * マスタ一括適用分は stamp 判定付きの syncCareFromMaster が自然に再適用する。
      * 再適用で raw が変われば saveCareDb→schedulePushCare が自動でマージ結果を再送する。 */
@@ -19875,8 +20160,9 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
     var route0 = (typeof kvRoute_ === 'function') ? kvRoute_(CARE_KEY) : null;   /* 要求を出す前の道（起動の軽い道の印・2026-10-28） */
     gas({ action: 'get', key: CARE_KEY }, function (j) {
       if (!j || !j.ok) { scheduleRetry_(); markCareInit(); fin(); return; }
+      if (j.data && typeof careStripAppVer_ === 'function') careStripAppVer_(j.data);   /* 紛れた版の印は捨てる（2026-11-27） */
       noteSyncSuccess_();
-      if (j.data && (j.rev || 0) > (loadRevs().care || 0)) { adoptCare(j.data, j.rev, notify, route0); markCareInit(); fin(); return; }
+      if (j.data && ((typeof carePullForce_ !== 'undefined' && carePullForce_) || (j.rev || 0) > (loadRevs().care || 0))) { adoptCare(j.data, j.rev, notify, route0); markCareInit(); fin(); return; }   /* planstale の後は版が同じでもサーバーを採る（2026-11-27） */
       if (!j.data) {
         /* サーバーに care が無いのにローカル rev>0 ＝rev不整合（新規サーバー/データ消失）。
          * rev を 0 に戻して送り直す（conflict→pull→data無し の無限ループを断ち、ローカルを復元送信）。 */
@@ -20651,7 +20937,7 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
            * ADDで復活する（削除の自癒＝根治）。イベント取得不能時は署名なし＝従来どおり恒久墓標。 */
           var entry = { ref: ref, at: (typeof Date !== 'undefined' ? Date.now() : 0) };
           var cev = null;
-          try { cev = findCareEventByRef_(loadCareDb(), t.weeklyRef); } catch (eSig) {}
+          try { cev = findCareEventByRef_(loadCareDb(), t.weeklyRef, ui.currentDate); } catch (eSig) {}
           if (cev) {
             var cs = TS.timeToMin(cev.startTime), ce = TS.timeToMin(cev.endTime);
             if (cs !== null && ce !== null) entry.sig = { s: cs, e: ce, d: cev.detail || '' };
@@ -21705,8 +21991,10 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
    *   ・WS_APP_VER … 送る盤面に付ける「アプリの版」の印。Supabase の kv_put がこれより古い（または無い）盤面の書き込みを断る
    *   ・眠りから覚めた（時計が5分以上飛んだ）／10分以上隠れていたタブが戻った時は、公開中の版を確かめ終えるまで送受信を止める
    *   ・使っていない時（3分操作なし）は30分ごとに確かめ、新しい版があれば読み込み直す（日付は URL に残る＝同じ画面に戻る） */
-  var WS_BUILD = '20261117090114';
-  var WS_APP_VER = 2026102701;   /* 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
+  var WS_BUILD = '20261127201244';
+  var WS_APP_VER = 2026112701;   /* 2026-11-27 週間計画の予約した次の計画（nextPlans）で先の日の盤面を作るようにした。前の版の画面が先の日の盤面を現行の予定で作り直し、
+                                  * 予約の予定の札を消して送らないよう上げた（サーバーの下限は配信の後でチーフが決める）
+                                  * （2026102701: 2026-10-27 まだ届いていないロックを「外した」に変えて送り、版の進んでいない古い未送信を退避して捨てる前の版の画面が、仕上げたロックの盤面を前の版で上書きしないよう上げた（代表者承認 A・B）
                                   * （2026101706: 2026-10-23 トレイへ入った理由の印（parkedByHand・absentMoved・routineTray）を知らない前の版の画面が、手で戻した札・休みで移した札を印なしで残し、
                                   * 新しい版がそれを列へ戻してしまわないよう上げた）
                                   * （2026101705: 2026-10-22 名前つきの自由枠の印（oohHold）を支援だけの印と思う前の版（10/21・10/22 朝）の画面が、どの操作でも印を外して
@@ -22006,6 +22294,6 @@ if(typeof module!=='undefined'&&module.exports){module.exports=LZString;}
 })();
 </script>
 <!-- 現場から不具合を1タップで報告する共有部品（全画面共通・2026-10-04）。画面の動き・保存・印刷には触れない -->
-<script src="su-report.js?v=2026-11-16" data-tool="ワークスケジュール"></script>
+<script src="su-report.js?v=2026-11-23.2" data-tool="ワークスケジュール"></script>
 </body>
 </html>
