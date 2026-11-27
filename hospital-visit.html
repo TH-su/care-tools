@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-G6QCT1zOBL31/Ti+RmJMYJXtrsNSL38eRW4377zR67c='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-6nUiC64qIosXsw7Zl2lF7+Cq5Zm1DmQC5/h0WTZ/rjw='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -528,9 +528,24 @@ var NO_MEDS='入居者マスタの定期薬を読めていないため、薬を�
 
 /* ═══════════ 受診を開く・新しく始める ═══════════ */
 function openVisit_(v){ clearConflict_(); draft=C.fromRow(v); base=C.fromRow(v); prevId=''; }
+/* 新しい受診の番号を画面で作る。保存の応答が途切れて押し直しても、共通 DB が同じ番号の行を返して2行にしない（統合 0142）。
+   作れない端末では空＝番号なしで今までどおり送る（共通 DB が番号を作る） */
+function newId_(){
+  try{
+    var c=window.crypto;
+    if(c&&typeof c.randomUUID==='function') return String(c.randomUUID());
+    if(c&&typeof c.getRandomValues==='function'){
+      var b=c.getRandomValues(new Uint8Array(16)); b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+      var h=Array.prototype.map.call(b,function(x){ return (x+256).toString(16).slice(1); }).join('');
+      return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+    }
+  }catch(e){ note_('受診の番号',e); }
+  return '';
+}
 function newVisit_(){
   clearConflict_();
   draft=C.blankVisit(cur,C.todayJST()); prevId='';
+  draft.nid=newId_();   // 保存できるまで同じ番号を使う（draft.id には入れない＝「まだ保存していません」のまま）
   /* 病院は前回の受診のものを初めから入れる（選び直せる） */
   var p=C.prevVisitFor(visits,draft);
   if(p){ draft.hospital_id=p.hospital_id||''; draft.hospital_name=p.hospital_name||''; draft.dept=p.dept||''; draft.doctor=p.doctor||''; draft.visit_kind=p.visit_kind||''; }
@@ -692,6 +707,8 @@ function save_(){
   saving=true; lockDesk_(true); setMsg('h-dmsg',''); setSync('保存しています…');
   var my=gen, sent=draft, body=C.toSave(draft), rev=draft.id?draft.rev:null;
   if(!body.hospital_id) body.hospital_id='';
+  /* 新しい受診は画面の番号を p_row.id で送る（p_rev は null）。0142 の前の共通 DB は新規の時の id を読まずに受ける（鍵の確かめも id を除く）＝今までどおり保存できる */
+  if(!draft.id&&draft.nid&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(draft.nid)) body.id=String(draft.nid);
   return rpc_('hv_save_visit',{p_row:body,p_rev:rev}).then(function(d){
     if(my!==gen) return false;
     if(d&&d.ok===true&&d.row){
@@ -770,6 +787,21 @@ function print_(){
   readForm_();
   if(!C.trim(draft.resident_name)){ setMsg('h-dmsg','入居者を選んでください。'); return; }
   if(!window.SUPrint){ toast('印刷の部品を読み込めていません。ページを読み込み直してください'); return; }
+  /* 保存していない（一度も保存していない・変更がある・保存に失敗した）手紙は、刷る前に確かめる。
+     保存して刷る＝OK／キャンセルなら次に「保存せずに刷るか」を聞く＝OK で刷る・キャンセルでやめる（文は仮置き） */
+  if(!isDirty_()&&draft.id) return printGo_();
+  var d0=draft;
+  confirm_('保存していません。保存してから刷りますか？（「キャンセル」を押すと、保存せずに刷るかを聞きます）').then(function(ok){
+    if(draft!==d0||view!=='app') return;
+    if(ok){
+      var sb=$('h-save');
+      if(loading||saving||!sb||sb.disabled){ setMsg('h-dmsg','今は保存できません。読み込みが済んでから、もう一度押してください。'); return; }
+      return save_().then(function(r){ if(r===true&&draft===d0&&view==='app') printGo_(); });
+    }
+    return confirm_('保存せずに刷りますか？（刷った内容は記録に残りません）').then(function(ok2){ if(ok2&&draft===d0&&view==='app') printGo_(); });
+  });
+}
+function printGo_(){
   var go=function(){
     if(view!=='app') return;
     printOn=true;
@@ -792,7 +824,7 @@ function closeDlg_(){ $('h-dlg').hidden=true; $('h-dlg-box').innerHTML=''; dlgOp
 var dlgDirty=false;
 /* 窓に書いた内容を黙って捨てない（Esc・外側のクリック・閉じる・反証レビュー 8） */
 function askCloseDlg_(){ if(!dlgDirty) return closeDlg_(); confirm_('窓に書いた内容を保存していません。保存せずに閉じますか？').then(function(ok){ if(ok) closeDlg_(); }); }
-var hEdit=null;
+var hEdit=null, hospSaving=false;   // 病院を送っている間（2回押しても2行にしない）
 function hospDlg_(){
   var rows=hospitals.slice().sort(function(a,b){ return (a.disabled?1:0)-(b.disabled?1:0)||(a.sort||0)-(b.sort||0)||String(a.name).localeCompare(String(b.name),'ja'); });
   var e=hEdit||{};
@@ -815,6 +847,9 @@ function hospSave_(){
   var row={name:$('d-name').value.trim(),dept:$('d-dept').value.trim(),doctor:$('d-doctor').value.trim(),fax:$('d-fax').value.trim(),phone:$('d-phone').value.trim()};
   if(!row.name){ setMsg('d-msg','病院名を入れてください。'); return; }
   if(hEdit&&hEdit.id){ row.id=hEdit.id; row.disabled=!!($('d-off')&&$('d-off').checked); }
+  if(hospSaving) return;
+  hospSaving=true;
+  var sbtn=document.querySelector('#h-dlg-box [data-act="hosp-save"]'); if(sbtn) sbtn.disabled=true;
   var my=gen;
   rpc_('hv_save_hospital',{p_row:row,p_rev:hEdit&&hEdit.id?hEdit.rev:null}).then(function(d){
     if(d&&d.ok===true&&d.row){
@@ -829,7 +864,10 @@ function hospSave_(){
       hospDlg_(); setMsg('d-msg','ほかの人が先にこの病院を直しました。今の内容を読み込んだので、もう一度直して保存してください。'); return;
     }
     setMsg('d-msg',ngText_('病院の保存',d));
-  }).catch(function(e){ note_('病院の保存',e); setMsg('d-msg',friendly_(e)); });
+  }).catch(function(e){ note_('病院の保存',e); setMsg('d-msg',friendly_(e)); }).then(function(){
+    hospSaving=false;
+    var b=document.querySelector('#h-dlg-box [data-act="hosp-save"]'); if(b) b.disabled=false;
+  });
 }
 function setDlg_(){
   var s=settings;
@@ -949,6 +987,8 @@ $('h-dlg').addEventListener('click',function(ev){ if(ev.target===$('h-dlg')) ask
 $('h-dlg').addEventListener('input',function(){ dlgDirty=true; });
 /* 別のタブで端末の用途が「現場」に変わったら、読み込み直して起動の止めに任せる（CLAUDE.md §2-5・反証レビュー 6） */
 window.addEventListener('storage',function(ev){ if(ev.key===DEVICE_KEY&&isField()&&view!=='field'){ try{ location.reload(); }catch(e){ note_('用途の切り替え',e); } } });
+/* 戻るボタンで戻った時（ページの控えから戻す）も、端末の用途を確かめ直す（payroll.js と同じ・反証レビュー） */
+window.addEventListener('pageshow',function(ev){ if(ev&&ev.persisted&&isField()&&view!=='field'){ try{ location.reload(); }catch(e){ note_('用途の切り替え',e); } } });
 window.addEventListener('beforeunload',function(ev){ if(isDirty_()){ ev.preventDefault(); ev.returnValue=''; } });
 
 function init_(){
