@@ -103,6 +103,34 @@ console.log('\n— 2・3. 予定の数え方と数える人 —');
   t('事業所の絞り込み（day だけ）', ev(m, '2026-12-15T06:00:00+09:00', [R('day', 'a', '09:00', '10:00', 1, 'all'), R('facility', 'b', '09:00', '10:00', 1, 'all')], { office: 'day' }).rows.map((x) => x.office).join() === 'day');
 }
 
+console.log('\n— 3b. 兼務（別の事業所の応援）は予定の行で数える —');
+{
+  /* 甲（施設が主）: 施設の早 7:00〜16:00 と、同じ日に通所の応援 日3 9:00〜18:00（重なるので勤怠では1つの勤務にまとまり、塊の事業所は主の施設） */
+  const plan = { cells: { sS01: { 15: '早' } }, subCells: { sS01: { '通所': { 15: '日3' } } } };
+  const rows = C.buildSchedule({ ym: YM, plan, nextPlan: {}, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows;
+  const m = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [], days: [], config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  const blk = m.people.find((p) => p.staff.staff_id === 'sS01').days.find((d) => d.date === TODAY).blocks;
+  t('前提: 勤怠では1つの勤務にまとまり、塊の事業所は主の施設', blk.length === 1 && blk[0].office === 'facility' && blk[0].officeShare.day > 0, blk.map((b) => [b.office, b.officeShare]));
+  const rule = [R('day', '通所 職員', '10:00', '17:00', 1, 'all'), R('facility', '施設 職員', '08:00', '15:00', 1, 'all')];
+  const r1 = ev(m, '2026-12-15T06:00:00+09:00', rule, { schedule: rows });
+  const by = {}; r1.rows.forEach((x) => { by[x.label] = x; });
+  t('予定の行で数えると、通所の応援（9:00〜18:00）が通所の決まりに入る', by['通所 職員'].plan === 1 && by['通所 職員'].level === 'ok', by['通所 職員']);
+  t('施設の決まりにも施設の行（7:00〜16:00）で入る', by['施設 職員'].plan === 1, by['施設 職員']);
+  t('通所の決まりの 16:00〜17:00 も通所の行の時刻で数える（施設の行の終わり 16:00 で切れない）', ev(m, '2026-12-15T06:00:00+09:00', [R('day', 'x', '16:00', '17:00', 1, 'all')], { schedule: rows }).rows[0].plan === 1);
+  t('予定の行を渡さない時は塊の事業所で数える（通所の応援は数えない・古い形の受け口）', ev(m, '2026-12-15T06:00:00+09:00', [rule[0]]).rows[0].plan === 0);
+  /* いま: 10:00 に甲が出勤の打刻で勤務中 → 通所の決まりにも数える（兼務の塊） */
+  const m2 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [P('sS01', 'in', TODAY, '6:55')], days: [], config: {}, now: Date.parse('2026-12-15T10:00:00+09:00') });
+  t('いま: 兼務の塊で勤務中の人は通所の決まりにも数える', ev(m2, '2026-12-15T10:00:00+09:00', [rule[0]], { schedule: rows }).rows[0].now === 1);
+  /* 欠勤の印は予定の行にも効く */
+  const m3 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [], days: [{ staff_id: 'sS01', work_date: TODAY, day_mark: 'absent' }], config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  t('欠勤の印の日は予定の行でも数えない', ev(m3, '2026-12-15T06:00:00+09:00', [rule[0]], { schedule: rows }).rows[0].plan === 0);
+  /* 予定の行で数えても、ほかの場面の答えは同じ（2・3 の日勤の場面） */
+  const cells = { sS01: { 15: '早' }, sS02: { 15: '遅' }, sS03: { 15: '日3' }, sS04: { 15: '日2' }, sS05: { 15: '日2' }, sS06: { 15: '日1' } };
+  const rs = sch(cells), mm = month(cells, [], '2026-12-15T06:00:00+09:00');
+  const rr = [R('facility', 'a', '09:00', '18:00', 2, 'care'), R('day', 'b', '09:00', '16:00', 1, 'nurse'), R('visit', 'c', '09:00', '17:00', 1, 'sm')];
+  t('兼務の無い日は、予定の行で数えても塊で数えても同じ', JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr, { schedule: rs }).rows.map((x) => [x.label, x.plan, x.planAt])) === JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr).rows.map((x) => [x.label, x.plan, x.planAt])));
+}
+
 console.log('\n— 4. いまの数え方 —');
 {
   /* 10:00。甲は 7:00 出勤で勤務中・乙は 7:00〜9:30 で退勤済み・丙は日3（9:00〜）で打刻なし（15分を過ぎた）。時間帯 9:00〜12:00 は必要2 */
@@ -114,6 +142,7 @@ console.log('\n— 4. いまの数え方 —');
   const m2 = month({ sS01: { 15: '早' }, sS03: { 15: '日3' } }, [P('sS01', 'in', TODAY, '7:00')], '2026-12-15T09:10:00+09:00');
   const r2 = ev(m2, '2026-12-15T09:10:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]);
   t('始まりから15分までの打刻待ちはいる側（9:10 は丙を数える）', r2.rows[0].now === 2 && r2.rows[0].level === 'ok', r2.rows[0]);
+  t('予定の行で数えても打刻待ちの答えは同じ', ev(m2, '2026-12-15T09:10:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')], { schedule: sch({ sS01: { 15: '早' }, sS03: { 15: '日3' } }) }).rows[0].now === 2);
   const m3 = month({ sS01: { 15: '早' }, sS03: { 15: '日3' } }, [P('sS01', 'in', TODAY, '7:00')], '2026-12-15T09:15:00+09:00');
   t('15分ちょうど（9:15）を過ぎたら数えない', ev(m3, '2026-12-15T09:15:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]).rows[0].now === 1);
   t('時間帯が終わった後（past）はいまの人数を出さず、予定だけで判定', ev(m, '2026-12-15T13:00:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]).rows[0].now === null);
@@ -137,6 +166,8 @@ console.log('\n— 5. 0:00 をまたぐ時間帯 —');
   const m2 = month(cells, [], '2026-12-15T08:00:00+09:00');
   t('前の日の夜の分は、終わった後（8:00）は出さない', ev(m2, '2026-12-15T08:00:00+09:00', rule).rows.every((x) => x.date === TODAY));
   t('時間帯の始まりと終わりの時刻（21:00〜翌7:00）', y.startMs === at('2026-12-14', '21:00') && y.endMs === at(TODAY, '07:00'));
+  const rS = ev(m, '2026-12-15T03:00:00+09:00', rule, { schedule: sch(cells2) });
+  t('予定の行で数えても日またぎの答えは同じ', JSON.stringify(rS.rows.map((x) => [x.date, x.plan, x.now, x.level])) === JSON.stringify(r.rows.map((x) => [x.date, x.plan, x.now, x.level])), rS.rows);
 }
 
 console.log('\n— 6. 確かめられない時 —');

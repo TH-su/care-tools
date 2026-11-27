@@ -170,6 +170,11 @@ try {
     await toast(page, '設定を保存しました');
     const cfg2 = sentOf(st, 'kintai_settings_put').slice(-1)[0][1].p_config;
     t('切にすると staffCheck は false・決まりは残す', cfg2.staffCheck === false && (cfg2.staffRules || []).length === 4, cfg2);
+    await page.emulateMedia({ media: 'print' });
+    t('設定のタブの印刷に、足した欄（入り切り・決まり）を出さない', await page.evaluate(() => ['label[for="s-staffCheck"]', '#s-staffCheck', '.sfs-lb', '.sfs'].every((q) => { const e = document.querySelector(q); return e && !e.offsetParent && getComputedStyle(e.closest('.no-print') || e).display === 'none'; })));
+    await page.emulateMedia({ media: 'screen' });
+    const big = await page.evaluate(() => { const K = window.KintaiStaffing; const cfg = {}; for (let i = 0; i < 300; i++) cfg['x' + i] = 'y'.repeat(20); return K.fitsConfig(cfg); });
+    t('8KB の確かめの関数が画面で使える（大きい設定は偽）', big === false);
     t('画面の例外 0', errs.length === 0, errs);
     await ctx.close();
   }
@@ -194,6 +199,15 @@ try {
       const lim = tabName === 'home' ? 0 : base;
       t((tabName === 'home' ? 'ホーム: 横にはみ出さない（' + ov + 'px）' : '設定: 足した欄ではみ出しが増えない（' + ov + 'px・足す前 ' + base + 'px）') + '・押す所は 44px 以上', ov <= lim && small.length === 0, { ov, base, small });
       if (tabName === 'home') { const s = await page.$('.sfb'); if (s) await s.screenshot({ path: path.join(OUT, 'home_iphone_dark.png') }); }
+      if (tabName === 'home') {
+        /* 読めない時の「読み直す」も 44px 以上 */
+        st.shiftNg = true;
+        await page.evaluate(() => { const b = document.getElementById('g-reload'); if (b) b.click(); });
+        await page.waitForSelector('[data-act="sf-reload"]', { timeout: 20000 });
+        const h = await page.$eval('[data-act="sf-reload"]', (e) => e.getBoundingClientRect().height);
+        t('読めない時の「読み直す」も 44px 以上（' + Math.round(h) + 'px）', h >= 44);
+        st.shiftNg = false;
+      }
       else await page.screenshot({ path: path.join(OUT, 'settings_iphone_dark.png'), fullPage: true });
       t('画面の例外 0', errs.length === 0, errs);
       await ctx.close();

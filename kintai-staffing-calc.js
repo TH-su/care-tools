@@ -120,7 +120,8 @@
 
   /* 今日の人員配置
      in: { month（kintai-calc.js の computeMonth の結果）, today: 'YYYY-MM-DD'（日本時間）, nowMs, cfg, staff（シフトの職員の配列・読めない時は null）,
-           period: { from, to }（開いている月分・省略時は日付で確かめない）, office: '' か事業所（絞り込み） }
+           period: { from, to }（開いている月分・省略時は日付で確かめない）, office: '' か事業所（絞り込み）,
+           schedule（kintai_month_get の予定の行・省略時は塊の事業所と予定の時刻で数える） }
      返す: { on, rules（使った決まり）, bad（崩れた決まりの行）, rows: [行], short（足りない行の数）, staffOk }
      行: { idx（決まりの番号・0から）, office, label, need, who, from, to, date（時間帯の始まりの日）, startMs, endMs, overnight, phase: 'later'|'now'|'past',
            plan（予定のいちばん少ない人数・unknown の時は null）, planAt（その時刻）, now（いまの人数・時間帯の途中でない時は null）, missing（シフトの職員にいない人の数）,
@@ -141,6 +142,22 @@
         (dd.blocks || []).forEach(function (b) { (byDate[dd.date] = byDate[dd.date] || []).push({ sid: b.staff_id || sid, b: b, day: dd }); });
       });
     });
+    /* 人と日ごとの「その日は数えない」（欠勤の印・1日の特別休暇・代休で打刻の無い日）と「打刻がある」 */
+    var off = {}, punched = {};
+    Object.keys(byDate).forEach(function (d) {
+      var per0 = {};
+      byDate[d].forEach(function (x) { var k = x.sid + '|' + d; (per0[k] = per0[k] || []).push(x); });
+      Object.keys(per0).forEach(function (k) {
+        var xs = per0[k], np = !xs.some(function (x) { return (x.b.punches || []).length; }), day = xs[0].day;
+        if (!np) punched[k] = true;
+        if (xs.some(function (x) { return x.b.absent; }) || (np && (dayOff(day) || (day && day.mark === 'absent')))) off[k] = true;   /* 欠勤の印は始まりの前でも外す（kintai-calc.js は始まりの後に塊へ当てる） */
+      });
+    });
+    /* 予定の行（kintai_month_get の schedule）。働く行（work・night）だけ */
+    var sched = Array.isArray(inp.schedule) ? inp.schedule.map(function (x) {
+      var a = x && msOf(x.start_at), b = x && msOf(x.end_at);
+      return x && (x.kind === 'work' || x.kind === 'night') && typeof x.staff_id === 'string' && isDate(x.work_date) && a != null && b != null && b > a ? { sid: x.staff_id, date: x.work_date, office: x.office, s: a, e: b } : null;
+    }).filter(Boolean) : null;
     var yday = addDays(td, -1);
     ru.items.forEach(function (r, idx) {
       if (of && r.office !== of) return;
@@ -159,23 +176,41 @@
         /* 開いている月分の外の日（初日の前の日・終わりの日の次の日）の塊は読んでいない。その日は数えず、partial の印を付ける（画面が一言添える） */
         if (per) dates = dates.filter(function (d) { var o = d >= per.from && d <= per.to; if (!o) row.partial = true; return o; });
         var plan = {}, act = {}, miss = {};
+        var take = function (sid, add) {   /* シフトの職員にいる・数える人に当たる時だけ add を呼ぶ */
+          var st = sById[sid];
+          if (!st) { miss[sid] = 1; return; }
+          if (matches(r, st)) add();
+        };
+        /* 予定: 予定の行（schedule）があれば、その事業所の行の時刻で数える（1つの勤務にまとめた塊は主の事業所しか持たないため、
+           通所の応援など別の事業所の時間を拾えない）。無い時は塊の事業所と予定の時刻で数える */
+        if (sched) {
+          sched.forEach(function (x) {
+            if (x.office !== r.office || dates.indexOf(x.date) < 0 || off[x.sid + '|' + x.date]) return;
+            take(x.sid, function () { (plan[x.sid] = plan[x.sid] || []).push([x.s, x.e]); });
+          });
+        }
         dates.forEach(function (d) {
           (byDate[d] || []).forEach(function (x) {
-            var b = x.b;
-            if (b.office !== r.office) return;
-            var st = sById[x.sid];
-            if (!st) { miss[x.sid] = 1; return; }
-            if (!matches(r, st)) return;
-            var sched = b.sched && typeof b.schedStart === 'number' && typeof b.schedEnd === 'number' && b.schedEnd > b.schedStart;
-            var off = b.absent || (!(b.punches || []).length && (dayOff(x.day) || (x.day && x.day.mark === 'absent')));   /* 欠勤の印は始まりの前でも予定から外す（kintai-calc.js は始まりの後に塊へ当てる） */
-            if (sched && !off) (plan[x.sid] = plan[x.sid] || []).push([b.schedStart, b.schedEnd]);
-            if (row.phase === 'now') {
+            var b = x.b, k = x.sid + '|' + d;
+            var mine = b.office === r.office || !!(b.officeShare && b.officeShare[r.office] > 0);   /* 兼務の塊は、その事業所の分がある時は数える */
+            if (!mine) return;
+            var bs = b.sched && typeof b.schedStart === 'number' && typeof b.schedEnd === 'number' && b.schedEnd > b.schedStart;
+            take(x.sid, function () {
+              if (!sched && bs && !off[k] && b.office === r.office) (plan[x.sid] = plan[x.sid] || []).push([b.schedStart, b.schedEnd]);
+              if (row.phase !== 'now') return;
               var sp = actualSpans(b, nowMs);
-              if (sched && !off && !(b.punches || []).length && nowMs >= b.schedStart && nowMs < Math.min(b.schedEnd, b.schedStart + GRACE_MS)) sp.push([b.schedStart, nowMs + 1]);   /* 始まりから15分までの打刻待ちはいる側 */
               if (sp.length) act[x.sid] = (act[x.sid] || []).concat(sp);
-            }
+            });
           });
         });
+        /* いま: 始まりから15分までの打刻待ちはいる側（その事業所の予定の行・その日に打刻の無い人だけ） */
+        if (row.phase === 'now') {
+          Object.keys(plan).forEach(function (sid) {
+            if (act[sid]) return;
+            var waiting = plan[sid].some(function (x) { return nowMs >= x[0] && nowMs < Math.min(x[1], x[0] + GRACE_MS); });
+            if (waiting && !dates.some(function (d) { return punched[sid + '|' + d]; })) act[sid] = [[nowMs, nowMs + 1]];
+          });
+        }
         var pp = Object.keys(plan).map(function (k) { return plan[k]; }), mc = minCover(pp, s, e);
         row.plan = mc.min; row.planAt = mc.at; row.missing = Object.keys(miss).length;
         if (row.phase === 'now') {

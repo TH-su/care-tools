@@ -48,8 +48,8 @@
     var cfg = ctx.cfg();
     if (!on(cfg)) return '';
     load(ctx, false);
-    var td = ctx.today(), res = K.evaluate({ month: ctx.month(), today: td, nowMs: Date.now(), cfg: cfg, staff: st ? st.staff : null, period: ctx.period(), office: ctx.officeFilter() });
-    var hd = '<div class="tdb-hd"><h3 id="sfb-h">今日の人員配置</h3>' + (res.short ? '<span class="tag ng">足りない ' + res.short + '</span>' : '') + '</div>';
+    var td = ctx.today(), res = K.evaluate({ month: ctx.month(), schedule: ctx.schedule ? ctx.schedule() : null, today: td, nowMs: Date.now(), cfg: cfg, staff: st ? st.staff : null, period: ctx.period(), office: ctx.officeFilter() });
+    var hd = '<div class="tdb-hd"><h3 id="sfb-h">今日の人員配置</h3>' + (res.short ? '<span class="tag ng">足りない ' + esc(res.short) + '</span>' : '') + '</div>';
     var help = '<p class="tdb-help">勤怠の予定と打刻を、シフトの職員の資格・サ責の印・職種（様式1）で数えます。利用者の数・訪問の件数は数えません（必要な人数は「設定」で決めます）。</p>';
     var body = '';
     if (!res.rules.length && !res.bad.length) body = '<p class="tdb-none">決まりがまだありません。「設定」のタブの「人員配置の決まり」に、時間帯と必要な人数を入れます。</p>';
@@ -72,38 +72,38 @@
       plan = '—'; now = '—';
       stt = '<span class="tds dn">' + (r.why === 'period' ? 'この月分の外の日のため確かめられません' : '確かめられません') + '</span>';
     } else {
-      plan = r.plan + '<small>名</small>';   /* 必要な人数は左の列だけに出す（同じ数を2か所に出さない） */
-      now = r.now == null ? '—' : r.now + '<small>名</small>';
+      plan = esc(r.plan) + '<small>名</small>';   /* 必要な人数は左の列だけに出す（同じ数を2か所に出さない） */
+      now = r.now == null ? '—' : esc(r.now) + '<small>名</small>';
       if (r.level === 'alert') stt = '<span class="tag ng">いま足りない</span>';
-      else if (r.level === 'warn') stt = '<span class="tag rv">予定で足りない</span><small class="sfat">' + esc(hmText(r.planAt)) + ' に ' + r.plan + '名</small>';
+      else if (r.level === 'warn') stt = '<span class="tag rv">予定で足りない</span><small class="sfat">' + esc(hmText(r.planAt)) + ' に ' + esc(r.plan) + '名</small>';
       else stt = '<span class="tds">足りている</span>';
-      if (r.missing) stt += '<small class="sfat">シフトにいない ' + r.missing + '名は数えていません</small>';
+      if (r.missing) stt += '<small class="sfat">シフトにいない ' + esc(r.missing) + '名は数えていません</small>';
       if (r.partial) stt += '<small class="sfat">月分の外の日の予定は数えていません</small>';
     }
     var lv = r.level === 'alert' ? ' sfx sfa' : r.level === 'warn' ? ' sfx' : '';
     return '<li><div class="sfr' + lv + '">' + name + '<span class="sfp">' + esc(tm) + (r.phase === 'now' ? '<small>いま</small>' : r.phase === 'past' ? '<small>終わり</small>' : '') + '</span>' +
-      '<span class="sfq"><small class="sfk">必要 </small>' + r.need + '<small>名</small></span><span class="sfq"><small class="sfk">予定 </small>' + plan + '</span><span class="sfq"><small class="sfk">いま </small>' + now + '</span><span class="sft">' + stt + '</span></div></li>';
+      '<span class="sfq"><small class="sfk">必要 </small>' + esc(r.need) + '<small>名</small></span><span class="sfq"><small class="sfk">予定 </small>' + plan + '</span><span class="sfq"><small class="sfk">いま </small>' + now + '</span><span class="sft">' + stt + '</span></div></li>';
   }
 
   /* ── 設定のタブ（#g-set の中・「設定を保存する」で保存） ── */
   function setHtml(cfg, admin, nameOf) {
     var ru = K.rulesOf(cfg), raw = cfg && Array.isArray(cfg[K.KEY_RULES]) ? cfg[K.KEY_RULES] : [];
     var rows = raw.slice(0, K.MAX_RULES), n = Math.min(K.MAX_RULES, rows.length + BLANK_ROWS), h = '';
-    h += '<label for="s-staffCheck">今日の人員配置の知らせ</label><span><input type="checkbox" id="s-staffCheck"' + (on(cfg) ? ' checked' : '') + '> 出す（ホームの今日の出勤状況の下。知らせだけで、勤怠の計算・給与は変えません）</span>';
-    h += '<span class="sfs-lb">人員配置の決まり</span><div class="sfs"><p class="help">時間帯を通して、その事業所の予定に入っている人が必要な人数より少ない時刻があれば「予定で足りない」、時間帯の途中で打刻のある人が少なければ「いま足りない」と出します。終わりが始まり以前なら翌日の時刻です（例 21:00〜7:00）。表示名を空にした行は保存しません。' +
+    h += '<label for="s-staffCheck" class="no-print">今日の人員配置の知らせ</label><span class="no-print"><input type="checkbox" id="s-staffCheck"' + (on(cfg) ? ' checked' : '') + '> 出す（ホームの今日の出勤状況の下。知らせだけで、勤怠の計算・給与は変えません）</span>';
+    h += '<span class="sfs-lb no-print">人員配置の決まり</span><div class="sfs no-print"><p class="help">時間帯を通して、その事業所の予定に入っている人が必要な人数より少ない時刻があれば「予定で足りない」、時間帯の途中で打刻のある人が少なければ「いま足りない」と出します。終わりが始まり以前なら翌日の時刻です（例 21:00〜7:00）。表示名を空にした行は保存しません。' +
       '数える人: 全員／介護職員＝看護師・准看護師でない人（シフトのデイの人数確認欄と同じ分け方）／看護職員＝看護師・准看護師／介護の資格＝介護福祉士・実務者研修・初任者研修のどれか／サ責＝シフトの職員のサービス提供責任者の印／職種の語＝シフトの職員の「職種（様式1）」にその語を含む人（生活相談員・機能訓練指導員など）。' +
       '介護職員の数（利用者の数で決まる）などは、ここに必要な人数そのものを入れます。一人が二つの決まりに当たる時（看護師を看護職員と機能訓練指導員の両方など）は両方に数え、兼務の可否や加算の専従の要件は判定しません。</p>' +
       (ru.bad.length && !(ru.bad[0].i === 0) ? '<p class="sfb-why">読めない行: ' + esc(ru.bad.map(function (b) { return b.i + '行目（' + (WHY_JA[b.why] || b.why) + '）'; }).join('・')) + '</p>' : '') +
       '<div class="sfs-t" role="group" aria-label="人員配置の決まり">';
     for (var i = 0; i < n; i++) h += ruleRow(i, rows[i] || null, admin, nameOf);
-    h += '</div>' + (n >= K.MAX_RULES ? '<p class="help">決まりは ' + K.MAX_RULES + ' 行までです。</p>' : '<p class="help">行が足りない時は、保存すると空の行が2つ足されます。</p>') + '</div>';
+    h += '</div>' + (n >= K.MAX_RULES ? '<p class="help">決まりは ' + esc(K.MAX_RULES) + ' 行までです。</p>' : '<p class="help">行が足りない時は、保存すると空の行が2つ足されます。</p>') + '</div>';
     return h;
   }
   function ruleRow(i, x, admin, nameOf) {
     var o = x && typeof x === 'object' ? x : {}, dis = admin ? '' : ' disabled', no = i + 1;
     var sel = function (id, list, cur, ja) { return '<select id="' + id + '" aria-label="' + no + '行目の' + ja.title + '"' + dis + '>' + list.map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(ja.map[v] || v) + '</option>'; }).join('') + '</select>'; };
     var offJa = {}; K.OFFICES.forEach(function (c) { offJa[c] = (nameOf && nameOf(c)) || { facility: '施設', visit: '訪問', day: '通所' }[c]; });   /* 名前は施設情報から（画面の officeName） */
-    return '<div class="sfs-r"><span class="sfs-no">' + no + '</span>' +
+    return '<div class="sfs-r"><span class="sfs-no">' + esc(no) + '</span>' +
       sel('sf-o-' + i, K.OFFICES, o.office || 'facility', { title: '事業所', map: offJa }) +
       '<input type="text" id="sf-l-' + i + '" maxlength="' + K.LABEL_MAX + '" value="' + esc(typeof o.label === 'string' ? o.label : '') + '" placeholder="例: 夜間 職員" aria-label="' + no + '行目の表示名"' + dis + '>' +
       '<input type="time" id="sf-f-' + i + '" value="' + esc(typeof o.from === 'string' ? o.from : '') + '" aria-label="' + no + '行目の始まり"' + dis + '><span aria-hidden="true">〜</span>' +
@@ -130,6 +130,8 @@
     if (cb.checked) vals[K.KEY_ON] = true;
     else if (cfg && Object.prototype.hasOwnProperty.call(cfg, K.KEY_ON)) vals[K.KEY_ON] = false;
     if (items.length || had) vals[K.KEY_RULES] = items;
+    var all = {}, k; for (k in (cfg || {})) all[k] = cfg[k]; for (k in vals) all[k] = vals[k];
+    if (!bad.length && !K.fitsConfig(all)) bad.push('設定に入る量（8KB）を超えます。表示名・職種の語を短くするか、使わない行を空にしてください');
     return { keys: [K.KEY_ON, K.KEY_RULES], vals: vals, bad: bad };
   }
   function act(a, b, ctx) {

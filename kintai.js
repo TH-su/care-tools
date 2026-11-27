@@ -428,7 +428,7 @@
   var STF = window.KintaiStaffingUI || null;
   function stfCtx() {
     var c = ctCtx();
-    c.month = function () { return month; }; c.period = function () { return data ? per() : null; }; c.officeFilter = function () { return officeFilter; };
+    c.month = function () { return month; }; c.schedule = function () { return data && Array.isArray(data.schedule) ? data.schedule : null; }; c.period = function () { return data ? per() : null; }; c.officeFilter = function () { return officeFilter; };
     return c;
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
