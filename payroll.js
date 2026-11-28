@@ -2151,6 +2151,10 @@
     var pays = bs.allowances.filter(function (a) { return a.sec === 'pay' && !a.hidden; }), deds = bs.allowances.filter(function (a) { return a.sec === 'deduct' && !a.hidden; });
     function amtOf(list, code) { var x = arr(list).filter(function (a) { return a && a.code === code; })[0]; return x ? x.amount : ''; }
     if (pays.length) h += '<p class="help">手当（月の額・空欄は無し）</p><div class="kv">' + pays.map(function (a, i) { return inp('f-al' + i, a.name || a.code, amtOf(d.allowances, a.code), NUMA); }).join('') + '</div>';
+    /* 回数・日数・時間で額が決まる手当の月の上限（統合 0146・freee の通勤手当（日額・月の上限）を写す・2026-11-28・欄の位置と文は仮置き） */
+    function capOf(code) { var x = arr(d.allowances).filter(function (a) { return a && a.code === code; })[0]; return x && x.cap != null ? x.cap : ''; }
+    var capPays = pays.map(function (a, i) { return { a: a, i: i }; }).filter(function (o) { return (o.a.calc || 'fixed') !== 'fixed'; });
+    if (capPays.length) h += '<p class="help">月の上限（回数・日数・時間で額が決まる手当だけ。上の額は単価。空欄は上限なし）</p><div class="kv">' + capPays.map(function (o) { return inp('f-alc' + o.i, (o.a.name || o.a.code) + 'の月の上限（円）', capOf(o.a.code), NUMA); }).join('') + '</div>';
     if (deds.length) h += '<p class="help">固定の控除（月の額・空欄は無し）</p><div class="kv">' + deds.map(function (a, i) { return inp('f-de' + i, a.name || a.code, amtOf(d.deductions, a.code), NUMA); }).join('') + '</div>';
     h += '<div class="kv">' + inp('f-cm', '通勤手当（月の額・円）', cm.monthly, NUMA) + sel('f-cmm', '通勤の手段', cm.means, [['', '（選ぶ）'], ['public', '公共交通'], ['car', '車・自転車'], ['mixed', '併用']]) + inp('f-cmd', '片道の距離（km）', cm.distance_km, ' inputmode="decimal"') +
       inp('f-cmp', '駐車場の料金（本人が負担・月・円）', cm.parking_monthly, NUMA) + '</div>' +
@@ -2195,7 +2199,10 @@
     d.base = n('f-base', '基本給'); d.board_pay = n('f-board', '役員報酬');
     d.avg_month_hours = n('f-amh', '月平均所定労働時間'); d.avg_month_days = n('f-amd', '月平均所定労働日数'); d.day_hours = n('f-dh', '1日の所定時間');
     var keepA = arr(d.allowances).filter(function (a) { return !c.pays.some(function (x) { return x.code === a.code; }); });
-    c.pays.forEach(function (a, i) { var x = n('f-al' + i, a.name || a.code); if (x != null && x === x) { var old = arr(p.data.allowances).filter(function (o) { return o.code === a.code; })[0]; keepA.push(Object.assign({}, old || {}, { code: a.code, amount: x })); } });
+    c.pays.forEach(function (a, i) { var x = n('f-al' + i, a.name || a.code); if (x != null && x === x) { var old = arr(p.data.allowances).filter(function (o) { return o.code === a.code; })[0]; var row = Object.assign({}, old || {}, { code: a.code, amount: x });
+      /* 月の上限は、欄がある手当で、入れた時と前に値があった時だけ送る（空の人に鍵を足さない・統合 0146 より前の DB は知らない鍵を断るため） */
+      if ($('f-alc' + i)) { var cx = n('f-alc' + i, (a.name || a.code) + 'の月の上限'); if (cx != null && cx === cx && cx % 1) bad.push((a.name || a.code) + 'の月の上限（円・整数）'); if (cx != null) row.cap = cx; else if ('cap' in row) row.cap = null; }
+      keepA.push(row); } });
     d.allowances = keepA;
     var keepD = arr(d.deductions).filter(function (a) { return !c.deds.some(function (x) { return x.code === a.code; }); });
     c.deds.forEach(function (a, i) { var x = n('f-de' + i, a.name || a.code); if (x != null && x === x) keepD.push({ code: a.code, amount: x }); });

@@ -76,7 +76,7 @@ console.log('\n— 反証レビュー（2026-11-21）: 日給の有休・休日�
   t('日ごとの実働の無い古い控えは差を足さない（今までどおり）', !run(DAILY, att(old)).lines.some((l) => l.code === 'holiday_gap'));
   t('月給・時給には差を足さない', !run({ pay_type: 'hourly', base: 1100, day_hours: 4, ins: {}, tax: { col: 'none' } }, att(rs)).lines.some((l) => l.code === 'holiday_gap'));
   /* 2026-11-23: 令和9年分の電算機特例と熊本の最低賃金を足して版を上げたので、確かめる値を新しい版にした（版が上がったことを確かめる試験のまま） */
-  t('計算の版の印と率表の版を上げた（確定した明細の指紋で前の版と区別する）', PC.CALC_VER === 'payroll-calc-3' && PC.VERSION === 'payroll-calc-3' && Rates.VERSION === 'rates-2026-11-23' && it.fingerprint_inputs.calc_ver === 'payroll-calc-3' && it.fingerprint_inputs.rates_ver === 'rates-2026-11-23');
+  t('計算の版の印と率表の版を上げた（確定した明細の指紋で前の版と区別する・2026-11-28 に手当の月の上限で payroll-calc-4）', PC.CALC_VER === 'payroll-calc-4' && PC.VERSION === 'payroll-calc-4' && Rates.VERSION === 'rates-2026-11-23' && it.fingerprint_inputs.calc_ver === 'payroll-calc-4' && it.fingerprint_inputs.rates_ver === 'rates-2026-11-23');
 }
 
 console.log('\n— B. 給与の照合で holidayWorkDays・noSchedWorkMin も比べる —');
