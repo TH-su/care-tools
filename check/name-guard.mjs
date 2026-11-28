@@ -24,8 +24,9 @@ const listFile = process.env.SU_NAME_GUARD_FILE || path.join(repoDir, 'check', '
 if (fs.existsSync(listFile)) names = fs.readFileSync(listFile, 'utf8').split('\n').map((s) => s.trim()).filter((s) => s && !s.startsWith('#'));
 
 function git(a) { return execFileSync('git', ['-c', 'core.quotepath=off', ...a], { cwd: repoDir, encoding: 'utf8', maxBuffer: 1 << 28 }); }   // 日本語のファイル名を引用符で崩さない
-/* 見る種類。Mac の道具（薬情よみとり・SilverMail）の本体 .swift と起動用 .command・.sh も公開されるので見る（2026-10-22） */
-const ALLOW_FILE = /\.(html|js|mjs|json|md|css|gs|txt|swift|command|sh)$/;
+/* 見る種類。Mac の道具（薬情よみとり・SilverMail）の本体 .swift と起動用 .command・.sh も公開されるので見る（2026-10-22）
+   React と TypeScript の .jsx・.ts・.tsx・.mts・.cts も見る（--dir で関連のリポジトリに当てた時に素通りしていた・2026-11-28） */
+const ALLOW_FILE = /\.(html|js|mjs|cjs|jsx|ts|tsx|mts|cts|json|md|css|gs|txt|swift|command|sh)$/;
 
 function wholeFile(f, rows) {
   const full = path.join(repoDir, f);
