@@ -28,7 +28,7 @@ t('次に押す塗りの青は印 su-sub の付いたボタンに当てない', 
 
 console.log('\n— 2. 読む画面と公開 —');
 for (const [n, h] of [['勤怠管理', KH], ['給与', PH]]) {
-  t(n + ': </head> の直前で CSS と JS（defer）を読む', /<link rel="stylesheet" href="su-office-look\.css\?v=2026-11-28">\n<script src="su-office-look\.js\?v=2026-11-27" defer><\/script>\n<\/head>/.test(h));
+  t(n + ': </head> の直前で CSS と JS（defer）を読む', /<link rel="stylesheet" href="su-office-look\.css\?v=2026-11-28\.1">\n<script src="su-office-look\.js\?v=2026-11-27" defer><\/script>\n<\/head>/.test(h));
 }
 const others = fs.readdirSync(ROOT).filter((f) => /\.html$/.test(f) && f !== 'kintai.html' && f !== 'payroll.html').filter((f) => /su-office-look/.test(read(f)));
 t('ほかの画面は読まない', others.length === 0, others);
@@ -104,6 +104,14 @@ ym.min = '2027-03'; ym.value = '2027-05'; tick();
 t('欄の min より前の月は押せない', months.querySelector('button[data-sul-ym="2027-02"]').disabled === true && months.querySelector('button[data-sul-ym="2027-03"]').disabled === false);
 tabs.children[2].click(); tick();
 t('タブを移るとパンくずも追いつく', crumb.textContent.includes('月の一覧'));
+
+/* 勤怠管理だけ元の青と白（本人指示 2026-11-28）: 印は勤怠管理の <html> だけ・給与には付けない・CSS は明るい表示と暗い表示の両方で戻す */
+{
+  const fs2 = require('fs'), path2 = require('path'), R2 = path2.join(__dirname, '..', '..');
+  const K = fs2.readFileSync(path2.join(R2, 'kintai.html'), 'utf8'), P = fs2.readFileSync(path2.join(R2, 'payroll.html'), 'utf8'), CSS = fs2.readFileSync(path2.join(R2, 'su-office-look.css'), 'utf8');
+  t('勤怠管理の <html> に data-sul-palette="blue"・給与には無い', /<html lang="ja" data-su-theme data-sul-palette="blue">/.test(K) && !/data-sul-palette/.test(P));
+  t('青と白の組: 明るい表示（字 #14213d・地 #fff・塗り #1946a8）と暗い表示（塗り #9dbaff）', /\[data-sul-palette="blue"\]:not\(\[data-su-theme~="keep-hdr"\]\) \{[^}]*--ink: #14213d;[^}]*--sul-fill: #1946a8;/.test(CSS) && /prefers-color-scheme: dark\) \{\n  html:root\[data-su-theme\]\[data-sul-palette="blue"\][^{]*\{[^}]*--sul-fill: #9dbaff;/.test(CSS));
+}
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 process.exit(fail ? 1 : 0);
