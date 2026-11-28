@@ -67,6 +67,10 @@ jobs:
         if: success() || failure()
         run: node check/payroll_e2e.mjs --shots check/out/flow
 
+      - name: 給与の定時決定のタブを通す（4〜6月の確定分・算定基礎届の控え・9月分からの反映・見込み・check/payroll_santei_e2e.mjs・2026-11-26）
+        if: success() || failure()
+        run: node check/payroll_santei_e2e.mjs --shots check/out/flow
+
       - name: 勤怠管理の「この月を締めて、給与へ渡す」とホームの進み具合を通す（check/kintai_lockpay_e2e.mjs・2026-11-26）
         if: success() || failure()
         run: node check/kintai_lockpay_e2e.mjs --shots check/out/flow

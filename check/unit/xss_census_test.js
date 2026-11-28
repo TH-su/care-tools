@@ -301,6 +301,8 @@ const CENSUS = {
   "payroll-yearend.js": [],
   "payroll-withholding-slip.js": [],
   "payroll-yearend-ui.js": [],
+  "payroll-santei.js": [],   // 定時決定の純関数（2026-11-26）: 代入なし（DOM に触れない）
+  "payroll-santei-ui.js": [],   // 定時決定のタブ（2026-11-26）: 代入なし（文字を返し、入れるのは payroll.js の put・外の値は全部 esc を通す）
   "kintai.html": [],
   "kintai-clock.html": [],
   "kintai-self.html": [],
