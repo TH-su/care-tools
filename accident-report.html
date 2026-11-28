@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-CBqoLBZIzEOBUEbnp6TWq1W4OXICJpwo7IJqZizE7io='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-0KrDtzkH/O70eLqZwkMaoP8xjyA5GOXai0db77UOgnM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
@@ -14,11 +14,11 @@
 <script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
 <script src="su-app-gate.js?v=2026-11-28.2"></script>
-<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-facility.js?v=2026-11-28"></script>
 <script src="su-res-read.js?v=2026-11-21"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
-<script src="accident-report-calc.js?v=2026-11-28"></script>
+<script src="accident-report-calc.js?v=2026-11-28.3"></script>
 <style>
 /* 事故報告書（2026-11-28 本人指示）。画面は「つむぐケアの型」（su-theme.css の藍と生成り）でライト固定。
    文字は 17px・押せる所は 44px 以上・フォーカスは 3px の枠。塗りのボタンは「保存する」の1つだけ。
@@ -440,7 +440,8 @@ function isField(){return getDeviceRole()==='field'}
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){/* 私用モードなど */}}
 function confirm_(m){ return (window.SUDialog&&typeof window.SUDialog.confirm==='function')?window.SUDialog.confirm(m):Promise.resolve(window.confirm(m)); }
-function fac_(){ try{ return C.facOf(window.SUFacility?window.SUFacility.get():null); }catch(e){ return C.facOf(null); } }
+/* 事故報告書の紙だけの事業所名・所在地の書き方（施設情報の accidentReport・鍵ごとに calc が確かめる・代表者の決定 2026-11-28） */
+function fac_(){ try{ var F=window.SUFacility; return C.facOf(F?F.get():null,(F&&typeof F.section==='function')?F.section('accidentReport'):null); }catch(e){ return C.facOf(null); } }
 function today_(){ return C.todayJST(); }
 
 /* データベースの窓口。通信は rpc_ だけを通す */
@@ -634,13 +635,20 @@ function newReport_(){
   base=JSON.parse(JSON.stringify(draft));   // 入居者マスタから入れただけの新しい報告は「変更あり」にしない（保存はまだ）
 }
 function isDirty_(){ return !!(draft&&base&&!C.sameReport(draft,base)); }
+function relabelOffices_(){
+  var nm=C.officeLabels(draft&&draft.data,fac_());
+  Array.prototype.forEach.call(document.querySelectorAll('.chip[data-g="offices"]'),function(b){
+    var i=C.OFFICE_KINDS.indexOf(b.getAttribute('data-id')), o=C.optOf('offices',b.getAttribute('data-id'));
+    b.textContent=nm[i]||(o&&o.label)||'';
+  });
+}
 
 /* ═══════════ 入力の画面（欄と選択肢は accident-report-calc.js の定義から描く） ═══════════ */
 function chips_(g,cls){
-  var O=C.OPTS[g], f=fac_();
+  var O=C.OPTS[g], f=fac_(), nm=g==='offices'?C.officeLabels(draft&&draft.data,f):null;   /* 事業所の名前は保存した時の写しがあれば写し（紙と同じ） */
   return '<div class="chips'+(cls?' '+cls:'')+'" role="group" aria-label="'+esc(O.label)+'">'+O.opts.map(function(o){
     var lb=o.chip||String(o.label).replace(/\n/g,'');
-    if(g==='offices') lb=(f.offices[o.id]&&f.offices[o.id].name)||o.label;
+    if(g==='offices') lb=nm[C.OFFICE_KINDS.indexOf(o.id)]||o.label;
     return '<button type="button" class="chip" data-g="'+esc(g)+'" data-id="'+esc(o.id)+'" aria-pressed="false">'+esc(lb)+'</button>';
   }).join('')+'</div>';
 }
@@ -921,6 +929,7 @@ document.addEventListener('click',function(ev){
     if(!draft) return;
     if(!master||master.missing){ setMsg('a-dmsg',(master&&master.text)||'入居者マスタを読めていないため、入れ直せません。画面を読み込み直してください。'); return; }
     takeAuto_(C.fromResident(draft.data,master,fac_(),today_())); touched={};
+    relabelOffices_();   /* 入れ直しで事業所の名前の写しが今の名前に変わった時、チップの文字も合わせる */
     toast('入居者マスタと施設情報から入れ直しました'); changed_(); return;
   }
 });
