@@ -94,7 +94,8 @@
       var cells = ds.map(function (x) {
         var sc = shiftCell(by[x], c.hm);
         if (sc.kind === 'work') { tot += sc.min; wdN++; } else if (sc.kind === 'paid') paid++; else offN++;
-        return '<td class="kl-s ' + sc.kind + '">' + e(sc.text) + '</td>';
+        /* 升を押すと勤怠の「出勤予定を直す・入れる」の窓（手直しの記録・0111）をその人・その日で開く（2026-11-28） */
+        return '<td class="kl-s ' + sc.kind + '"><button type="button" class="kl-sb" data-act="sched-cell" data-sid="' + e(p.staff.staff_id) + '" data-date="' + e(x) + '" aria-label="' + e(c.dispName(p.staff) + ' さんの ' + (+x.slice(5, 7)) + '月' + (+x.slice(8)) + '日の予定を直す') + '">' + e(sc.text) + '</button></td>';
       }).join('');
       var lv = c.leaveRemain(p.staff);
       return '<tr><th class="nm kl-sticky" scope="row"><button type="button" class="kl-nm" data-act="person" data-sid="' + e(p.staff.staff_id) + '">' + e(c.dispName(p.staff)) + '</button><span class="kl-code">' + e(p.staff.emp_code || '') + '</span></th>' +
@@ -103,7 +104,7 @@
     }).join('');
     var h = c.printHead('シフト表') + '<div class="cd kl">' + headHtml(c, 'シフト表') +
       toolHtml(c, all.length, pg, '<button type="button" class="btn" data-act="kl-csv">出力（CSV）</button>') +
-      '<p class="help no-print">シフト作成の画面で決めた予定を、勤怠に取り込んだまま見せます（ここでは直しません）。予定を変えた時は「月の一覧」の「シフトを取り込み直す」を押してください。</p>';
+      '<p class="help no-print">シフト作成の画面で決めた予定を、勤怠に取り込んだまま見せます。升を押すと、その日の出勤予定を直す窓が開きます（直しはシフトの取り込み直しで消えない別の記録に残り、シフト作成の画面は変えません）。シフトそのものを変えた時は「月の一覧」の「シフトを取り込み直す」を押してください。</p>';
     h += '<div class="tw kl-sw"><table class="kl-t kl-shift"><thead><tr><th class="nm kl-sticky">氏名</th><th class="num">出勤時間</th><th class="num">出勤日数</th><th class="num">休日日数</th><th class="num">有休残数</th><th class="num">有休取得数</th><th>部門</th><th>雇用形態</th>' +
       ds.map(function (x) { var w = c.wd(x); return '<th class="kl-d' + (w === '日' ? ' sun' : w === '土' ? ' sat' : '') + '">' + e(w) + '<br>' + e((+x.slice(5, 7)) + '/' + (+x.slice(8))) + '</th>'; }).join('') + '</tr>' +
       '<tr class="kl-cnt"><th class="nm kl-sticky">出勤者数</th><td colspan="7"></td>' + ds.map(function (x) { return '<td class="num">' + e(cnt[x]) + '</td>'; }).join('') + '</tr></thead><tbody>' +
