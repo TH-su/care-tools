@@ -311,9 +311,94 @@
     })) };
   }
 
+  /* ── 従業員の項目を選んで書き出す（職員の給与設定の CSV・2026-11-28） ──
+     o = { ym, profiles: [{staff_id, name, effective_from, data, none}], staffInfo: { staff_id: {emp_code, office} }, defs: [{code, name, sec}], keys: [選んだ列の key（並びどおり）] }
+     ・口座は出さない（下4桁も）・給与の設定が無い人（none）は出さない・計算から外す人も出す（列「計算から外す」で分かる）
+     ・列は empColumns(defs) が返す物だけ（知らない key は捨てる）。値は表計算ソフトで式として読まれないよう csvCell で無害化 */
+  var PT_JA = { monthly: '月給', hourly: '時給', daily: '日給', board: '役員報酬' };
+  var COL_JA = { kou: '甲欄', otsu: '乙欄', none: '対象外' };
+  var MEANS_JA = { public: '公共交通', car: '車・自転車', mixed: '併用' };
+  function yn(b) { return b === true ? 'はい' : ''; }
+  function o_(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
+  function blank(v) { return v === null || v === undefined ? '' : v; }
+  function empColumns(defs) {
+    var c = [
+      { key: 'code', label: '社員番号', group: '基本' }, { key: 'name', label: '氏名', group: '基本' }, { key: 'office', label: '事業所', group: '基本' },
+      { key: 'freee_emp_num', label: '従業員番号（freee）', group: '基本' }, { key: 'birth_date', label: '生年月日', group: '基本' }, { key: 'gender', label: '性別', group: '基本' },
+      { key: 'entry_date', label: '入社日', group: '基本' }, { key: 'retire_date', label: '退職日', group: '基本' }, { key: 'effective_from', label: '今の設定の版（いつから）', group: '基本' },
+      { key: 'pay_type', label: '給与形態', group: '給与' }, { key: 'base', label: '基本給・時給・日給', group: '給与' }, { key: 'board_pay', label: '役員報酬', group: '給与' },
+      { key: 'avg_month_hours', label: '月平均所定労働時間', group: '給与' }, { key: 'avg_month_days', label: '月平均所定労働日数', group: '給与' }, { key: 'day_hours', label: '1日の所定時間', group: '給与' }
+    ];
+    (Array.isArray(defs) ? defs : []).forEach(function (a) {
+      if (!a || !a.code || a.hidden) return;
+      if (a.sec === 'pay') c.push({ key: 'al:' + a.code, label: (a.name || a.code), group: '手当' });
+      else if (a.sec === 'deduct') c.push({ key: 'de:' + a.code, label: (a.name || a.code), group: '固定の控除' });
+    });
+    c.push({ key: 'commute', label: '通勤手当（月）', group: '通勤' }, { key: 'commute_means', label: '通勤の手段', group: '通勤' }, { key: 'commute_km', label: '片道の距離（km）', group: '通勤' }, { key: 'commute_parking', label: '駐車場の料金（月）', group: '通勤' },
+      { key: 'health_on', label: '健康保険', group: '社会保険' }, { key: 'health_std', label: '健保の標準報酬月額', group: '社会保険' }, { key: 'pension_on', label: '厚生年金', group: '社会保険' }, { key: 'pension_std', label: '厚年の標準報酬月額', group: '社会保険' },
+      { key: 'emp_on', label: '雇用保険', group: '社会保険' }, { key: 'care_exempt', label: '介護保険の対象外', group: '社会保険' },
+      { key: 'tax_col', label: '源泉の区分', group: '税' }, { key: 'dependents', label: '扶養親族等の数', group: '税' }, { key: 'resident_tax', label: '住民税（この月分）', group: '税' },
+      { key: 'no_attendance', label: '勤怠を使わない', group: 'そのほか' }, { key: 'exclude', label: '計算から外す', group: 'そのほか' });
+    return c;
+  }
+  function empValue(key, p, si, ym) {
+    var d = o_(p.data), ins = o_(d.ins), cm = o_(d.commute), tx = o_(d.tax);
+    function amt(list, code) { var x = (Array.isArray(list) ? list : []).filter(function (a) { return a && a.code === code; })[0]; return x && x.amount !== null && x.amount !== undefined && x.amount !== '' ? Number(x.amount) : ''; }
+    if (/^al:/.test(key)) return amt(d.allowances, key.slice(3));
+    if (/^de:/.test(key)) return amt(d.deductions, key.slice(3));
+    switch (key) {
+      case 'code': return si.emp_code || '';
+      case 'name': return p.name || '';
+      case 'office': return si.office || '';
+      case 'freee_emp_num': return blank(d.freee_emp_num);
+      case 'birth_date': return blank(d.birth_date);
+      case 'gender': return genderLabel(d.gender);
+      case 'entry_date': return blank(d.entry_date);
+      case 'retire_date': return blank(d.retire_date);
+      case 'effective_from': return blank(p.effective_from);
+      case 'pay_type': return PT_JA[d.pay_type] || '';
+      case 'base': return d.pay_type === 'board' ? '' : blank(d.base);
+      case 'board_pay': return blank(d.board_pay);
+      case 'avg_month_hours': return blank(d.avg_month_hours);
+      case 'avg_month_days': return blank(d.avg_month_days);
+      case 'day_hours': return blank(d.day_hours);
+      case 'commute': return blank(cm.monthly);
+      case 'commute_means': return MEANS_JA[cm.means] || '';
+      case 'commute_km': return blank(cm.distance_km);
+      case 'commute_parking': return blank(cm.parking_monthly);
+      case 'health_on': return yn(o_(ins.health).on);
+      case 'health_std': return blank(o_(ins.health).std);
+      case 'pension_on': return yn(o_(ins.pension).on);
+      case 'pension_std': return blank(o_(ins.pension).std);
+      case 'emp_on': return yn(o_(ins.emp).on);
+      case 'care_exempt': return yn(ins.care_exempt);
+      case 'tax_col': return COL_JA[tx.col] || '';
+      case 'dependents': return blank(tx.dependents);
+      case 'resident_tax': return blank(o_(d.resident_tax)[ym]);
+      case 'no_attendance': return yn(d.no_attendance);
+      case 'exclude': return yn(d.exclude);
+    }
+    return '';
+  }
+  function empCsv(o) {
+    o = o || {};
+    var cols = empColumns(o.defs), by = {};
+    cols.forEach(function (c) { by[c.key] = c; });
+    var keys = (Array.isArray(o.keys) ? o.keys : []).filter(function (k, i, a) { return by[k] && a.indexOf(k) === i; });
+    if (!keys.length) return { ok: false, error: 'nocols' };
+    var si = o_(o.staffInfo), rows = [keys.map(function (k) { return by[k].group === '手当' || by[k].group === '固定の控除' ? by[k].group + '：' + by[k].label : by[k].label; })], n = 0;
+    (Array.isArray(o.profiles) ? o.profiles : []).forEach(function (p) {
+      if (!p || !p.staff_id || p.none) return;
+      n++;
+      rows.push(keys.map(function (k) { return empValue(k, p, o_(si[p.staff_id]), o.ym); }));
+    });
+    return { ok: true, name: fileName('staff', o.ym, 'csv'), text: csvJoin(rows), count: n };
+  }
+
   var api = {
     zengin: zengin, journal: journal, ledger: ledger, list: list,
     zenginText: zenginText, sjisBytes: sjisBytes, zenginBuild: zenginBuild, splitAccounts: splitAccounts, checkTotals: checkTotals,
+    empColumns: empColumns, empCsv: empCsv,
     csvCell: csvCell, wageLedgerCsv: wageLedgerCsv, payslipListCsv: payslipListCsv, journalCsv: journalCsv, ACCOUNTS: ACCOUNTS
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

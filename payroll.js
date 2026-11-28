@@ -1994,6 +1994,8 @@
     var h = '';
     if (isAdmin()) h += importHtml();
     h += '<div class="cd"><h2>職員の給与設定</h2><p class="help">設定の変更は、月分の期間の初日から効きます（期間の途中の昇給などは、その月だけの調整で払います）。口座は下4桁だけを出します。</p>';
+    /* 項目を選んで書き出す（2026-11-28・選んだ項目はこの画面の中だけ・端末に残さない） */
+    if (bs.profiles.some(function (p) { return !p.none; })) h += '<div class="row"><button type="button" class="btn" data-act="empcsv">項目を選んで書き出す（CSV）</button></div>';
     if (!bs.profiles.length) return h + '<p class="empty">職員がいません。給与の名簿・シフトの職員を確かめてください。</p></div>';
     h += '<div class="tw"><table><thead><tr><th>氏名</th><th>形態</th><th class="num">基本給・時給など</th><th>標準報酬（健保／厚年）</th><th>源泉</th><th>口座</th><th>抜け</th><th>操作</th></tr></thead><tbody>';
     bs.profiles.forEach(function (p) {
@@ -2004,6 +2006,46 @@
         '<td class="nm"><button type="button" class="btn" data-act="prof" data-sid="' + esc(p.staff_id) + '">直す</button> <button type="button" class="btn" data-act="bank" data-sid="' + esc(p.staff_id) + '">口座</button></td></tr>';
     });
     return h + '</tbody></table></div></div>';
+  }
+  /* ── 従業員の項目を選んで書き出す（PayrollExport.empCsv・2026-11-28）。選んだ項目はメモリだけ（端末に残さない・開いていたタブだけを残す決まり） ── */
+  var empSel = null;
+  var EMP_DEF = ['code', 'name', 'pay_type', 'base', 'health_std', 'pension_std'];
+  function empCols() { var x = X(); return x && typeof x.empColumns === 'function' ? x.empColumns(bs.allowances) : []; }
+  function openEmpCsv() {
+    var cols = empCols(); if (!cols.length) { say('書き出しの部品を読み込めませんでした。ページを読み込み直してください。'); return; }
+    var sel = empSel || EMP_DEF, groups = [], byG = {};
+    cols.forEach(function (c) { if (!byG[c.group]) { byG[c.group] = []; groups.push(c.group); } byG[c.group].push(c); });
+    var h = '<p>書き出す項目に✔︎を付けてください（左上から順に列になります）。口座は書き出しません。</p>' +
+      '<div class="row"><button type="button" class="btn" data-act="empcsv-all">すべて選ぶ</button><button type="button" class="btn" data-act="empcsv-none">すべて外す</button></div>' +
+      '<div class="band warn" id="empcsv-msg" role="alert" hidden></div>';
+    groups.forEach(function (g) {
+      h += '<fieldset><legend>' + esc(g) + '</legend><div class="row">' + byG[g].map(function (c) {
+        return '<label class="chk"><input type="checkbox" data-empcol="' + esc(c.key) + '"' + (sel.indexOf(c.key) >= 0 ? ' checked' : '') + '> ' + esc(c.label) + '</label>';
+      }).join(' ') + '</div></fieldset>';
+    });
+    h += '<p class="help">' + esc(ymText(ym)) + 'の画面の設定（その月分の期間の初日に効く版）を書き出します。住民税は' + esc(ymText(ym)) + 'の額です。CSV には氏名と金額が入ります。使い終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。書き出したことは記録に残ります。</p>';
+    openDlg('項目を選んで書き出す', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="empcsv-go">書き出す</button>');
+  }
+  function empChecks() { return Array.prototype.slice.call(document.querySelectorAll('#p-dlg input[data-empcol]')); }
+  function empCsvGo(btn) {
+    var x = X(); if (busy || !x || typeof x.empCsv !== 'function') return;
+    var keys = empChecks().filter(function (e) { return e.checked; }).map(function (e) { return e.getAttribute('data-empcol'); });
+    var msg = document.getElementById('empcsv-msg');
+    if (!keys.length) { if (msg) { msg.hidden = false; msg.textContent = '書き出す項目を1つ以上選んでください。'; } return; }
+    if (msg) msg.hidden = true;
+    empSel = keys;
+    var res = x.empCsv({ ym: ym, profiles: bs.profiles, staffInfo: bs.staff_info, defs: bs.allowances, keys: keys });
+    if (!res || res.ok === false) { say('書き出す項目を1つ以上選んでください。'); return; }
+    var done = hold(btn, '作っています…'), my = ym;
+    rpc('payroll_export_log', { p_ym: ym, p_kind: 'csv' }).then(function (r) {
+      done();
+      if (my !== ym || masked) return;   /* 待つ間に月分を変えた・金額を隠した時は書き出さない */
+      if (r && r.ok === false && r.error === 'norun') { say(ymText(ym) + 'の給与の回がまだ無いので、書き出したことを記録できません。「今月の給与」で一度計算して保存してから押してください。'); return; }
+      okOr(r);
+      download(res); res = null;
+      closeDlg();
+      toast('職員の項目の CSV を書き出しました（' + keys.length + '項目・ダウンロードのフォルダ）');
+    }).catch(function (e) { done(); fail(e, '職員の項目の書き出し'); });
   }
   function fiscalMonths() {
     var pd = payDate() || (ym + '-01'), y = +pd.slice(0, 4), m = +pd.slice(5, 7), s = m >= 6 ? y : y - 1, out = [];
@@ -2791,6 +2833,9 @@
       else if (a === 'print-all') doPrint(items().slice());
       else if (a === 'exp') exportGo(b.getAttribute('data-k'), b);
       else if (a === 'prof') openProfile(sid);
+      else if (a === 'empcsv') openEmpCsv();
+      else if (a === 'empcsv-go') empCsvGo(b);
+      else if (a === 'empcsv-all' || a === 'empcsv-none') empChecks().forEach(function (e) { e.checked = a === 'empcsv-all'; });
       else if (a === 'prof-go') profGo(b);
       else if (a === 'bank') openBank(sid);
       else if (a === 'bank-go') bankGo(b);

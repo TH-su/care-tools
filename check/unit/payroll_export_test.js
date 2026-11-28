@@ -214,5 +214,26 @@ console.log('5. 反証レビューの直し（2026-11-19）');
   t('list: 明細一覧の CSV は人数分の行', li.text.trim().split('\r\n').length === 4 && li.name === 'payroll-list-2026-12.csv');
 }
 
+console.log('従業員の項目を選んで書き出す（empCsv・2026-11-28）');
+{
+  const defs = [{ code: 'q', name: '資格手当', sec: 'pay' }, { code: 'h', name: '隠した手当', sec: 'pay', hidden: true }, { code: 'r', name: '寮費', sec: 'deduct' }];
+  const cols = X.empColumns(defs).map((c) => c.key);
+  t('列: 基本・給与・手当（隠した手当は出さない）・固定の控除・通勤・社会保険・税・そのほか', cols[0] === 'code' && cols.includes('al:q') && !cols.includes('al:h') && cols.includes('de:r') && cols.includes('health_std') && cols.includes('resident_tax') && cols[cols.length - 1] === 'exclude');
+  t('列に口座は無い', !cols.some((k) => /bank|口座/.test(k)));
+  const profiles = [
+    { staff_id: 'a', name: '架空 一', effective_from: '2027-03-16', data: { pay_type: 'hourly', base: 1200, gender: 'F', birth_date: '1990-01-02', allowances: [{ code: 'q', amount: 5000 }], deductions: [{ code: 'r', amount: 20000 }], commute: { monthly: 3000, means: 'car', distance_km: 4.5 }, ins: { health: { on: true, std: 180000 }, pension: { on: false }, emp: { on: true }, care_exempt: false }, tax: { col: 'otsu', dependents: 0 }, resident_tax: { '2027-04': 7000 }, exclude: true, freee_emp_num: 12 } },
+    { staff_id: 'b', name: '=cmd|架空', data: { pay_type: 'board', board_pay: 400000, base: 999 } },
+    { staff_id: 'n', name: '設定なし', none: true, data: {} }
+  ];
+  const r = X.empCsv({ ym: '2027-04', defs, profiles, staffInfo: { a: { emp_code: 'T01', office: 'facility' } }, keys: ['code', 'name', 'pay_type', 'base', 'board_pay', 'al:q', 'de:r', 'commute_means', 'commute_km', 'health_on', 'health_std', 'pension_on', 'tax_col', 'resident_tax', 'exclude', 'gender', 'freee_emp_num', 'nope', 'code'] });
+  const L = r.text.split('\r\n');
+  eq('ファイル名', r.name, 'payroll-staff-2027-04.csv');
+  eq('頭（知らない列と重なった列は捨てる・手当は区分つき）', L[0], '社員番号,氏名,給与形態,基本給・時給・日給,役員報酬,手当：資格手当,固定の控除：寮費,通勤の手段,片道の距離（km）,健康保険,健保の標準報酬月額,厚生年金,源泉の区分,住民税（この月分）,計算から外す,性別,従業員番号（freee）');
+  eq('1人目の値', L[1], 'T01,架空 一,時給,1200,,5000,20000,車・自転車,4.5,はい,180000,,乙欄,7000,はい,女,12');
+  eq('役員は基本給を空にし、式に読まれる名前は無害化', L[2], ",'=cmd|架空,役員報酬,,400000,,,,,,,,,,,,");
+  t('給与の設定が無い人は出さない（2人・最後は空行）', r.count === 2 && L.length === 4 && L[3] === '', [r.count, L.length]);
+  eq('列を1つも選ばない時は断る', X.empCsv({ ym: '2027-04', defs, profiles, keys: [] }).error, 'nocols');
+}
+
 console.log('\n' + (fail ? '✗' : '✓') + ' payroll_export ' + pass + ' 件成功／' + fail + ' 件失敗');
 process.exit(fail ? 1 : 0);
