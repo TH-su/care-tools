@@ -2016,7 +2016,7 @@
   var NUMA = ' inputmode="numeric"';
   function openProfile(sid) {
     var p = profOf(sid); if (!p) return;
-    var d = p.data, ins = obj(d.ins), tx = obj(d.tax), cm = obj(d.commute), rt = obj(d.resident_tax), p0 = period();
+    var d = p.data, ins = obj(d.ins), tx = obj(d.tax), cm = obj(d.commute), rt = obj(d.resident_tax), rc = obj(d.resident_city), p0 = period();
     var froms = p0 ? [p0.from, addDay(p0.to, 1)] : [];
     var h = '<p>' + esc(p.name) + ' さん（今の版: ' + esc(p.effective_from ? md(p.effective_from) + 'から' : 'まだありません') + '）</p>';
     h += '<fieldset><legend>いつから</legend><div class="kv">' + sel('f-from', '設定を変える日（期間の初日）', froms[0], froms.map(function (f, i) { return [f, jdate(f) + (i === 0 ? '（この月分から）' : '（次の月分から）')]; })) + '</div></fieldset>';
@@ -2042,7 +2042,9 @@
     h += '<fieldset><legend>社会保険・雇用保険</legend><div class="row">' + chk('f-h-on', '健康保険に入る', obj(ins.health).on) + chk('f-p-on', '厚生年金に入る', obj(ins.pension).on) + chk('f-e-on', '雇用保険に入る', obj(ins.emp).on) + chk('f-care-ex', '介護保険の対象外', ins.care_exempt === true) + '</div>' +
       '<div class="kv">' + inp('f-h-std', '健保の標準報酬月額（円）', obj(ins.health).std, NUMA) + inp('f-p-std', '厚年の標準報酬月額（円）', obj(ins.pension).std, NUMA) + '</div></fieldset>';
     h += '<fieldset><legend>税</legend><div class="kv">' + sel('f-col', '源泉の区分', tx.col, [['', '（選ぶ）'], ['kou', '甲欄'], ['otsu', '乙欄'], ['none', '対象外']]) + inp('f-deps', '扶養親族等の数', tx.dependents, NUMA) + '</div>' + chk('f-depok', '甲乙・扶養の数を確かめた（freee の画面か本人の申告書で）', tx.dependents_checked === true) +
-      '<p class="help">住民税（特別徴収・月の額）</p><div class="kv">' + fiscalMonths().map(function (m, i) { return inp('f-rt' + i, (+m.slice(5)) + '月（' + m.slice(0, 4) + '年）', rt[m], NUMA); }).join('') + '</div></fieldset>';
+      '<p class="help">住民税（特別徴収・月の額）</p><div class="kv">' + fiscalMonths().map(function (m, i) { return inp('f-rt' + i, (+m.slice(5)) + '月（' + m.slice(0, 4) + '年）', rt[m], NUMA); }).join('') + '</div>' +
+      '<div class="kv">' + inp('f-rc-name', '住民税の納め先（市町村の名前）', rc.name, ' maxlength="40"') + inp('f-rc-code', '納め先の団体コード（6桁・任意）', rc.code, ' inputmode="numeric" maxlength="6" spellcheck="false"') + '</div>' +
+      '<p class="help">納め先は、今月の給与の「住民税の振込」で市町村ごとに合計を出すのに使います（住民税の決定通知書の市町村）。</p></fieldset>';
     h += '<fieldset><legend>そのほか</legend><div class="row">' + chk('f-noatt', '勤怠を使わない（役員・固定給）', d.no_attendance === true) + chk('f-excl', '計算から外す（休職・支給なし）', d.exclude === true) + '</div></fieldset>';
     h += '<div class="kv"><label for="f-reason">直す理由（必ず書く）</label><input id="f-reason" maxlength="200" autocomplete="off"></div>';
     var hist = p.versions;
@@ -2098,6 +2100,13 @@
     var rtMin = shiftYm(c.months[0], -12), rtMax = c.months[c.months.length - 1];
     Object.keys(rt).forEach(function (m) { if (!isYm(m) || m < rtMin || m > rtMax) delete rt[m]; });
     d.resident_tax = rt;
+    /* 住民税の納め先（統合 0143・2026-11-28）: 名前だけ・名前と団体コード6桁。空なら、前に値があった時だけ空に戻す */
+    var rcN = v('f-rc-name'), rcC = v('f-rc-code').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    if (rcC && !/^[0-9]{6}$/.test(rcC)) bad.push('納め先の団体コード（6桁）');
+    if (rcN.length > 40) bad.push('住民税の納め先（40字まで）');
+    if (rcN) d.resident_city = rcC ? { name: rcN, code: rcC } : { name: rcN };
+    else if (rcC) { say('住民税の納め先は、市町村の名前を入れてから団体コードを入れてください。'); return; }
+    else if ('resident_city' in obj(p.data)) d.resident_city = null;
     d.no_attendance = on('f-noatt'); d.exclude = on('f-excl');
     /* 従業員番号（freee の番号・20字まで）。空なら、前に値があった時だけ空に戻す（空の人に鍵を足さない） */
     var empIn = v('f-emp');
