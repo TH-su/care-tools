@@ -290,6 +290,7 @@ const CENSUS = {
   "kintai-board-calc.js": [], /* 段B（2026-11-25）: お知らせと補助項目の申請の純関数（DOM に触れない） */
   "kintai-board.js": [],      /* 段B（2026-11-25）: 管理画面の部品。HTML の文を返すだけで代入しない（代入は kintai.js の m.innerHTML の1か所・中身は esc） */
   "kintai-self-board.js": [], /* 段B（2026-11-25）: 本人の画面の部品。表示は textContent と createElement だけ（代入0か所） */
+  "kintai-self-slip.js": [],   // 自分の勤怠の給与明細（2026-11-28）: 代入なし（textContent だけ）
   "shift-symbols.js": [],
   "payroll-calc.js": [],
   "payroll-rates.js": [],

@@ -2,7 +2,7 @@
 <html lang="ja" data-su-theme>
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-eulpMVVlgrAS7H1Yf+2Jha/23SaYLe+kiTp+CBIi1yk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-tJmHeM0a9v39Hqalic07BfjQA2nwWr3sXyxagimeeos=' 'sha256-jDtCTWFUkZO6ZXtiibOwQEOmenGozG8uXeaxyaWb6S8='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 検索エンジンに載せない（公開URLだが業務用ツールのため） -->
 <meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,user-scalable=yes,viewport-fit=cover">
@@ -3157,6 +3157,14 @@ function csFingerprint_(json) {
   for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = (h * 16777619) >>> 0; }
   return t.length + ':' + h.toString(16);
 }
+/* 送信の前後で「送った中身と今の DB が同じか」を見る指紋（2026-11-28）。版の印と、端末ごとの表示中の利用者は数えない
+   （表示中の利用者を変えただけで送り直さないため）。衝突しても実害は「続けて送らない」の従来どおりの動き */
+function csPushFp_(db) {
+  if (!db || typeof db !== 'object') return csFingerprint_(JSON.stringify(db));
+  const o = Object.assign({}, db);
+  delete o.csAppVer; delete o.currentResidentId;
+  return csFingerprint_(JSON.stringify(o));
+}
 function csRememberLocalFp_(json) {
   try { localStorage.setItem(CS_LOCAL_FP_KEY, csFingerprint_(json)); } catch(e){ csNote_('指紋', e); }
 }
@@ -4203,33 +4211,14 @@ function loadDB() {
   try { csEditBaseline_(); } catch(e){ csNote_('直した人の基準', e); }   /* 読み込んだ姿を「直した人」の基準にする */
   // 備考クリアは loadDB では実行しない。同期端末では起動pull完了後に呼ぶ（下部 Init）＝pullの上書きで巻き戻らないため。
 }
-/* 一回限りの備考(notes)クリア・マイグレーション（要件2）。全 residents[].events[].notes を空にする。
- * detail/startTime/endTime/category/units/id/dayOfWeek 等 notes以外は一切変更しない。実行前に care_schedule_v2 全体をバックアップ。
- * フラグ care_notes_cleared_v1 で冪等（1回のみ）。将来の備考入力は可能。
- * 戻り値: クリアを実施し永続化に成功した場合 true（呼出側で即pushして同期端末へ恒久反映）。 */
+/* 2026-07-01 の一回限りの備考(notes)の一括クリア（要件2）は止めた（代表者の決定 2026-11-28）。
+ * 済みの印（care_notes_cleared_v1）が端末にしか無いため、接続先のある端末で初めて開くたびに、
+ * サーバーの全員の備考を空にして送っていた（新しい端末・サイトのデータを消した端末・新しい施設）。
+ * 一括クリアの元の目的（週間計画の備考がワースケの盤面に混ざる）は、ワースケが備考を取り込まない直しで済んでいる。
+ * 呼ぶ所（起動の取得の後・接続先の無い端末）はそのまま残し、ここでは何も読まず・書かず・送らない。
+ * 戻り値はいつも false（呼ぶ側の「消した後にすぐ送る」は動かない）。 */
 function migrateClearNotes_() {
-  const FLAG = 'care_notes_cleared_v1';
-  try {
-    if (localStorage.getItem(FLAG)) return false;                // 実行済み＝何もしない
-    const residents = Array.isArray(DB.residents) ? DB.residents : [];
-    // 実行前バックアップ（復元可能に）
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) localStorage.setItem(LS_KEY + '_backup_before_notes_clear', raw);
-    } catch(e){ csNote_('一括クリア前の控え', e); }
-    let cleared = 0;
-    for (let i = 0; i < residents.length; i++) {
-      const evs = residents[i].events || [];
-      for (let j = 0; j < evs.length; j++) {
-        if (evs[j] && evs[j].notes !== undefined && evs[j].notes !== '') { evs[j].notes = ''; cleared++; }
-      }
-    }
-    let ok = true;
-    if (cleared > 0) ok = saveDB();                              // 変更があれば永続化（saveDBの成否）
-    if (ok) localStorage.setItem(FLAG, new Date().toISOString()); // 保存成功時のみフラグ確定（失敗時は次回起動で再走）
-    console.log('[migrate] 備考クリア: ' + cleared + '件 ok=' + ok + '（notes以外は不変・backup=' + LS_KEY + '_backup_before_notes_clear）');
-    return ok && cleared > 0;
-  } catch (e) { console.error('[migrate] 備考クリア失敗:', e); return false; }
+  return false;
 }
 function saveDB() {
   /* 試算中は本物のキーへ一切書かない。呼び出し元は「保存できた」前提で描画を続けるので true を返し、
@@ -4950,6 +4939,10 @@ const SYNC = {
       /* 版数は「編集を始めた時点」の固定値を送る（中-1）。固定が無い時（未編集の再送・
          前セッションから引き継いだ未送信）だけ現在値へ倒す＝従来と同じ挙動。 */
       const baseRev = (this._baseRev != null) ? this._baseRev : this.loadCareRev();
+      /* ★送る中身の指紋を控える（2026-11-28）。応答待ちの間に職員が次の直しを入れると、成功の時の DB は送った中身と違う。
+         見ずに未送信の印を消すと、2つ目の直しは送っていないのに「未送信なし」になり、次の取得がほかの端末の版で消していた */
+      let sentFp = null;
+      try { sentFp = csPushFp_(DB); } catch (e) { sentFp = null; }
       /* ★土台は「送る内容」から作って凍結する。応答待ちの1〜3秒の間に職員が入力すると、
          その編集まで「サーバーと一致していた値」として焼かれ、次のマージで相手の値に負ける
          （レビュー M-2）。 */
@@ -5001,10 +4994,32 @@ const SYNC = {
         this.config.lastSync = Date.now();
         /* 送信が通った＝サーバーの中身は「送った内容」と一致した。その内容で土台を確定する。 */
         try { csFieldBaseSet_(sentBase); } catch(e){ csNote_('土台の控え', e); }
-        this.clearDirty();
-        this.save();
-        this.log('✅ 保存完了');
-        this.updateStatusUI('同期OK');
+        /* 送っている間に DB が変わった＝まだ送っていない直しがある。未送信の印は消さずに（ワースケが読む印を一瞬も外さない）、
+           版数をこの成功の版に固定し直して続けて送る。2秒の自動送信は送信中に空振りしていることがあるので、ここで予約し直す */
+        /* 送っている間に試算・予約の編集を始めた時は、盤面（試算の写し）ではなく端末に保存した本物の中身で比べる */
+        let pendingFp_ = false;
+        try {
+          const raw_ = SIM_ON ? localStorage.getItem(LS_KEY) : null;
+          const curFp_ = SIM_ON ? (raw_ ? csPushFp_(JSON.parse(raw_)) : null) : csPushFp_(DB);
+          pendingFp_ = sentFp != null && curFp_ != null && curFp_ !== sentFp;
+        } catch (e) { pendingFp_ = sentFp != null; }
+        if (pendingFp_) {
+          this._dirty = true;
+          this._baseRev = Number(j.rev) || 0;
+          try { localStorage.setItem(CS_DIRTY_KEY, '1'); } catch(e){ csNote_('未送信の印', e); }
+          this.save();
+          this.log('✅ 保存完了（送っている間に入れた変更は、続けて送ります）');
+          this.updateStatusUI('未同期…');
+          clearTimeout(this._pushTimer); this._pushTimer = null;
+          /* 試算の間は送らない。試算を終えて本物の中身へ戻った時に送る（SIM.exit が saved.pushAfter を見て予約する） */
+          if (SIM_ON) { if (SIM.saved) { SIM.saved.dirty = true; SIM.saved.pushAfter = true; } }
+          else this._pushTimer = setTimeout(() => { this.push(); }, 2000);
+        } else {
+          this.clearDirty();
+          this.save();
+          this.log('✅ 保存完了');
+          this.updateStatusUI('同期OK');
+        }
         this._busy = false;
         if (viaSb && !j.unchanged && unconfSent.length) csSettleUnconfirmed_(unconfSent);
         /* Google の GAS へ送った時は、GAS が確かめた値（editor）がメールの時だけ「未確認」をそろえる（2026-10-15 editorverify。旧い GAS は editor を返さない＝何もしない） */
@@ -10089,6 +10104,8 @@ const SIM = {
       this.saved.undo.forEach(u => undoStack.push(u));
       const sel = this.saved.sel;
       if (sel && DB.residents.some(r => r.id === sel)) { try { csSetSelection_(sel); } catch (e) {} }
+      /* 試算の間に届いた送信の成功で「送っている間に入れた変更」が残った時だけ、本物の中身へ戻った今、続けて送る（2026-11-28） */
+      if (this.saved.pushAfter && SYNC._dirty && SYNC.hasTarget()) { try { SYNC.scheduleAutoPush(); } catch (e) { csNote_('送信（試算の後）', e); } }
     }
     this.saved = null; this.baseId = null;
     try { SYNC.startPolling(); } catch (e) {}
@@ -11122,8 +11139,7 @@ requestAnimationFrame(() => {
 // （現場端末ガード時は取得しない）
 if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
   setTimeout(() => {
-    // 起動pullで最新リモートを採用した「後」に備考クリアを実施し即push。
-    // loadDB時にクリアするとこの起動pullが備考付きリモートで上書きし、B3が同期端末で巻き戻るため。
+    // 起動pullで最新リモートを採用した「後」に呼ぶ（備考の一括クリアは 2026-11-28 に止めた＝migrateClearNotes_ はいつも false・何も送らない）。
     const afterPull = (pulled) => {
       try {
         if (migrateClearNotes_()) {
@@ -11144,7 +11160,7 @@ if (SYNC.hasTarget() && suGetDeviceRole() !== 'field') {
              （2026-11-01: 300ms 待っていた分だけ、新しい端末で名簿が出るのが遅れていた。取得の通信そのものは起動の処理と重ならない） */
 } else {
   if (SYNC.hasTarget()) SYNC.updateStatusUI('同期');
-  try { migrateClearNotes_(); } catch (e) {}   // field/オフライン端末: pullしない→ローカルでクリア（後続の同期で伝播）
+  try { migrateClearNotes_(); } catch (e) {}   // 備考の一括クリアは 2026-11-28 に止めた（何もしない・呼ぶ所だけ残す）
 }
 /* ── 接続先の無い端末でも、ログインしていれば新しい保存先で使う（2026-11-08 代表者の決定「端末ごとの設定を極限までなくす」段1）──
    接続先（su_sync_common・ws_settings・この画面の設定）の無い事務所PCで、起動の時に1回だけ確かめる（SUKv.liveReady・8秒で打ち切り）。

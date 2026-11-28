@@ -219,9 +219,9 @@ await scene_('1. 計算 → 下書き保存 → 確定', async () => {
   t('確定すると確定済みになり、計算するのボタンが消える', run(o).status === 'confirmed' && (await p.locator('[data-act="compute"]').count()) === 0);
   const sv = o.routes.calls.filter((c) => c.name === 'payroll_run_save').pop();
   /* ★2026-11-21（反証レビュー 5）: 計算の版の印を payroll-calc-2・率表の版を rates-2026-11-21 に上げたので期待を改めた
-     ★2026-11-23: 令和9年分の電算機特例と熊本の最低賃金を足して payroll-calc-3・rates-2026-11-23 に上げたので期待を改めた */
+     ★2026-11-23: 令和9年分の電算機特例と熊本の最低賃金を足して payroll-calc-3・rates-2026-11-23 に上げたので期待を改めた。★2026-11-28: 手当の月の上限で payroll-calc-4 に上げた */
   t('下書き保存は {staff_id, item, adjustments} の形（item に氏名・口座を入れない）・指紋は bootstrap の値＋率と計算の版', !!sv && sv.args.p_items.every((x) => Object.keys(x).sort().join() === 'adjustments,item,staff_id' && !('name' in x.item) && !('bank_last4' in x.item) && /^\d{4}-\d{2}-\d{2}$/.test(x.item.pay_date))
-    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-23' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-3' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
+    && sv.args.p_fingerprint.rates_ver === 'rates-2026-11-23' && sv.args.p_fingerprint.calc_ver === 'payroll-calc-4' && 'kintai_locked_at' in sv.args.p_fingerprint && 'allowances' in sv.args.p_fingerprint, sv && Object.keys(sv.args.p_fingerprint));
   t('支給日は 2026-11-27（金曜・手で確かめた値）を明細に写し、指紋にも入れた', !!sv && sv.args.p_items.every((x) => x.item.pay_date === '2026-11-27') && sv.args.p_fingerprint.pay_date === '2026-11-27');
   t('確定を押した時にもう一度読み直し、締めた勤怠も数え直した（bootstrap → kintai_month_get → 確定）', (() => { const n = o.routes.calls.map((c) => c.name); const i = n.lastIndexOf('payroll_run_confirm'); return i > 1 && n[i - 1] === 'kintai_month_get' && n[i - 2] === 'payroll_bootstrap'; })());
   t('端末に残したのは payroll_tab だけ（月分・金額・氏名なし・施設情報の共通の控えは除いて数える）', await p.evaluate(() => { const ks = []; for (let i = 0; i < localStorage.length; i++) ks.push(localStorage.key(i)); return ks.filter((k) => /payroll/.test(k)).join() === 'payroll_tab' && !ks.filter((k) => k !== 'su_facility_json_v1').some((k) => /見本 [一二三四五六七八九十]|見本銀行|\d{1,3},\d{3}/.test(localStorage.getItem(k) || '')); }));
@@ -872,6 +872,66 @@ await scene_('職員の項目を選んで書き出す（CSV）', async () => {
   t('もう一度開くと前に選んだ項目のまま（この画面の中だけ）', JSON.stringify(again) === JSON.stringify(['name', 'al:qual', 'commute']), again);
   t('選んだ項目は端末に残さない（localStorage に empcol の鍵なし）', await p.evaluate(() => !Object.keys(localStorage).some((k) => /empcol|emp_sel/i.test(k))));
   t('画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+});
+
+/* ── 賞与のまとめて入れると1人だけ計算し直す（2026-11-28） ── */
+console.log('\n— 賞与のまとめて入れる・1人だけ計算し直す —');
+await scene_('賞与のまとめて入れる・1人だけ計算し直す', async () => {
+  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, retiredStaff: true });   /* 退職済みの見本 十二がいる回 */
+  const p = o.page;
+  await p.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
+  await p.click('[data-act="b-new"]');
+  await p.fill('#bn-date', '2026-12-24');
+  await p.fill('#bn-title', '見本の冬の賞与');
+  await p.click('[data-act="b-new-go"]');
+  await p.waitForSelector('[data-act="b-bulk"]', { timeout: 10000 });
+  const amt = (sid) => p.inputValue('[data-bk="amt"][data-bsid="' + sid + '"]');
+  const toastTxt = () => p.textContent('#p-toast');
+  await p.fill('[data-bk="amt"][data-bsid="s-01"]', '300000');
+  await p.selectOption('#b-bulk-mode', 'flat');
+  await p.fill('#b-bulk-v', '100000');
+  await p.click('[data-act="b-bulk"]');
+  await p.waitForFunction(() => /人に入れました/.test(document.getElementById('p-toast').textContent), null, { timeout: 5000 });
+  t('同じ額: 空の人に 100000・入っていた見本 一郎は 300000 のまま', await amt('s-02') === '100000' && await amt('s-01') === '300000', [await amt('s-01'), await amt('s-02')]);
+  t('同じ額: 知らせに「入っていた 1人はそのまま」', /入っていた 1人はそのまま/.test(await toastTxt()), await toastTxt());
+  t('同じ額: 退職済みの見本 十二・支給日より前に退職した見本 五郎（回の対象でない）には入れない・知らせに人数', await amt('s-12') === '' && await amt('s-05') === '' && /退職した・在籍でない 2人には入れていません/.test(await toastTxt()), [await amt('s-12'), await toastTxt()]);
+  await p.selectOption('#b-bulk-mode', 'mult');
+  await p.fill('#b-bulk-v', '1.5');
+  await p.check('#b-bulk-over');
+  await p.click('[data-act="b-bulk"]');
+  await p.waitForFunction(() => /月給でない/.test(document.getElementById('p-toast').textContent), null, { timeout: 5000 });
+  t('倍率: 書き換えの印で見本 一郎（月給 240,000）は 360000・時給の見本 二子は 100000 のまま', await amt('s-01') === '360000' && await amt('s-02') === '100000', [await amt('s-01'), await amt('s-02')]);
+  await p.fill('#b-bulk-v', 'abc');
+  await p.click('[data-act="b-bulk"]');
+  const mAbc = await sud(p);   /* 窓の答えはこのファイルの sud（開いてから 400ms 待って押す・閉じるまで待つ） */
+  t('倍率の形が違うと知らせて入れない', /倍率は 0 より大きく 20 までの数/.test(mAbc), mAbc);
+  await p.selectOption('#b-bulk-mode', 'clear');
+  await p.click('[data-act="b-bulk"]');
+  const mClr = await sud(p);
+  t('空にする前に確かめる（人数つき）', /人の賞与額を空にしますか/.test(mClr), mClr);
+  await p.waitForFunction(() => { const e = document.querySelector('[data-bk="amt"][data-bsid="s-02"]'); return e && e.value === ''; }, null, { timeout: 5000 }).catch(() => {});
+  t('空にする: 確かめた後に表示中の人の賞与額を空にする', await amt('s-01') === '' && await amt('s-02') === '');
+  t('空にする: 知らせは「空にしました」', /人の賞与額を空にしました/.test(await toastTxt()), await toastTxt());
+  t('まとめて入れても保存しない（保存の呼び出し0）', !o.routes.calls.some((c) => c.name === 'payroll_bonus_save'));
+  /* 1人だけ計算し直す */
+  await p.fill('[data-bk="amt"][data-bsid="s-01"]', '300000');
+  await p.fill('[data-bk="amt"][data-bsid="s-03"]', '200000');
+  await p.click('[data-act="b-compute"]');
+  await p.waitForSelector('details.bit');
+  const gross = (nm) => p.evaluate((n) => { const d = [...document.querySelectorAll('details.bit')].find((x) => x.textContent.includes(n)); return d ? d.textContent.replace(/\s+/g, ' ') : ''; }, nm);
+  const g3 = await gross('見本 三郎');
+  await p.fill('[data-bk="amt"][data-bsid="s-03"]', '250000');
+  await p.fill('[data-bk="amt"][data-bsid="s-01"]', '310000');
+  await p.click('[data-act="b-one"][data-bsid="s-01"]');
+  await p.waitForFunction(() => /見本 一郎 さんを計算し直しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 5000 });
+  t('1人だけ: 見本 一郎の結果が 310,000 になる・ほかの人（見本 三郎）の結果は前のまま', /310,000/.test(await gross('見本 一郎')) && await gross('見本 三郎') === g3, [await gross('見本 一郎'), (await gross('見本 三郎')).slice(0, 80)]);
+  t('1人だけ: 結果の人数は2人のまま', (await p.locator('details.bit').count()) === 2);
+  await p.fill('[data-bk="amt"][data-bsid="s-01"]', '');
+  await p.click('[data-act="b-one"][data-bsid="s-01"]');
+  await p.waitForFunction(() => /結果から外しました/.test(document.getElementById('p-toast').textContent), null, { timeout: 5000 });
+  t('1人だけ: 賞与額を空にして押すと、その人を結果から外す', (await p.locator('details.bit').count()) === 1);
+  t('賞与のまとめて入れる・1人だけ: 画面のエラー 0', o.errors.length === 0, o.errors);
   await o.ctx.close();
 });
 

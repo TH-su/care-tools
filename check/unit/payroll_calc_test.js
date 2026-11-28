@@ -672,6 +672,27 @@ console.log('13. 区分別の合計と指紋');
   t('源泉の対象外（none）は警告なし', !W(run(pr({ col: 'none' })), 'dependents_unchecked'));
 }
 
+{ /* 手当の月の上限（a.cap・統合 0146・2026-11-28）: 日数×単価の通勤手当を月の上限で止める */
+  const CM = { code: 'cmd', name: '通勤手当（日額）', sec: 'pay', calc: 'day', order: 1, attrs: { income_tax: false, overtime_base: false } };
+  const cm = (allow, days) => run({ pay_type: 'hourly', base: 1000, allowances: [allow], ins: {}, tax: { col: 'none' } }, { schedInMin: 600, workDays: days }, { allowanceDefs: [CM] });
+  eq('上限なし: 580×22日＝12760', L(cm({ code: 'cmd', amount: 580 }, 22), 'fcmd'), 12760);
+  eq('上限1万円: 580×22日＝12760 → 10000', L(cm({ code: 'cmd', amount: 580, cap: 10000 }, 22), 'fcmd'), 10000);
+  eq('上限1万円でも下回る月はそのまま: 580×11日＝6380', L(cm({ code: 'cmd', amount: 580, cap: 10000 }, 11), 'fcmd'), 6380);
+  eq('上限ちょうど: 500×20日＝10000', L(cm({ code: 'cmd', amount: 500, cap: 10000 }, 20), 'fcmd'), 10000);
+  eq('上限が空・null は上限なし', L(cm({ code: 'cmd', amount: 580, cap: null }, 22), 'fcmd') + L(cm({ code: 'cmd', amount: 580, cap: '' }, 22), 'fcmd'), 25520);
+  eq('上限0は0円', L(cm({ code: 'cmd', amount: 580, cap: 0 }, 22), 'fcmd'), 0);
+  const ln = cm({ code: 'cmd', amount: 580, cap: 10000 }, 22).lines.filter((l) => l.code === 'fcmd')[0];
+  t('止めた時は根拠に「月の上限」を出す', ln && /月の上限 10000円/.test(ln.basis));
+  const fx = run({ pay_type: 'monthly', base: 200000, allowances: [{ code: 'q', amount: 15000, cap: 10000 }], ins: {}, tax: { col: 'none' } }, {}, { allowanceDefs: [{ code: 'q', name: '資格手当', sec: 'pay', calc: 'fixed', order: 1 }] });
+  eq('定額の手当には上限を当てない（定額は月の額そのもの）', L(fx, 'fq'), 15000);
+  /* 時間の手当を上限で止めた月は、割増の基礎に払った額÷月平均所定時間を足す（反証レビュー 2026-11-28） */
+  const HRC = { code: 'h', name: '時間手当', sec: 'pay', calc: 'hour', order: 1 };
+  const hc = run({ pay_type: 'monthly', base: 172000, allowances: [{ code: 'h', amount: 50, cap: 1720 }], ins: {}, tax: { col: 'none' } }, { workMin: 6000, legalOverMin: 60 }, { allowanceDefs: [HRC] });
+  eq('時間の手当 50×100時間＝5000 → 上限1720', L(hc, 'fh'), 1720);
+  eq('割増の基礎は 1000＋1720÷172＝1010 ×1.25＝1262.5→1263（上限の前の時間単価50を足さない）', L(hc, 'ot_out'), 1263);
+  const hn = run({ pay_type: 'monthly', base: 172000, allowances: [{ code: 'h', amount: 50 }], ins: {}, tax: { col: 'none' } }, { workMin: 600, legalOverMin: 60 }, { allowanceDefs: [HRC] });
+  eq('上限で止めない月は今までどおり時間単価を足す: 1050 ×1.25＝1312.5→1313', L(hn, 'ot_out'), 1313);
+}
 /* 画面向けの口（2026-11-19 結びの段）。支給日の期待値は暦を手で確かめた値 */
 {
   t('VERSION は計算の版と同じ', C.VERSION === C.CALC_VER && typeof C.VERSION === 'string' && C.VERSION.length > 0);

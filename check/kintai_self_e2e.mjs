@@ -476,6 +476,57 @@ try {
     t('M. 画面のエラーなし', errors.length === 0, errors);
     await context.close();
   }
+  {
+    say('— N. 給与明細のタブ（統合 0145・2026-11-28）: 確定済みの一覧と1枚・古い受け口は「まだ使えません」・閉じると捨てる —');
+    const stN = fake();
+    const baseN = stN.handle;
+    const SLIP = { ym: '2027-04', pay_date: '2027-04-25', period: { from: '2027-03-16', to: '2027-04-15' }, company_name: '見本の会社', name: '表示 架空', gross: 250000, deduct: 40000, net: 210000,
+      lines: [{ sec: 'pay', code: 'basic', name: '基本給', qty: null, amount: 240000 }, { sec: 'deduct', code: 'health', name: '健康保険', qty: null, amount: 12000 }, { sec: 'att', code: 'workDays', name: '出勤日数', qty: 20, amount: 0 }] };
+    stN.handle = (b) => {
+      if (b.op === 'payslips' && b.key === KEY && b.open === OPEN) return { ok: true, months: [{ ym: '2027-03', pay_date: '2027-03-25', net: 200000 }, { ym: '2027-04', pay_date: '2027-04-25', net: 210000 }] };
+      if (b.op === 'payslip' && b.key === KEY && b.open === OPEN) return b.ym === '2027-04' ? { ok: true, slip: SLIP } : { ok: false, error: 'notfound' };
+      return baseN(b);
+    };
+    ({ context, page, errors } = await openPage(stN, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'days'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#days-list .day', { timeout: 10000 });
+    t('N. 開いただけでは明細を読まない', !stN.bodies.some((b) => b.op === 'payslips' || b.op === 'payslip'));
+    await page.click('#t-slip');
+    await page.waitForSelector('#slip-box .slip-row', { timeout: 10000 });
+    const rows = await page.$$eval('#slip-box .slip-row', (bs) => bs.map((x) => x.textContent));
+    t('N. 一覧は新しい順（4月分が先）・差引の額', rows.length === 2 && /2027年4月分/.test(rows[0]) && /210,000 円/.test(rows[0]), rows);
+    t('N. 一覧を読む時に送るのは key・open だけ', JSON.stringify(Object.keys(stN.bodies.find((b) => b.op === 'payslips')).sort()) === '["key","op","open"]');
+    await page.click('#slip-box .slip-row >> nth=0');
+    await page.waitForSelector('#slip-box .slip-tot', { timeout: 10000 });
+    const sv = await page.textContent('#slip-box');
+    t('N. 明細: 題・支給日・会社と名前・合計・支給・控除・勤怠', /2027年4月分 給与明細/.test(sv) && /支給日 2027年4月25日/.test(sv) && /見本の会社/.test(sv) && /差引支給額210,000 円/.test(sv) && /基本給240,000 円/.test(sv) && /健康保険12,000 円/.test(sv) && /出勤日数20/.test(sv), sv.slice(0, 300));
+    t('N. 明細を読む時に送るのは key・open・ym だけ', JSON.stringify(stN.bodies.find((b) => b.op === 'payslip')) === JSON.stringify({ op: 'payslip', key: KEY, open: OPEN, ym: '2027-04' }));
+    t('N. 横にはみ出さない（390px）', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    t('N. 端末に残すのは鍵とタブの印だけ', JSON.stringify(await page.evaluate(() => Object.keys(localStorage).sort())) === JSON.stringify(['kintai_self_key', 'kintai_self_tab']));
+    await shot(page, 'slip');
+    /* 給与明細のタブのまま閉じて開き直すと、押さなくても一覧が出る（反証レビュー 2026-11-28） */
+    await page.click('#b-close');
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#slip-box .slip-row', { timeout: 10000 }).catch(() => {});
+    t('N. 給与明細のタブで閉じて開き直すと、押さなくても一覧が出る', (await page.locator('#slip-box .slip-row').count()) === 2);
+    await page.click('#b-close');
+    t('N. 閉じると明細を画面から捨てる', (await page.evaluate(() => document.getElementById('slip-box').textContent)) === '');
+    t('N. 画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+    /* 古い受け口（0145 の前・知らない op を format で断る） */
+    const stO = fake();
+    ({ context, page, errors } = await openPage(stO, '/kintai-self.html'));
+    await page.evaluate((k) => { localStorage.setItem('kintai_self_key', k); localStorage.setItem('kintai_self_tab', 'slip'); }, KEY);
+    await page.reload();
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#v-app:not([hidden])', { timeout: 10000 });
+    await page.waitForFunction(() => /まだ使えません/.test(document.getElementById('slip-box').textContent), null, { timeout: 10000 }).catch(() => {});
+    t('N. 古い受け口では「給与明細はまだ使えません」', /給与明細はまだ使えません/.test(await page.textContent('#slip-box')));
+    t('N. 古い受け口: 画面のエラーなし', errors.length === 0, errors);
+    await context.close();
+  }
 } finally {
   await browser.close();
   srv.close();
