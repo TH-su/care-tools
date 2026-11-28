@@ -469,6 +469,29 @@ await scene_('6. 覆い・その他', async () => {
   const pf = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
   t('固定残業代: 手当・含む時間（分）・確かめた を送り、DB の確かめを通る', !!pf && JSON.stringify(pf.args.p_data.fixed_ot) === JSON.stringify({ allowance_code: 'night', covered_min: 600, checked: true })
     && o4.routes.db.profiles.some((q) => q.staff_id === 's-09' && q.effective_from === '2026-10-16' && q.data.fixed_ot && q.data.fixed_ot.checked === true), pf && pf.args.p_data.fixed_ot);
+  /* 統合 0143: 住民税の納め先（市町村の名前・団体コード6桁は任意・全角の数字も受ける）。s-09 に入れて送り、DB の確かめを通る */
+  await o4.page.click('[data-act="prof"][data-sid="s-09"]');
+  t('住民税の納め先の欄（名前・団体コード）が税の欄にある', (await o4.page.locator('#f-rc-name').count()) === 1 && (await o4.page.locator('#f-rc-code').count()) === 1);
+  await o4.page.fill('#f-rc-name', '見本市'); await o4.page.fill('#f-rc-code', '９９９９９９');
+  await o4.page.fill('#f-reason', '見本の納め先');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const prc = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('住民税の納め先: resident_city {name, code（半角に直す）} で送り、DB の確かめを通る', !!prc && JSON.stringify(prc.args.p_data.resident_city) === JSON.stringify({ name: '見本市', code: '999999' })
+    && o4.routes.db.profiles.some((q) => q.staff_id === 's-09' && q.data.resident_city && q.data.resident_city.name === '見本市'), prc && prc.args.p_data.resident_city);
+  await o4.page.click('[data-act="prof"][data-sid="s-09"]');
+  await o4.page.fill('#f-rc-name', ''); await o4.page.fill('#f-rc-code', '12');
+  await o4.page.fill('#f-reason', '見本の納め先の誤り');
+  const callsRc = o4.routes.calls.length;
+  await o4.page.click('[data-act="prof-go"]');
+  const rcMsg = await sud(o4.page);
+  t('住民税の納め先: 名前が空で団体コードだけの時は送らず、名前を入れるよう知らせる（窓は開いたまま）', /市町村の名前を入れてから/.test(rcMsg) && o4.routes.calls.filter((c, i) => i >= callsRc && c.name === 'payroll_profile_put').length === 0 && await o4.page.evaluate(() => document.getElementById('p-dlg').open), rcMsg);
+  await o4.page.fill('#f-rc-name', ''); await o4.page.fill('#f-rc-code', '');
+  await o4.page.fill('#f-reason', '見本の納め先を外す');
+  await o4.page.click('[data-act="prof-go"]');
+  await o4.page.waitForFunction(() => !document.getElementById('p-dlg').open, null, { timeout: 10000 });
+  const prx = o4.routes.calls.filter((c) => c.name === 'payroll_profile_put').pop();
+  t('住民税の納め先: 両方空にすると、前に値があった人は null で送る', !!prx && prx.args.p_data.resident_city === null, prx && prx.args.p_data.resident_city);
   /* 統合 0118: 通勤手当の駐車場の料金（本人が負担・月）の欄。s-01（車・片道6km）に 3000円 */
   await o4.page.click('[data-act="prof"][data-sid="s-01"]');
   await o4.page.fill('#f-cmp', '3000');
@@ -1215,6 +1238,13 @@ await scene_('勤怠管理から締めた勤怠を受け取る（?from=kintai）
   const bc = await band(c.page);
   t('(c) 確定済みの月分では計算せず「確定済み」の帯（warn）', !!bc && /band warn/.test(bc.cls) && bc.text === 'この月分は確定済みです（計算し直していません）。' && saveCalls(c) === 0, bc);
   await shot(c.page, 'payroll.from-kintai-confirmed.pc', false);
+  /* 確定後の手続き「住民税の振込」: 納め先ごとの内訳の表（架空の職員は納め先が未設定なので未設定の行と合計の行）・開け閉めは描き直しで忘れない（2026-11-28） */
+  await c.page.click('details.pl-card[data-plo="res"] > summary');
+  const rcT = await c.page.evaluate(() => { const d = document.querySelector('details.pl-card[data-plo="res"]'); return d && d.open ? Array.from(d.querySelectorAll('tbody tr')).map((tr) => tr.textContent.replace(/\s+/g, ' ').trim()) : null; });
+  t('確定後の手続き「住民税の振込」を開くと、納め先ごとの行（未設定）と合計の行が出る', !!rcT && rcT.length === 2 && /納め先が未設定/.test(rcT[0]) && /^合計/.test(rcT[1]), rcT);
+  await c.page.click('[data-act="pl-f"]');
+  t('描き直しの後も「住民税の振込」は開いたまま', await c.page.evaluate(() => { const d = document.querySelector('details.pl-card[data-plo="res"]'); return !!d && d.open; }));
+  await c.page.click('[data-act="pl-f"]');
   await c.ctx.close();
   /* (d) from の値が違う */
   const d = await open({ tab: 'run', start: 'none', path: 'payroll.html?ym=2026-11&from=xyz' });
