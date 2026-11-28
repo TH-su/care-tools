@@ -14,6 +14,7 @@
   var VERSION = 'santei-ui-2026-11-26';
   var S = { gen: 0, mode: 'teiji', year: null, base: null, data: null, loading: null, err: null, special: false, nearK: null, cc: null, ov: {}, busy: false, applied: null };
 
+  function ZJ() { var z = root && root.PayrollZuiji; return z && typeof z.judge === 'function' ? z : null; }
   function ST() { var s = root && root.PayrollSantei; return s && typeof s.compute === 'function' ? s : null; }
   function R() { return root && root.PayrollRates || null; }
   function arr(v) { return Array.isArray(v) ? v : []; }
@@ -35,6 +36,8 @@
     var s = ST(); if (!s) return [];
     if (S.mode === 'teiji') { var y = yearOf(ctx); return [y + '-03', y + '-04', y + '-05', y + '-06', y + '-07']; }
     var b = baseOf(ctx); if (!b) return [];
+    /* 随時改定: 表示中の月分までの9か月分（変わった月分の前の月分と、その後の3か月の支給を見るため）と、その先の3か月分（改定の前の額・もう変えたかを版で見るため） */
+    if (S.mode === 'zuiji') { var z = []; for (var i = -8; i <= 3; i++) z.push(s.ymAdd(b, i)); return z; }
     return [s.ymAdd(b, -4), s.ymAdd(b, -3), s.ymAdd(b, -2), s.ymAdd(b, -1), b];
   }
   function key(ctx) { return S.mode + ':' + (S.mode === 'teiji' ? yearOf(ctx) : baseOf(ctx)); }
@@ -74,6 +77,12 @@
   }
   function result(ctx) {
     var s = ST(); if (!s || !S.data) return null;
+    if (S.mode === 'zuiji') {
+      var z = ZJ(); if (!z) return null;
+      var bz = baseOf(ctx), zr = z.judge({ boots: S.data.boots, opts: { special: S.special, siMonth: siMonth(ctx) }, overrides: S.ov, fromYm: bz ? s.ymAdd(bz, -7) : null, toYm: bz });
+      zr.mode = 'zuiji'; zr.base = bz;
+      return zr;
+    }
     var months, applyYm, latest = null;
     if (S.mode === 'teiji') { months = s.teijiMonths(yearOf(ctx)); applyYm = yearOf(ctx) + '-09'; }
     else {
@@ -100,13 +109,18 @@
     if (!s || !R()) return h + '<div class="band ng" role="alert">計算の部品が読み込めていません。ページを読み込み直してください。直らない時は管理者に知らせてください。</div></div>';
     h += '<div class="row" role="radiogroup" aria-label="使い方">' +
       '<label><input type="radio" name="st-mode" id="st-mode-teiji" value="teiji"' + (S.mode === 'teiji' ? ' checked' : '') + '> 定時決定（4〜6月に支給した分）</label>' +
-      '<label><input type="radio" name="st-mode" id="st-mode-fc" value="forecast"' + (S.mode === 'forecast' ? ' checked' : '') + '> 見込み（直近3か月の確定分）</label></div>';
+      '<label><input type="radio" name="st-mode" id="st-mode-fc" value="forecast"' + (S.mode === 'forecast' ? ' checked' : '') + '> 見込み（直近3か月の確定分）</label>' +
+      '<label><input type="radio" name="st-mode" id="st-mode-zj" value="zuiji"' + (S.mode === 'zuiji' ? ' checked' : '') + '> 随時改定（固定的賃金が変わった人）</label></div>';
     if (S.mode === 'teiji') {
       var y0 = isYm(ctx.ym) ? +ctx.ym.slice(0, 4) : yearOf(ctx), yy = yearOf(ctx);
       h += '<div class="row"><label for="st-year">年</label><select id="st-year">';
       [y0 - 1, y0, y0 + 1].forEach(function (y) { h += '<option value="' + esc(y) + '"' + (y === yy ? ' selected' : '') + '>' + esc(y) + '年</option>'; });
       h += '</select><button type="button" class="btn" data-act="st-reload">読み直す</button></div>' +
         '<p class="help">' + esc(yy) + '年4・5・6月に支給した確定済みの給与（支給日で選びます）から報酬月額を出し、' + esc(yy) + '年9月分からの等級を決めます。算定基礎届は7月1日〜10日に出します。</p>';
+    } else if (S.mode === 'zuiji') {
+      h += '<div class="row"><span>' + esc(ymJa(baseOf(ctx))) + '分までの9か月分で見ます（上の月分を変えると窓も変わります）</span><button type="button" class="btn" data-act="st-reload">読み直す</button></div>' +
+        '<p class="help">基本給・時給・日給・役員報酬・通勤手当・固定的賃金の印の手当（回数の手当は単価）・時給の人の1日の所定時間が変わった人を探し、変わった額を初めて払った月から3か月の報酬で、2等級以上変わるかを見ます。当てはまる人は月額変更届を出し、4か月目の分から等級を変えます。</p>';
+      if (!ZJ()) return h + '<div class="band ng" role="alert">随時改定の部品が読み込めていません。ページを読み込み直してください。</div></div>';
     } else {
       h += '<div class="row"><span>' + esc(ymJa(baseOf(ctx))) + '分までの確定分で見ます（上の月分を変えると窓も変わります）</span><button type="button" class="btn" data-act="st-reload">読み直す</button></div>' +
         '<p class="help">このままの勤務が続いた時の、次の9月分からの等級の見込みです。シフトを組む前（3月ごろ）に見ると、4〜6月の日曜・夜勤の回数で等級が上がる人が分かります。</p>';
@@ -117,6 +131,7 @@
     var res = result(ctx);
     h += optsHtml(ctx) + '</div>';
     if (!res) return h;
+    if (S.mode === 'zuiji') return h + zjHtml(ctx, res);
     if (S.mode === 'forecast' && !res.latest) return h + '<div class="cd"><div class="band warn">確定した給与がまだありません。確定してから見てください。</div></div>';
     h += sumHtml(ctx, res) + tableHtml(ctx, res);
     if (S.mode === 'teiji') h += applyHtml(ctx, res);
@@ -181,6 +196,53 @@
     return h;
   }
 
+  /* ── 随時改定（payroll-zuiji.js）の一覧と、1人ずつ等級を変える ── */
+  var ZTAG = { hit: '<span class="tag warn">随時改定</span>', wait: '<span class="tag">待ち</span>', no: '<span class="tag">対象外</span>', review: '<span class="tag warn">要確認</span>', done: '<span class="tag ok">変えた</span>' };
+  function chgTxt(ctx, c) {
+    function v(x) { return x === null || x === undefined ? 'なし' : typeof x === 'number' ? (c.unit === '円' ? ctx.yen(x) + '円' : String(x) + (c.unit || '')) : String(x); }
+    if (c.unit === '' && typeof c.from !== 'string' && typeof c.to !== 'string') return ctx.esc(c.label + ' ' + (c.from === null ? '新しく付いた' : '無くなった'));
+    return ctx.esc(c.label + ' ' + v(c.from) + '→' + v(c.to));
+  }
+  function zjHtml(ctx, res) {
+    var esc = ctx.esc, yen = ctx.yen, c = res.counts;
+    var h = '<div class="cd"><h2>随時改定（' + esc(ymJa(res.base)) + '分までの9か月分）</h2>';
+    h += '<div class="sumbar"><div>固定的賃金が変わった<b>' + esc(c.all) + ' 件</b></div><div>随時改定<b>' + esc(c.hit || 0) + ' 件</b></div><div>要確認<b>' + esc(c.review || 0) + ' 件</b></div>' +
+      '<div>3か月の給与を待つ<b>' + esc(c.wait || 0) + ' 件</b></div><div>対象外<b>' + esc(c.no || 0) + ' 件</b></div><div>変えた<b>' + esc(c.done || 0) + ' 件</b></div></div>';
+    arr(res.warns).forEach(function (w) { h += '<div class="band warn" role="status">' + esc(w.msg) + '</div>'; });
+    if (c.review) h += '<div class="band warn">要確認の行があります。理由を読み、遡及の差額があれば「直す」で額を入れてください。上がった物と下がった物が同時の時・給与の形が変わった時・等級表の端の時は、年金事務所の案内で確かめてから「職員の給与設定」で直してください。</div>';
+    if (S.applied) h += '<div class="band ' + (S.applied.ng ? 'warn' : 'ok') + '" role="status">' + esc(S.applied.msg) + '</div>';
+    if (!res.people.length) return h + '<p class="help">この9か月に固定的賃金が変わった人はいません。</p></div>';
+    h += '<div class="tw"><table class="st-t"><thead><tr><th>番号</th><th>氏名</th><th>変わった月分</th><th>変わった物</th><th>起算の月</th>' +
+      '<th class="num">1か月目</th><th class="num">2か月目</th><th class="num">3か月目</th><th class="num">平均</th><th>健保 今→新</th><th>厚年 今→新</th><th>改定</th><th></th><th>状態</th></tr></thead><tbody>';
+    res.people.forEach(function (p) {
+      h += '<tr' + (p.status === 'no' ? ' class="out"' : '') + '><td>' + esc(p.code) + '</td><td>' + esc(p.name) + '</td><td>' + esc(ymJa(p.changeYm)) + '分</td>' +
+        '<td>' + p.changes.map(function (x) { return chgTxt(ctx, x); }).join('<br>') + '</td><td>' + esc(ymJa(p.start)) + '支給</td>';
+      p.months.forEach(function (m) {
+        h += '<td class="num">' + esc(mj(m.ym)) + (m.days !== null && m.days !== undefined ? '<br>' + esc(m.days) + '日' : '') + (m.why === '支給なし' ? '' : '<br>' + esc(yen(m.pay))) +
+          (m.retro ? '<br><span class="help">遡及 ' + esc(yen(m.retro)) + '</span>' : '') + (m.why ? '<br><span class="help">' + esc(m.why) + '</span>' : '') + '</td>';
+      });
+      var nx = p.next || {};
+      h += '<td class="num">' + (p.avg === null ? '—' : esc(yen(p.avg))) + '</td>' +
+        '<td>' + stdTxt(ctx, p.cur.health) + '<br>→ ' + stdTxt(ctx, nx.health) + (p.diffH !== null ? '<br><span class="help">' + esc((p.diffH > 0 ? '+' : '') + p.diffH) + '等級</span>' : '') + '</td>' +
+        '<td>' + stdTxt(ctx, p.cur.pension) + '<br>→ ' + stdTxt(ctx, nx.pension) + (p.diffP !== null ? '<br><span class="help">' + esc((p.diffP > 0 ? '+' : '') + p.diffP) + '等級</span>' : '') + '</td>' +
+        '<td>' + esc(ymJa(p.applyYm)) + '分から</td>' +
+        '<td><button type="button" class="btn" data-act="st-edit" data-sid="' + esc(p.staff_id) + '" data-ym="' + esc(p.changeYm) + '" aria-label="' + esc(p.name) + ' さんの日数・遡及を直す">直す</button>' +
+        (p.status === 'hit' ? '<br><button type="button" class="btn pri" data-act="st-zj-apply" data-sid="' + esc(p.staff_id) + '" data-ym="' + esc(p.changeYm) + '"' + (S.busy ? ' disabled' : '') + ' aria-label="' + esc(p.name) + ' さんの等級を変える">等級を変える…</button>' : '') + '</td>' +
+        '<td class="why">' + (ZTAG[p.status] || '') + (p.reason ? '<br><span class="help">' + esc(p.reason) + '</span>' : '') +
+        p.warns.filter(function (w) { return w.msg !== p.reason; }).map(function (w) { return '<br><span class="help">' + esc(w.msg) + '</span>'; }).join('') + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<p class="help">報酬は定時決定と同じ数え方です（社会保険の対象の支給・賞与は入らない）。支払基礎日数は3か月とも17日以上（特定適用事業所の短時間労働者は11日以上）が要ります。固定的賃金が上がったのに等級が下がった時（その逆も）は対象外です。' +
+      '確定した月分は、その時に払った明細の額で比べます。月額変更届は年金事務所へ速やかに出し、決定通知書の額で「等級を変える」の窓の額を確かめてください。</p></div>';
+    return h;
+  }
+  function zjApply(ctx, sid, ym) {
+    var res = result(ctx); if (!res || res.mode !== 'zuiji') return;
+    var p = res.people.filter(function (x) { return x.staff_id === sid && x.changeYm === ym && x.status === 'hit'; })[0]; if (!p) return;
+    openApply(ctx, { mode: 'zuiji', applyYm: p.applyYm, year: null,
+      people: [{ staff_id: p.staff_id, code: p.code, name: p.name, status: 'ok', change: true, cur: p.cur, next: p.next }] });
+  }
+
   /* ── 9月分から等級を変える ── */
   function applyInfo(ctx, res) {
     var s = ST(), runYm = s.applyRunYm(res.applyYm, siMonth(ctx)), prev = runYm ? s.ymAdd(runYm, -1) : null;
@@ -196,8 +258,9 @@
     h += '<button type="button" class="btn pri" data-act="st-apply"' + (list.length && !S.busy ? '' : ' disabled') + '>' + esc(list.length) + '人の等級を変える…</button></div>';
     return h;
   }
-  function openApply(ctx) {
-    var res = result(ctx); if (!res || S.busy) return;
+  function openApply(ctx, given) {
+    var res = given || result(ctx); if (!res || S.busy) return;
+    var zj = res.mode === 'zuiji', label = zj ? '随時改定' : '定時決定';
     var a = applyInfo(ctx, res), my = S.gen;
     S.busy = true; ctx.paint();
     Promise.all([ctx.rpc('payroll_bootstrap', { p_ym: a.prev }), ctx.rpc('payroll_bootstrap', { p_ym: a.runYm })]).then(function (bb) {
@@ -218,10 +281,10 @@
         if (!pr || !from) { skip.push({ p: p, why: '給与の設定がありません' }); return; }
         if (arr(pr.versions).some(function (v) { return v.effective_from > from; })) { skip.push({ p: p, why: ymJa(a.runYm) + '分より後の版があります（手で直してください）' }); return; }
         var curH = p.cur.health ? p.cur.health.std : 0, curP = p.cur.pension ? p.cur.pension.std : 0;
-        if (Number(h0.std || 0) !== curH || (p0.on === true && Number(p0.std || 0) !== curP)) { skip.push({ p: p, why: '7月より後に標準報酬が変わっています（随時改定のおそれ・手で確かめてください）' }); return; }
+        if (Number(h0.std || 0) !== curH || (p0.on === true && Number(p0.std || 0) !== curP)) { skip.push({ p: p, why: zj ? '変わった後に標準報酬が変わっています（もう変えたか・定時決定と重なっていないか手で確かめてください）' : '7月より後に標準報酬が変わっています（随時改定のおそれ・手で確かめてください）' }); return; }
         plan.push({ p: p, prof: pr, health: p.next.health.std, pension: p0.on === true && p.next.pension ? p.next.pension.std : null, pOn: p0.on === true });
       });
-      S.plan = { runYm: a.runYm, from: from, list: plan, applyYm: res.applyYm, year: res.year };
+      S.plan = { runYm: a.runYm, from: from, list: plan, applyYm: res.applyYm, year: res.year, label: label };
       var esc = ctx.esc, yen = ctx.yen;
       var body = '<p>' + esc(ymJa(a.runYm)) + '分（' + esc(from) + 'から）の設定の版を作り、標準報酬月額を変えます。額は決定通知書と照らしてください。</p>';
       if (plan.length) {
@@ -237,7 +300,7 @@
       ctx.openDlg('等級を変える（' + ymJa(res.applyYm) + '分から）', body,
         '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="st-apply-go"' + (plan.length ? '' : ' disabled') + '>' + esc(plan.length) + '人を変える</button>');
       ctx.paint();
-    }, function (e) { S.busy = false; if (my !== S.gen) return; ctx.paint(); if (ctx.fail) ctx.fail(e, '定時決定の反映の準備'); });
+    }, function (e) { S.busy = false; if (my !== S.gen) return; ctx.paint(); if (ctx.fail) ctx.fail(e, label + 'の反映の準備'); });
   }
   function applyGo(ctx, btn) {
     var pl = S.plan, Rt = R(); if (!pl || S.busy || !Rt) return;
@@ -249,7 +312,7 @@
       var d = JSON.parse(JSON.stringify(obj(x.prof.data))); d.ins = obj(d.ins); d.ins.health = obj(d.ins.health); d.ins.health.std = h;
       if (x.pOn) { d.ins.pension = obj(d.ins.pension); d.ins.pension.std = pe; }
       var same = x.prof.effective_from === pl.from;
-      jobs.push({ x: x, data: d, rev: same ? Number(x.prof.rev) || 0 : 0, reason: '定時決定 ' + pl.year + '年: ' + mj(pl.applyYm) + '分から 健保 ' + (x.p.cur.health ? x.p.cur.health.std : 0) + '→' + h + (x.pOn ? '・厚年 ' + (x.p.cur.pension ? x.p.cur.pension.std : 0) + '→' + pe : '') });
+      jobs.push({ x: x, data: d, rev: same ? Number(x.prof.rev) || 0 : 0, reason: (pl.label === '随時改定' ? '随時改定: ' + pl.applyYm.slice(0, 4) + '年' : '定時決定 ' + pl.year + '年: ') + mj(pl.applyYm) + '分から 健保 ' + (x.p.cur.health ? x.p.cur.health.std : 0) + '→' + h + (x.pOn ? '・厚年 ' + (x.p.cur.pension ? x.p.cur.pension.std : 0) + '→' + pe : '') });
     });
     if (bad.length) { ctx.say('等級表に無い額です: ' + bad.join('・')); return; }
     S.busy = true; if (btn) { btn.disabled = true; btn.textContent = '送っています…'; }
@@ -263,7 +326,7 @@
       });
     }, Promise.resolve()).then(function () {
       S.busy = false; S.plan = null;
-      if (my !== S.gen) { ctx.toast('定時決定: ' + okN + '人の等級を変えました' + (ng.length ? '・' + ng.length + '人は変えられませんでした（「職員の給与設定」で確かめてください）' : '')); return; }   /* 覆いの間は名前を出さない */
+      if (my !== S.gen) { ctx.toast((pl.label || '定時決定') + ': ' + okN + '人の等級を変えました' + (ng.length ? '・' + ng.length + '人は変えられませんでした（「職員の給与設定」で確かめてください）' : '')); return; }   /* 覆いの間は名前を出さない */
       ctx.closeDlg();
       S.applied = { ng: ng.length > 0, msg: okN + '人の等級を ' + ymJa(pl.runYm) + '分の設定の版で変えました。' + (ng.length ? '変えられなかった人: ' + ng.join('・') + '（「職員の給与設定」で確かめてください）' : '') };
       if (ctx.reloadMain) ctx.reloadMain();
@@ -272,19 +335,22 @@
   }
 
   /* ── 人ごとの手直し（保存しない） ── */
-  function openEdit(ctx, sid) {
+  function openEdit(ctx, sid, cym) {
     var res = result(ctx); if (!res) return;
-    var p = res.people.filter(function (x) { return x.staff_id === sid; })[0]; if (!p) return;
+    var zj = res.mode === 'zuiji';
+    /* 随時改定は同じ人に2件の変動があり得るので、変わった月分（data-ym）でも引く */
+    var p = res.people.filter(function (x) { return x.staff_id === sid && (!zj || !cym || x.changeYm === cym); })[0]; if (!p) return;
     var esc = ctx.esc, yen = ctx.yen, o = obj(S.ov[sid]), mo = obj(o.months);
     var body = '<p>' + esc(p.code + ' ' + p.name) + ' さん（この画面の中だけ・保存しません）</p>';
     if (S.special) body += '<label><input type="checkbox" id="st-e-short"' + (o.short ? ' checked' : '') + '> 短時間労働者（4分の3未満で加入・支払基礎日数11日以上の月で数える）</label>';
-    body += '<div class="tw"><table><thead><tr><th>支給の月</th><th>報酬</th><th>支払基礎日数</th><th>遡及の額（3月以前の分）</th><th>外す</th></tr></thead><tbody>';
+    /* 随時改定は3か月とも要るので「外す」を出さない・遡及は昇給の差額 */
+    body += '<div class="tw"><table><thead><tr><th>支給の月</th><th>報酬</th><th>支払基礎日数</th><th>' + (zj ? '遡及の差額（前の月の分）' : '遡及の額（3月以前の分）') + '</th>' + (zj ? '' : '<th>外す</th>') + '</tr></thead><tbody>';
     p.months.forEach(function (m, i) {
       var x = obj(mo[m.ym]);
       body += '<tr><td>' + esc(ymJa(m.ym)) + (m.daysNote ? '<br><span class="help">' + esc(m.daysNote) + '</span>' : '') + '</td><td class="num">' + esc(m.why === '支給なし' ? '—' : yen(m.pay)) + '</td>' +
         '<td><input id="st-e-d' + i + '" type="number" inputmode="numeric" min="0" max="31" value="' + esc(num(x.days) !== null ? x.days : (m.days === null || m.days === undefined ? '' : m.days)) + '" aria-label="' + esc(mj(m.ym)) + 'の支払基礎日数" style="width:5em"></td>' +
         '<td><input id="st-e-r' + i + '" type="number" inputmode="numeric" min="0" value="' + esc(num(x.retro) !== null ? x.retro : '') + '" aria-label="' + esc(mj(m.ym)) + 'の遡及の額" style="width:8em"></td>' +
-        '<td><input type="checkbox" id="st-e-x' + i + '"' + (x.excluded ? ' checked' : '') + ' aria-label="' + esc(mj(m.ym)) + 'を平均から外す"></td></tr>';
+        (zj ? '' : '<td><input type="checkbox" id="st-e-x' + i + '"' + (x.excluded ? ' checked' : '') + ' aria-label="' + esc(mj(m.ym)) + 'を平均から外す"></td>') + '</tr>';
     });
     body += '</tbody></table></div>';
     if (p.warns.length) body += '<ul>' + p.warns.map(function (w) { return '<li>' + esc(w.msg) + '</li>'; }).join('') + '</ul>';
@@ -322,17 +388,18 @@
     var sid = b && b.getAttribute ? b.getAttribute('data-sid') : null;
     if (act === 'st-reload') reload(ctx);
     else if (act === 'st-csv') doCsv(ctx);
-    else if (act === 'st-edit') { if (sid) openEdit(ctx, sid); }
+    else if (act === 'st-edit') { if (sid) openEdit(ctx, sid, b.getAttribute('data-ym')); }
     else if (act === 'st-edit-go') editGo(ctx, false);
     else if (act === 'st-edit-clear') editGo(ctx, true);
     else if (act === 'st-apply') openApply(ctx);
+    else if (act === 'st-zj-apply') { if (sid) zjApply(ctx, sid, b.getAttribute('data-ym')); }
     else if (act === 'st-apply-go') applyGo(ctx, b);
     else return false;
     return true;
   }
   function onChange(ctx, t) {
     var id = t && t.id;
-    if (id === 'st-mode-teiji' || id === 'st-mode-fc') { var m = id === 'st-mode-fc' ? 'forecast' : 'teiji'; if (m !== S.mode) { S.mode = m; S.applied = null; S.ov = {}; ctx.paint(); } }
+    if (id === 'st-mode-teiji' || id === 'st-mode-fc' || id === 'st-mode-zj') { var m = id === 'st-mode-fc' ? 'forecast' : id === 'st-mode-zj' ? 'zuiji' : 'teiji'; if (m !== S.mode) { S.mode = m; S.applied = null; S.ov = {}; ctx.paint(); } }
     else if (id === 'st-year') { var y = +t.value; if (y >= 2000 && y <= 2100 && y !== yearOf(ctx)) { S.gen++; S.year = y; S.data = null; S.loading = null; S.ov = {}; S.applied = null; ctx.paint(); } }
     else if (id === 'st-special') { S.special = !!t.checked; ctx.paint(); }
     else if (id === 'st-k') { var k = num(t.value); if (k !== null && k >= 0 && k <= 10) { S.nearK = k; ctx.paint(); } }
@@ -341,7 +408,7 @@
     return true;
   }
   /* 月分を変えた時（見込みの窓は表示中の月分に付いてくる） */
-  function onYm() { if (S.mode === 'forecast') { S.gen++; S.data = null; S.loading = null; S.ov = {}; } }
+  function onYm() { if (S.mode === 'forecast' || S.mode === 'zuiji') { S.gen++; S.data = null; S.loading = null; S.ov = {}; } }
 
   var api = { VERSION: VERSION, html: html, onClick: onClick, onChange: onChange, onYm: onYm, reset: reset, dirty: dirty };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
