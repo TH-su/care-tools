@@ -33,6 +33,8 @@
 <script src="kintai-shaho.js?v=2026-11-25"></script>
 <script src="kintai-cert-calc.js?v=2026-11-25"></script>
 <script src="kintai-cert.js?v=2026-11-25"></script>
+<script src="kintai-staffing-calc.js?v=2026-11-28"></script>
+<script src="kintai-staffing.js?v=2026-11-28"></script>
 <link rel="stylesheet" href="su-theme.css?v=2026-11-27">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
 <link rel="stylesheet" href="su-office.css?v=2026-11-27">
@@ -154,6 +156,25 @@ legend{font-weight:600;padding:0 6px}
 .tdt{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.tdt .tag{margin:0;font-size:15px;font-weight:700}
 .tdb-none{margin:2px 0 8px;color:var(--sub)}
 .tdb-help{margin:0 0 4px;font-size:15px;color:var(--muted)}
+/* 今日の人員配置（2026-11-28・画面だけ）。足りない行だけ札（予定で足りない＝注意の色・いま足りない＝赤）と左の線で目立たせ、足りている行は札にしない */
+.sfb .tdb-hd .tag{margin:0;font-size:15px;font-weight:700}
+.sfr{display:grid;grid-template-columns:minmax(10em,1.6fr) minmax(8em,1fr) 4.5em 5.5em 5.5em minmax(10em,1.4fr);align-items:center;column-gap:12px;min-height:44px;padding:6px 6px;border-top:1px solid var(--line)}
+.sfr.sfh{min-height:0;padding:2px 6px 4px;border-top:0;font-size:13px;color:var(--muted)}
+.sfr.sfx{box-shadow:inset 3px 0 0 var(--warn)}.sfr.sfa{box-shadow:inset 3px 0 0 var(--ng)}
+.sfn{overflow-wrap:anywhere;color:var(--sub);font-size:15px}.sfn b{color:var(--ink);font-size:16px}
+.sfp,.sfq{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sfp small{margin-left:6px;font-size:15px;color:var(--muted)}
+.sfq small{font-size:13px;color:var(--muted)}
+.sfq .sfk{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sft{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.sft .tag{margin:0;font-size:15px;font-weight:700}
+.sfat{font-size:15px;color:var(--muted)}
+.sfb-why{margin:4px 0 8px;font-size:15px;color:var(--warn)}
+.kv > .sfs-lb,.kv > .sfs{grid-column:1/-1}.sfs-lb{font-weight:700;margin-top:10px}
+.sfs{min-width:0;max-width:100%}.sfs-r > *{min-width:0;max-width:100%}
+.sfs-t{display:grid;gap:6px}
+.sfs-r{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.sfs-no{min-width:1.6em;color:var(--muted);font-variant-numeric:tabular-nums}
+.sfs-r input[type=text]{width:10em}.sfs-r input[type=number]{width:4.5em}.sfs-r input[id^="sf-k-"]{width:10em}
 }
 @media screen and (max-width:700px){
 .tdr.tdh{display:none}
@@ -161,6 +182,13 @@ legend{font-weight:600;padding:0 6px}
 /* 1行目に名前・事業所・状態、2行目に予定・出勤・退勤 */
 .tdn{order:1;flex:0 1 auto;min-width:0}.tdo{order:2;flex:1 1 auto;min-width:0}.tdt{order:3;margin-left:auto;justify-content:flex-end}.tdbr{display:block;order:4;flex-basis:100%;height:0}
 .tdp{order:5}.tdi{order:6}.tdx{order:7}
+.sfr.sfh{display:none}
+.sfr{display:flex;flex-wrap:wrap;column-gap:10px;row-gap:2px;padding:8px 2px 8px 8px}
+.sfn{flex-basis:100%}.sfp{flex-basis:100%;font-size:15px;color:var(--sub)}
+.sfq{font-size:15px}.sfq .sfk{position:static;width:auto;height:auto;overflow:visible;clip:auto;color:var(--muted)}
+.sft{flex-basis:100%}
+.sfs-r input[type=text],.sfs-r input[id^="sf-k-"],.sfs-r select{width:100%;max-width:100%}
+.sfs-r{padding:8px 0;border-top:1px solid var(--line)}
 .tdo,.tdp,.tdi,.tdx{font-size:15px;color:var(--sub)}
 .tdp small{display:inline;margin-left:4px}
 .tdi small,.tdx small{position:static;width:auto;height:auto;overflow:visible;clip:auto;display:inline;margin-right:3px;font-size:15px;color:var(--muted)}
@@ -302,7 +330,7 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <script src="su-dialog.js?v=2026-11-14.2"></script>
 <script src="kintai-list.js?v=2026-11-28"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="kintai.js?v=2026-11-28.1"></script>
+<script src="kintai.js?v=2026-11-28.2"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-board.js?v=2026-11-25"></script>
 <script src="su-shell.js?v=2026-11-28.2"></script>
