@@ -878,7 +878,7 @@ await scene_('職員の項目を選んで書き出す（CSV）', async () => {
 /* ── 賞与のまとめて入れると1人だけ計算し直す（2026-11-28） ── */
 console.log('\n— 賞与のまとめて入れる・1人だけ計算し直す —');
 await scene_('賞与のまとめて入れる・1人だけ計算し直す', async () => {
-  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true });
+  const o = await open({ tab: 'bonus', start: 'confirmed', bonus: true, retiredStaff: true });   /* 退職済みの見本 十二がいる回 */
   const p = o.page;
   await p.waitForSelector('[data-act="b-new"]', { timeout: 15000 });
   await p.click('[data-act="b-new"]');
@@ -895,6 +895,7 @@ await scene_('賞与のまとめて入れる・1人だけ計算し直す', async
   await p.waitForFunction(() => /人に入れました/.test(document.getElementById('p-toast').textContent), null, { timeout: 5000 });
   t('同じ額: 空の人に 100000・入っていた見本 一郎は 300000 のまま', await amt('s-02') === '100000' && await amt('s-01') === '300000', [await amt('s-01'), await amt('s-02')]);
   t('同じ額: 知らせに「入っていた 1人はそのまま」', /入っていた 1人はそのまま/.test(await toastTxt()), await toastTxt());
+  t('同じ額: 退職済みの見本 十二・支給日より前に退職した見本 五郎（回の対象でない）には入れない・知らせに人数', await amt('s-12') === '' && await amt('s-05') === '' && /退職した・在籍でない 2人には入れていません/.test(await toastTxt()), [await amt('s-12'), await toastTxt()]);
   await p.selectOption('#b-bulk-mode', 'mult');
   await p.fill('#b-bulk-v', '1.5');
   await p.check('#b-bulk-over');
@@ -903,16 +904,15 @@ await scene_('賞与のまとめて入れる・1人だけ計算し直す', async
   t('倍率: 書き換えの印で見本 一郎（月給 240,000）は 360000・時給の見本 二子は 100000 のまま', await amt('s-01') === '360000' && await amt('s-02') === '100000', [await amt('s-01'), await amt('s-02')]);
   await p.fill('#b-bulk-v', 'abc');
   await p.click('[data-act="b-bulk"]');
-  await p.waitForSelector('dialog.sud-dlg[open]', { timeout: 5000 });
-  t('倍率の形が違うと知らせて入れない', /倍率は 0 より大きく 20 までの数/.test(await p.textContent('dialog.sud-dlg[open] .sud-msg')));
-  await p.waitForTimeout(300); await p.click('dialog.sud-dlg[open] .sud-btn.pri');
-  await p.waitForFunction(() => !document.querySelector('dialog.sud-dlg[open]'), null, { timeout: 5000 }).catch(() => {});
+  const mAbc = await sud(p);   /* 窓の答えはこのファイルの sud（開いてから 400ms 待って押す・閉じるまで待つ） */
+  t('倍率の形が違うと知らせて入れない', /倍率は 0 より大きく 20 までの数/.test(mAbc), mAbc);
   await p.selectOption('#b-bulk-mode', 'clear');
   await p.click('[data-act="b-bulk"]');
-  await p.waitForSelector('dialog.sud-dlg[open]', { timeout: 5000 });
-  await p.waitForTimeout(300); await p.click('dialog.sud-dlg[open] .sud-btn.pri');
+  const mClr = await sud(p);
+  t('空にする前に確かめる（人数つき）', /人の賞与額を空にしますか/.test(mClr), mClr);
   await p.waitForFunction(() => { const e = document.querySelector('[data-bk="amt"][data-bsid="s-02"]'); return e && e.value === ''; }, null, { timeout: 5000 }).catch(() => {});
   t('空にする: 確かめた後に表示中の人の賞与額を空にする', await amt('s-01') === '' && await amt('s-02') === '');
+  t('空にする: 知らせは「空にしました」', /人の賞与額を空にしました/.test(await toastTxt()), await toastTxt());
   t('まとめて入れても保存しない（保存の呼び出し0）', !o.routes.calls.some((c) => c.name === 'payroll_bonus_save'));
   /* 1人だけ計算し直す */
   await p.fill('[data-bk="amt"][data-bsid="s-01"]', '300000');

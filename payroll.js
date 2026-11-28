@@ -1826,8 +1826,11 @@
   /* 賞与の入れる表の探す欄（payroll-list.js・氏名・従業員番号の一部・メモリだけ） */
   /* まとめて入れる（表示中の人だけ・2026-11-28）: 同じ額・月給の基本給×倍率（円未満切り捨て）・空にする。入っている欄は印がある時だけ書き換える */
   function bonusBulk() {
-    if (!bb || !bb.run || bonusFrozen()) return;
-    var mode = v('b-bulk-mode'), raw = v('b-bulk-v'), over = on('b-bulk-over'), list = bonusShown();
+    if (busy || !bb || !bb.run || bonusFrozen()) return;   /* 保存の通信中は入れない（保存の後の読み直しで黙って消えるため・反証レビュー 2026-11-28） */
+    var mode = v('b-bulk-mode'), raw = v('b-bulk-v'), over = on('b-bulk-over'), shown = bonusShown();
+    /* 回の対象（在籍・支給日より前に退職していない人＝空の止めと同じ）だけに入れる。空にするは表示中の全員 */
+    var tg = {}; bonusBlankTargets(bb).forEach(function (p) { tg[p.staff_id] = 1; });
+    var list = mode === 'clear' ? shown : shown.filter(function (p) { return tg[p.staff_id]; }), skipOut = shown.length - list.length;
     bBulk = { mode: mode, v: raw, over: over };   /* 描き直しても選んだ方式・値を残す（メモリだけ） */
     var amt = null, k1000 = null;
     if (mode === 'flat') { amt = bonusAmt(raw); if (amt === null || amt !== amt) { say('まとめて入れる額を半角の数字で書いてください（例 100000）。'); return; } }
@@ -1838,7 +1841,7 @@
     } else if (mode !== 'clear') return;
     var go = mode === 'clear' ? ask('表示中の ' + list.length + ' 人の賞与額を空にしますか？') : Promise.resolve(true);
     go.then(function (ok) {
-      if (!ok || !bb || bonusFrozen()) return;
+      if (!ok || busy || !bb || bonusFrozen()) return;
       var n = 0, skipFilled = 0, skipType = 0;
       list.forEach(function (p) {
         var sid = p.staff_id, x = bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' };
@@ -1854,12 +1857,13 @@
       });
       if (n) bDirty = true;
       paint();
-      toast(n + '人に入れました' + (skipFilled ? '・入っていた ' + skipFilled + '人はそのまま' : '') + (skipType ? '・月給でない ' + skipType + '人には入れていません' : '') + (mode === 'clear' || !n ? '' : '。「計算する」を押してください'));
+      if (mode === 'clear') { toast(n + '人の賞与額を空にしました'); return; }
+      toast(n + '人に入れました' + (skipFilled ? '・入っていた ' + skipFilled + '人はそのまま' : '') + (skipType ? '・月給でない ' + skipType + '人には入れていません' : '') + (skipOut ? '・退職した・在籍でない ' + skipOut + '人には入れていません' : '') + (n ? '。「計算する」を押してください' : ''));
     });
   }
   /* 1人だけ計算し直す（2026-11-28）: 計算した結果があればその人の行だけ差し替える。まだ計算していなければ全員を計算する */
   function bonusComputeRow(sid) {
-    if (!bb || !bb.run || bonusFrozen()) return;
+    if (busy || !bb || !bb.run || bonusFrozen()) return;
     if (!bCalc) { if (bonusCompute(true)) toast('まだ計算していなかったので、全員を計算しました。確かめてから「下書き保存」を押してください。'); return; }
     if (!window.PayrollCalc || typeof window.PayrollCalc.computeBonus !== 'function') { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     if (bCfgDirty) { say('回の設定（他所で払った標準賞与額・回の数・算定期間）を先に保存してください。'); return; }
@@ -1878,7 +1882,10 @@
     bCalc = { items: items, fp: bCalc.fp, rev: bCalc.rev };
     bDirty = true; bNotice = null;
     paint();
-    toast(p.name + ' さんを' + (a === null ? '結果から外しました（賞与額が空）' : '計算し直しました') + '。確かめてから「下書き保存」を押してください。');
+    /* ほかに額を打ち直したのに計算し直していない人がいれば知らせる（合計はその人の前の額のまま・保存は全員を計算し直す） */
+    var calcBy = {}; items.forEach(function (it) { calcBy[it.staff_id] = it; });
+    var stale = bb.profiles.filter(function (q) { if (q.staff_id === sid) return false; var y = bIn[q.staff_id], av = y ? bonusAmt(y.amt) : null, it = calcBy[q.staff_id]; return av === av && (av === null ? !!it : !it || num(it.gross) !== av); }).length;
+    toast(p.name + ' さんを' + (a === null ? '結果から外しました（賞与額が空）' : '計算し直しました') + '。' + (stale ? 'ほかに額を変えて計算し直していない人が ' + stale + '人います（合計はその人の前の額のまま・「計算する」で全員を計算し直せます）。' : '') + '確かめてから「下書き保存」を押してください。');
   }
   var bBulk = { mode: 'flat', v: '', over: false };
   function bonusShown() {
@@ -1930,7 +1937,7 @@
       if (!bShow[p.staff_id]) return;
       bN++;   /* 探す欄で絞った時（入れた値は bIn に残る） */
       var si = (bs && bs.staff_info && bs.staff_info[p.staff_id]) || {}, rs = bRes[p.staff_id];
-      if (rs && !fz && num(x.amt) !== num(rs.gross)) rs = null;   /* 計算・保存の後に額を打ち直した人は、古い結果を並べない（反証レビュー 2026-11-28） */
+      if (rs && !fz && bonusAmt(x.amt) !== num(rs.gross)) rs = null;   /* 比べる額は計算と同じ読み方（桁区切り・全角も） */   /* 計算・保存の後に額を打ち直した人は、古い結果を並べない（反証レビュー 2026-11-28） */
       var rw = rs ? arr(rs.warns) : [];
       h += '<tr><td class="nm">' + esc(p.name) + '</td>' + (PLI() ? '<td class="pl-pc">' + esc(si.emp_code || '—') + '</td><td class="pl-pc">' + esc(si.office ? (plCtx([]).officeName(si.office) || si.office) : '—') + '</td>' : '') +
         '<td class="num">' + (fz ? esc(yen(it.gross)) : '<input id="b-amt-' + i + '" data-bsid="' + esc(p.staff_id) + '" data-bk="amt" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの賞与額（円）" value="' + esc(x.amt || '') + '" style="max-width:10em;text-align:right" autocomplete="off">') + '</td>' +
@@ -1940,7 +1947,8 @@
         (fz ? '' : '<td><button type="button" class="btn" data-act="b-one" data-bsid="' + esc(p.staff_id) + '"' + (c && !bCfgDirty ? '' : ' disabled') + ' aria-label="' + esc(p.name) + ' さんだけ計算し直す">計算し直す</button></td>') + '</tr>';
     });
     h += '</tbody></table></div></div>';
-    h = h.replace('@@BTOOL@@', PLI() ? PLI().bonusTool(bAll, bN, run.bonus_id) : '');
+    var btool = PLI() ? PLI().bonusTool(bAll, bN, run.bonus_id) : '';
+    h = h.replace('@@BTOOL@@', function () { return btool; });   /* 探す文字の $ を置き換えの印として読まない（反証レビュー 2026-11-28） */
     /* 回の設定（他所で払った標準賞与額・回の数・算定期間） */
     h += '<details class="cd" id="b-cfg"' + (bCfgOpen || bCfgDirty ? ' open' : '') + '><summary><b>回の設定（他所で払った標準賞与額・過去12か月の他所の回の数・算定期間）</b></summary>' +
       '<p class="help">この年度（4月から）に freee など他所で払った賞与の標準賞与額（健康保険・千円の倍数）と、過去12か月に他所で払った賞与の回の数を人ごとに入れます。入れていない人は 0 として数え、知らせを出します。</p>';
@@ -2023,6 +2031,10 @@
   function bonusBind() {
     /* 回の設定の開け閉めを覚える（描き直しで閉じない） */
     document.addEventListener('toggle', function (e) { if (e.target && e.target.id === 'b-cfg') bCfgOpen = !!e.target.open; }, true);
+    /* まとめて入れるの欄は、打った・選んだ時にメモリへ写す（描き直しで前の値に戻さない・反証レビュー 2026-11-28） */
+    function bulkSync(e) { var el = e.target, id = el && el.id; if (id === 'b-bulk-mode') bBulk.mode = String(el.value || 'flat'); else if (id === 'b-bulk-v') bBulk.v = String(el.value || ''); else if (id === 'b-bulk-over') bBulk.over = !!el.checked; }
+    document.addEventListener('input', bulkSync, true);
+    document.addEventListener('change', bulkSync, true);
     document.addEventListener('input', function (e) {
       var el = e.target, k = el && el.getAttribute && el.getAttribute('data-bk'), sid = el && el.getAttribute('data-bsid');
       if (!k || !bb || tab !== 'bonus') return;
