@@ -150,6 +150,7 @@
     /* 段B（統合 0130・kintai-self-board.js）: お知らせと補助項目の申請。鍵と開いている印はここで足して渡す（部品には持たせない） */
     if (window.KintaiSelfBoard) window.KintaiSelfBoard.start(function (op, p) { var b = { key: key, open: open }, k; for (k in p) b[k] = p[k]; return call(op, b); }, handleAuth);
     if (window.KintaiSelfSlip) window.KintaiSelfSlip.start(function (op, p) { var b = { key: key, open: open }, k; for (k in p) b[k] = p[k]; return call(op, b); }, handleAuth);
+    if (window.KintaiSelfSlip && tab === 'slip') window.KintaiSelfSlip.load();   /* 前に給与明細のタブで閉じていた時は、開いた後にここで読む（start の前の setTab では読めないため・反証レビュー 2026-11-28） */
   }
   $('f-pin').addEventListener('submit', function (e) {
     e.preventDefault();

@@ -506,6 +506,11 @@ try {
     t('N. 横にはみ出さない（390px）', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     t('N. 端末に残すのは鍵とタブの印だけ', JSON.stringify(await page.evaluate(() => Object.keys(localStorage).sort())) === JSON.stringify(['kintai_self_key', 'kintai_self_tab']));
     await shot(page, 'slip');
+    /* 給与明細のタブのまま閉じて開き直すと、押さなくても一覧が出る（反証レビュー 2026-11-28） */
+    await page.click('#b-close');
+    await page.fill('#in-pin', '1357'); await page.click('#b-pin');
+    await page.waitForSelector('#slip-box .slip-row', { timeout: 10000 }).catch(() => {});
+    t('N. 給与明細のタブで閉じて開き直すと、押さなくても一覧が出る', (await page.locator('#slip-box .slip-row').count()) === 2);
     await page.click('#b-close');
     t('N. 閉じると明細を画面から捨てる', (await page.evaluate(() => document.getElementById('slip-box').textContent)) === '');
     t('N. 画面のエラーなし', errors.length === 0, errors);
@@ -517,7 +522,6 @@ try {
     await page.reload();
     await page.fill('#in-pin', '1357'); await page.click('#b-pin');
     await page.waitForSelector('#v-app:not([hidden])', { timeout: 10000 });
-    await page.click('#t-slip');
     await page.waitForFunction(() => /まだ使えません/.test(document.getElementById('slip-box').textContent), null, { timeout: 10000 }).catch(() => {});
     t('N. 古い受け口では「給与明細はまだ使えません」', /給与明細はまだ使えません/.test(await page.textContent('#slip-box')));
     t('N. 古い受け口: 画面のエラーなし', errors.length === 0, errors);
