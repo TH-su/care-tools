@@ -19,7 +19,7 @@
   'use strict';
   var isNode = typeof require !== 'undefined' && typeof window === 'undefined';
   var Rates = isNode ? require('./payroll-rates.js') : root.PayrollRates;
-  var CALC_VER = 'payroll-calc-3';   /* 2026-11-23: 電算機特例に令和9年分の式を足した。 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
+  var CALC_VER = 'payroll-calc-4';   /* 2026-11-28: 回数・日数・時間の手当の月の上限（cap・統合 0146）を足した。 2026-11-23: 電算機特例に令和9年分の式を足した。 2026-11-21: 時給・日給の有休、日給の法定休日の差、乙欄、通勤手当の非課税限度を直した（確定した明細の指紋で前の版と区別する） */
 
   var DEFAULTS = {
     si_month: 'next', tax_method: 'table', prefecture: '43', emp_ins_kind: 'general',
@@ -381,7 +381,7 @@
       for (var i = 0; i < pa.length; i++) {
         var a = pa[i];
         if (!a || a.code !== def.code) continue;
-        var at = attrsOf(def), amt = int(a.amount), calc = def.calc || 'fixed', qty = null, v, basis;
+        var at = attrsOf(def), amt = int(a.amount), calc = def.calc || 'fixed', qty = null, v, basis, capped = false;
         if (calc === 'fixed') {
           v = at.prorate ? prorated(amt) : amt; basis = at.prorate && prorate ? '日割り' : '定額';
           if (at.attendance_base) attBaseFixed += v;
@@ -398,9 +398,10 @@
           var rmode = ROUND_MODES[def.round] && def.round !== 'none' ? def.round : 'ceil';
           v = calc === 'hour' ? yen(qDiv(qMul(intQ(amt), intQ(qty)), Q(60)), rmode) : yen(qMul(intQ(amt), decQ(qty)), rmode);
           /* 月の上限（a.cap・0以上の整数の円・空は上限なし。freee の通勤手当（日額・月の上限）を写す・統合 0146・2026-11-28） */
-          if (a.cap != null && a.cap !== '' && isFinite(Number(a.cap)) && Number(a.cap) >= 0 && v > int(a.cap)) { v = int(a.cap); basis += '（月の上限 ' + v + '円）'; }
+          if (a.cap != null && a.cap !== '' && isFinite(Number(a.cap)) && Number(a.cap) >= 0 && v > int(a.cap)) { v = int(a.cap); basis += '（月の上限 ' + v + '円）'; capped = true; }
         }
-        if (at.overtime_base && !board) otBaseAdds.push({ calc: calc, month: calc === 'fixed' ? amt : v, perHour: amt });
+        /* 上限で止めた時間の手当は、払った月の額を月平均所定時間で割って足す（時間あたりの単価のまま足すと、基礎が払った額より高くなる・反証レビュー 2026-11-28） */
+        if (at.overtime_base && !board) otBaseAdds.push({ calc: capped ? 'capped' : calc, month: calc === 'fixed' ? amt : v, perHour: amt });
         if (at.includes_night_premium) { nightIncluded += v; nightAllowCount++; }
         pay('f' + def.code, def.name || def.code, qty, amt, v, basis, { tax: at.income_tax, labor: at.labor_ins, fixed: at.fixed_wage, si: at.social_ins });
       }
