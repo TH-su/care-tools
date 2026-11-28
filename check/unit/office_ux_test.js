@@ -48,7 +48,7 @@ t('給与: 下書き保存済み（変えていない）→ 確定が今', ps({ 
 t('給与: 下書きの後に変えた（保存していない）→ 下書き保存が今に戻る', ps({ locked: true, hasCalc: true, status: 'draft', dirty: true }) === 'ddct');
 t('給与: 確定済み・書き出し済み → 全部済み（振込・書き出しは段に入れない＝確定し直した月で食い違わない）', ps({ locked: true, status: 'confirmed' }) === 'dddd' && ps({ locked: true, status: 'exported' }) === 'dddd');
 t('給与: 保存の後に設定が変わった（stale）は dirty として渡す＝確定を今にしない', /dirty: dirty \|\| !!\(bs\.run && bs\.run\.stale\)/.test(fn(PJ, 'flowHtml')));
-t('給与: 今月の給与の見出しの下に描く・今の段に aria-current="step"', /'<\/h2>' \+ flowHtml\(\) \+ '<div class="row">'/.test(PJ) && /aria-current="step"/.test(fn(PJ, 'flowHtml')) && /\.su-steps/.test(CSS));
+t('給与: 今月の給与の見出しの下に描く・今の段に aria-current="step"', /(?:'<\/h2>'\)|'<\/h2>') \+ flowHtml\(\) \+ '<div class="row">'/.test(PJ) && /aria-current="step"/.test(fn(PJ, 'flowHtml')) && /\.su-steps/.test(CSS));
 const K = vm.createContext({}); vm.runInContext(fn(KJ, 'closeSteps'), K);
 const ks = (r, l) => K.closeSteps(r, l).map((x) => x.state[0]).join('');
 t('勤怠: 要確認が残る → 1段目が今で「残り N 件」', ks(3, false) === 'ctt' && K.closeSteps(3, false)[0].sub === '残り 3 件');

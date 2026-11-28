@@ -76,7 +76,7 @@ t('3つの部品は端末に何も残さない（localStorage・sessionStorage�
 t('本人の画面の部品は鍵・開いている印を持たない（kintai-self.js が呼ぶ道の中で足す）', !/\bkey\b\s*[:=]|\bopen\s*:/.test(code(sb).replace(/autocomplete|inputMode|keep/g, ''))
   && /window\.KintaiSelfBoard\.start\(function \(op, p\) \{ var b = \{ key: key, open: open \}, k; for \(k in p\) b\[k\] = p\[k\]; return call\(op, b\); \}, handleAuth\);/.test(sj));
 t('閉じる時（lock）に本人の画面の部品の中身も捨てる', /function lock\(text\) \{[\s\S]*?window\.KintaiSelfBoard\.reset\(\);[\s\S]*?\n  \}/.test(sj));
-t('管理画面の差し込みは4か所（描く・設定の欄・設定の保存・窓口）', /m\.innerHTML = bands\(\) \+ \(kb && tab === 'close' \? kb\.closeHtml\(\) : ''\) \+ \(vwT \? vwApi\.paint\(tab, vwCtx\(\)\) : f\(\)\) \+ \(kb && tab === 'requests' \? kb\.html\(\) : ''\);/.test(kj)
+t('管理画面の差し込みは4か所（描く・設定の欄・設定の保存・窓口）', /m\.innerHTML = bands\(\) \+ \(kb && tab === 'close' \? kb\.closeHtml\(\) : ''\) \+ \(vwT \? vwApi\.paint\(tab, vwCtx\(\)\) : klT \? KLI\.paint\(tab, klCtx\(\)\) : f\(\)\) \+ \(kb && tab === 'requests' \? kb\.html\(\) : ''\);/.test(kj)
   && /if \(typeof window !== 'undefined' && window\.KintaiBoard\) h \+= window\.KintaiBoard\.settingsHtml\(rawCfg\(\), isAdmin\(\)\);/.test(kj) && /if \(typeof window !== 'undefined' && window\.KintaiBoard\) window\.KintaiBoard\.readSettings\(outCfg\);/.test(kj)
   && /window\.KintaiBoardHost = \{ rpc: rpc,/.test(kj));
 t('管理画面の部品が呼ぶ関数は 0130 の5本だけ', [...new Set([...code(kb).matchAll(/rpc\('([a-z_]+)'/g)].map((m) => m[1]))].sort().join(',') === 'kintai_announce_add,kintai_announce_void,kintai_announces_list,kintai_extra_req_decide,kintai_extra_reqs_list',
