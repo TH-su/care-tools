@@ -30,6 +30,9 @@ main.aac { max-width: 1180px; }
 
 /* アプリ × 人 の表 */
 .mx-wrap { overflow-x: auto; border: 1px solid var(--g3); border-radius: 10px; -webkit-overflow-scrolling: touch; }
+/* 表を枠の中だけで上下にも動かし、上のアプリ名の行（thead・sticky top:0）を止めたまま見せる（本人指示 2026-11-28）。
+   高さは画面の高さから見出し・下の保存の帯の分を引いた残り。印刷は枠を外して今のまま全部刷る。 */
+@media screen { .mx-wrap { overflow: auto; max-height: max(320px, calc(100vh - 260px)); max-height: max(320px, calc(100dvh - 260px)); } }
 .mx-wrap:focus-visible { outline: 3px solid var(--pri); outline-offset: 2px; }
 .mx { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 860px; }
 .mx th, .mx td { border-bottom: 1px solid var(--g2); padding: 6px; vertical-align: middle; background: #fff; }
