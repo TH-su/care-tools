@@ -1,0 +1,237 @@
+/* 勤怠管理のホームの「今日の人員配置」（kintai-staffing-calc.js）の純関数の試験（2026-11-28 新設・代表者の決定 2026-11-28）
+   実行: node check/unit/kintai_staffing_test.js
+   守りたいこと:
+     1. 決まりの確かめ: 形の崩れた行は使わず番号と理由を出す・多すぎる・配列でない時は全部使わない・入り切りの鍵は true の時だけ入
+     2. 予定の数え方: 時間帯を通していちばん少ない時刻の人数（入れ替わりの切れ目・同じ人の二重を数えない）・事業所は塊の事業所・欠勤と1日の休みは数えない
+     3. 数える人: 看護師・准看護師／介護職員（看護でない人）／介護の資格／サ責の印／職種（様式1）の語・頭数に入れない人とシフトにいない人は数えない
+     4. いまの数え方: 時間帯の途中だけ。打刻で勤務中の人と、始まりから15分までの打刻待ち。退勤した人は数えない
+     5. 0:00 をまたぐ時間帯: 今日の夜の分と、前の日の夜から続く分（終わっていない時だけ）。夜勤の塊は始まった日にある
+     6. 確かめられない時: シフトの職員が読めない・その日が月分の外 → unknown（0人と言わない）。月分の外の日の塊を数えない時は partial
+     7. 足りない時だけ札: 予定で足りない＝warn・いま足りない＝alert・並びは足りない方が先
+     8. 画面の読み込み（kintai.html が kintai.js の前に読む・公開の許可・CSP）
+   ★職員は架空（試験 甲〜己）。施設の数字は使わない（決まりの数は試験のための架空の値）。 */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
+const S = require(path.join(ROOT, 'kintai-staffing-calc.js'));
+const C = require(path.join(ROOT, 'kintai-calc.js'));
+const Sym = require(path.join(ROOT, 'shift-symbols.js'));
+let pass = 0, fail = 0;
+function t(n, c, e) { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (e !== undefined ? '  → ' + JSON.stringify(e).slice(0, 700) : '')); } }
+
+const YM = '2026-12', TODAY = '2026-12-15';
+const at = (d, hm) => C.jstMs(d, +hm.split(':')[0] * 60 + +hm.split(':')[1]);
+let pid = 0;
+const P = (sid, kind, d, hm) => ({ id: 'p' + (++pid), staff_id: sid, kind, at: new Date(at(d, hm)).toISOString(), source: 'tablet', created_at: new Date(at(d, hm)).toISOString() });
+const IDS = ['sS01', 'sS02', 'sS03', 'sS04', 'sS05', 'sS06'], NAMES = ['試験 甲', '試験 乙', '試験 丙', '試験 丁', '試験 戊', '試験 己'];
+const DIV = ['施設', '施設', '施設', '通所', '通所', '訪問'], OFF = ['facility', 'facility', 'facility', 'day', 'day', 'visit'];
+const QUAL = [['介護福祉士'], ['初任者研修'], ['看護師'], ['准看護師'], [], ['実務者研修']];
+const STAFF = IDS.map((id, i) => ({ id, name: NAMES[i], mainDivision: DIV[i], empCode: '900' + (i + 1), employment: '正社員', active: true, qualifications: QUAL[i] }));
+STAFF[4].jobTitle = '生活相談員・介護職員'; STAFF[5].serviceManager = true;
+const K_STAFF = IDS.map((id, i) => ({ staff_id: id, name: NAMES[i], office: OFF[i], emp_code: '900' + (i + 1) }));
+const SET = { breakThresholdH: 6, breakH: 1, nightBreakH: 2 };
+const sch = (cells) => C.buildSchedule({ ym: YM, plan: { cells, subCells: {} }, nextPlan: {}, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows;
+const month = (cells, punches, nowIso, days, absences) => C.computeMonth({ ym: YM, staff: K_STAFF, schedule: sch(cells), punches: punches || [], days: days || [], absences: absences || [], config: {}, now: Date.parse(nowIso) });
+const R = (office, label, from, to, need, who, word) => Object.assign({ office, label, from, to, need, who }, word ? { word } : {});
+const cfgOf = (rules) => ({ staffCheck: true, staffRules: rules });
+const PER = { from: '2026-12-01', to: '2026-12-31' };
+const ev = (m, nowIso, rules, extra) => S.evaluate(Object.assign({ month: m, today: TODAY, nowMs: Date.parse(nowIso), cfg: cfgOf(rules), staff: STAFF, period: PER, office: '' }, extra || {}));
+
+console.log('\n— 1. 決まりの確かめ —');
+{
+  t('入り切りは staffCheck が true の時だけ', S.on({ staffCheck: true }) && !S.on({ staffCheck: 'true' }) && !S.on({}) && !S.on(null));
+  const ok = S.checkRule(R('facility', '夜間 職員', '21:00', '07:00', 2, 'all'));
+  t('正しい行は通る（夜をまたぐ 21:00〜07:00）', ok.rule && ok.rule.from === '21:00' && ok.rule.need === 2, ok);
+  const whys = [
+    [null, 'shape'], [R('home', 'x', '09:00', '10:00', 1, 'all'), 'office'], [R('day', '', '09:00', '10:00', 1, 'all'), 'label'],
+    [R('day', 'あ'.repeat(21), '09:00', '10:00', 1, 'all'), 'label'], [R('day', 'x', '9:00', '10:00', 1, 'all'), 'from'], [R('day', 'x', '09:00', '24:00', 1, 'all'), 'to'],
+    [R('day', 'x', '09:00', '09:00', 1, 'all'), 'same'], [R('day', 'x', '09:00', '10:00', 0, 'all'), 'need'], [R('day', 'x', '09:00', '10:00', 1.5, 'all'), 'need'],
+    [R('day', 'x', '09:00', '10:00', 21, 'all'), 'need'], [R('day', 'x', '09:00', '10:00', 1, 'boss'), 'who'], [R('day', 'x', '09:00', '10:00', 1, 'job'), 'word'],
+  ];
+  t('崩れた行は理由つきで断る（事業所・名前・時刻・同じ時刻・人数・数える人・職種の語）', whys.every(([x, w]) => S.checkRule(x).why === w), whys.map(([x, w]) => [w, S.checkRule(x).why]));
+  t('表示名の制御文字は落とす', S.checkRule(R('day', 'a\u0001b', '09:00', '10:00', 1, 'all')).rule.label === 'ab');
+  const ru = S.rulesOf(cfgOf([R('day', '看護', '09:00', '10:00', 1, 'nurse'), R('day', '', '09:00', '10:00', 1, 'nurse')]));
+  t('崩れた行だけ使わず、番号（1から）と理由を出す', ru.items.length === 1 && ru.bad.length === 1 && ru.bad[0].i === 2 && ru.bad[0].why === 'label', ru);
+  t('配列でない・21行以上は全部使わない', S.rulesOf({ staffRules: {} }).items.length === 0 && S.rulesOf({ staffRules: {} }).bad[0].why === 'shape' && S.rulesOf({ staffRules: Array(21).fill(R('day', 'x', '09:00', '10:00', 1, 'all')) }).items.length === 0);
+  t('鍵が無い時は空（崩れとは言わない）', S.rulesOf({}).items.length === 0 && S.rulesOf({}).bad.length === 0);
+  t('設定の大きさの確かめ（8KB）', S.fitsConfig({ a: 'x' }) && !S.fitsConfig({ a: 'x'.repeat(9000) }));
+}
+
+console.log('\n— 2・3. 予定の数え方と数える人 —');
+{
+  /* 施設: 甲（介護福祉士）早 7:00〜16:00・乙（初任者）遅 12:00〜21:00・丙（看護師）日3 9:00〜18:00。通所: 丁（准看）日2・戊（資格なし・生活相談員）日2。訪問: 己（サ責）日1 */
+  const cells = { sS01: { 15: '早' }, sS02: { 15: '遅' }, sS03: { 15: '日3' }, sS04: { 15: '日2' }, sS05: { 15: '日2' }, sS06: { 15: '日1' } };
+  const m = month(cells, [], '2026-12-15T06:00:00+09:00');
+  const r = ev(m, '2026-12-15T06:00:00+09:00', [
+    R('facility', '日中 職員', '09:00', '18:00', 2, 'all'),
+    R('facility', '日中 介護職員', '09:00', '18:00', 2, 'care'),
+    R('facility', '日中 看護職員', '09:00', '17:00', 1, 'nurse'),
+    R('facility', '介護の資格', '13:00', '15:00', 2, 'qual'),
+    R('day', '介護職員', '09:00', '16:00', 1, 'care'),
+    R('day', '看護職員', '09:00', '16:00', 1, 'nurse'),
+    R('day', '生活相談員', '09:00', '16:00', 1, 'job', '生活相談員'),
+    R('day', '機能訓練指導員', '09:00', '16:00', 1, 'job', '機能訓練指導員'),
+    R('visit', 'サ責', '09:00', '17:00', 1, 'sm'),
+  ]);
+  const by = {}; r.rows.forEach((x) => { by[x.label] = x; });
+  t('全員: 9:00〜18:00 は甲・乙・丙が入れ替わり、いちばん少ないのは 2人', by['日中 職員'].plan === 2 && by['日中 職員'].level === 'ok', by['日中 職員']);
+  t('介護職員（看護でない人）: 9:00〜12:00 は甲だけ（乙は 12:00 から）＝1人（いちばん早いその時刻 9:00）→ 予定で足りない', by['日中 介護職員'].plan === 1 && by['日中 介護職員'].planAt === at(TODAY, '09:00') && by['日中 介護職員'].level === 'warn', by['日中 介護職員']);
+  t('入れ替わりの切れ目: 12:00〜16:00 は甲・乙の2人・16:00〜18:00 は乙だけ（13:00〜18:00 を見るといちばん少ないのは 16:00 の1人）', ev(m, '2026-12-15T06:00:00+09:00', [R('facility', 'x', '13:00', '18:00', 2, 'care')]).rows[0].planAt === at(TODAY, '16:00'));
+  t('看護職員（看護師・准看護師）: 丙 1人で足りる', by['日中 看護職員'].plan === 1 && by['日中 看護職員'].level === 'ok');
+  t('介護の資格（介護福祉士・実務者・初任者）: 13:00〜15:00 は甲・乙の2人', by['介護の資格'].plan === 2);
+  t('事業所は塊の事業所で見る（通所の介護職員＝戊だけ・准看の丁は看護職員）', by['介護職員'].plan === 1 && by['看護職員'].plan === 1, [by['介護職員'], by['看護職員']]);
+  t('職種（様式1）の語で数える: 生活相談員は戊・機能訓練指導員はいない＝0人で足りない', by['生活相談員'].plan === 1 && by['機能訓練指導員'].plan === 0 && by['機能訓練指導員'].level === 'warn');
+  t('サ責の印: 訪問の己', by['サ責'].plan === 1 && by['サ責'].level === 'ok');
+  t('時間帯の前（06:00）はいまの人数を出さない（later・now は null）', r.rows.every((x) => x.phase === 'later' && x.now === null));
+  t('足りない行の数（short）と並び（足りない方が先）', r.short === 2 && r.rows[0].level === 'warn' && r.rows[1].level === 'warn' && r.rows[r.rows.length - 1].level === 'ok', r.rows.map((x) => x.label + ':' + x.level));
+  /* 同じ人が分けた勤務を2つ持つ時も1人 */
+  const m2 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: [
+    { staff_id: 'sS01', work_date: TODAY, seq: 1, office: 'facility', start_at: new Date(at(TODAY, '09:00')).toISOString(), end_at: new Date(at(TODAY, '12:00')).toISOString(), break_min: 0, kind: 'work', symbol: '分', paid_min: 0 },
+    { staff_id: 'sS01', work_date: TODAY, seq: 2, office: 'facility', start_at: new Date(at(TODAY, '11:00')).toISOString(), end_at: new Date(at(TODAY, '15:00')).toISOString(), break_min: 0, kind: 'work', symbol: '分', paid_min: 0 },
+  ], punches: [], days: [], config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  const r2 = ev(m2, '2026-12-15T06:00:00+09:00', [R('facility', '重なり', '09:00', '15:00', 2, 'all'), R('facility', '一人', '09:00', '15:00', 1, 'all')]);
+  t('同じ人の重なった2つの塊は1人と数える（2人にしない）', r2.rows.find((x) => x.label === '重なり').plan === 1 && r2.rows.find((x) => x.label === '一人').plan === 1, r2.rows);
+  /* 欠勤・1日の特別休暇・頭数に入れない人・シフトにいない人 */
+  const m3 = month({ sS01: { 15: '早' }, sS02: { 15: '早' }, sS03: { 15: '早' } }, [], '2026-12-15T06:00:00+09:00', [{ staff_id: 'sS01', work_date: TODAY, day_mark: 'absent' }],
+    [{ id: 'a1', staff_id: 'sS02', date: TODAY, kind: 'special', minutes: null, paid: true, type_code: null, link_date: null, note: '', created_at: '2026-12-01T10:00:00+09:00' }]);
+  t('欠勤の印の人と1日の特別休暇の人は予定に数えない', ev(m3, '2026-12-15T06:00:00+09:00', [R('facility', '早', '08:00', '09:00', 1, 'all')]).rows[0].plan === 1);
+  const noHead = STAFF.map((s) => (s.id === 'sS03' ? Object.assign({}, s, { countInHeadcount: false }) : s));
+  t('頭数に入れない人（countInHeadcount が false）は数えない', ev(m3, '2026-12-15T06:00:00+09:00', [R('facility', '早', '08:00', '09:00', 1, 'all')], { staff: noHead }).rows[0].plan === 0);
+  const r3 = ev(m3, '2026-12-15T06:00:00+09:00', [R('facility', '早', '08:00', '09:00', 1, 'all')], { staff: STAFF.filter((s) => s.id !== 'sS03') });
+  t('シフトの職員にいない人は数えず、いない人の数（missing）を出す', r3.rows[0].plan === 0 && r3.rows[0].missing === 1, r3.rows[0]);
+  t('事業所の絞り込み（day だけ）', ev(m, '2026-12-15T06:00:00+09:00', [R('day', 'a', '09:00', '10:00', 1, 'all'), R('facility', 'b', '09:00', '10:00', 1, 'all')], { office: 'day' }).rows.map((x) => x.office).join() === 'day');
+}
+
+console.log('\n— 3b. 兼務（別の事業所の応援）は予定の行で数える —');
+{
+  /* 甲（施設が主）: 施設の早 7:00〜16:00 と、同じ日に通所の応援 日3 9:00〜18:00（重なるので勤怠では1つの勤務にまとまり、塊の事業所は主の施設） */
+  const plan = { cells: { sS01: { 15: '早' } }, subCells: { sS01: { '通所': { 15: '日3' } } } };
+  const rows = C.buildSchedule({ ym: YM, plan, nextPlan: {}, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows;
+  const m = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [], days: [], config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  const blk = m.people.find((p) => p.staff.staff_id === 'sS01').days.find((d) => d.date === TODAY).blocks;
+  t('前提: 勤怠では1つの勤務にまとまり、塊の事業所は主の施設', blk.length === 1 && blk[0].office === 'facility' && blk[0].officeShare.day > 0, blk.map((b) => [b.office, b.officeShare]));
+  const rule = [R('day', '通所 職員', '10:00', '17:00', 1, 'all'), R('facility', '施設 職員', '08:00', '15:00', 1, 'all')];
+  const r1 = ev(m, '2026-12-15T06:00:00+09:00', rule, { schedule: rows });
+  const by = {}; r1.rows.forEach((x) => { by[x.label] = x; });
+  t('予定の行で数えると、通所の応援（9:00〜18:00）が通所の決まりに入る', by['通所 職員'].plan === 1 && by['通所 職員'].level === 'ok', by['通所 職員']);
+  t('施設の決まりにも施設の行（7:00〜16:00）で入る', by['施設 職員'].plan === 1, by['施設 職員']);
+  t('通所の決まりの 16:00〜17:00 も通所の行の時刻で数える（施設の行の終わり 16:00 で切れない）', ev(m, '2026-12-15T06:00:00+09:00', [R('day', 'x', '16:00', '17:00', 1, 'all')], { schedule: rows }).rows[0].plan === 1);
+  t('予定の行を渡さない時は塊の事業所で数える（通所の応援は数えない・古い形の受け口）', ev(m, '2026-12-15T06:00:00+09:00', [rule[0]]).rows[0].plan === 0);
+  /* いま: 10:00 に甲が出勤の打刻で勤務中 → 通所の決まりにも数える（兼務の塊） */
+  const m2 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [P('sS01', 'in', TODAY, '6:55')], days: [], config: {}, now: Date.parse('2026-12-15T10:00:00+09:00') });
+  t('いま: 兼務の塊で勤務中の人は通所の決まりにも数える', ev(m2, '2026-12-15T10:00:00+09:00', [rule[0]], { schedule: rows }).rows[0].now === 1);
+  /* 欠勤の印は予定の行にも効く */
+  const m3 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: [], days: [{ staff_id: 'sS01', work_date: TODAY, day_mark: 'absent' }], config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  t('欠勤の印の日は予定の行でも数えない', ev(m3, '2026-12-15T06:00:00+09:00', [rule[0]], { schedule: rows }).rows[0].plan === 0);
+  /* 予定の行で数えても、ほかの場面の答えは同じ（2・3 の日勤の場面） */
+  const cells = { sS01: { 15: '早' }, sS02: { 15: '遅' }, sS03: { 15: '日3' }, sS04: { 15: '日2' }, sS05: { 15: '日2' }, sS06: { 15: '日1' } };
+  const rs = sch(cells), mm = month(cells, [], '2026-12-15T06:00:00+09:00');
+  const rr = [R('facility', 'a', '09:00', '18:00', 2, 'care'), R('day', 'b', '09:00', '16:00', 1, 'nurse'), R('visit', 'c', '09:00', '17:00', 1, 'sm')];
+  t('兼務の無い日は、予定の行で数えても塊で数えても同じ', JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr, { schedule: rs }).rows.map((x) => [x.label, x.plan, x.planAt])) === JSON.stringify(ev(mm, '2026-12-15T06:00:00+09:00', rr).rows.map((x) => [x.label, x.plan, x.planAt])));
+}
+
+console.log('\n— 3c. 反証レビュー（2026-11-28）の場面 —');
+{
+  /* 1. 兼務の人をいまで両方に数えない: 乙は施設 7:00〜12:00 と通所の応援 12:00〜17:00（続くので1つの勤務にまとまる）。丁・戊は通所 9:00〜17:00（日3 ではなく日2 8:30〜17:30） */
+  const plan = { cells: { sS02: { 15: '早' }, sS04: { 15: '日2' }, sS05: { 15: '日2' } }, subCells: {} };
+  const rows = C.buildSchedule({ ym: YM, plan, nextPlan: {}, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows
+    .map((x) => (x.staff_id === 'sS02' ? Object.assign({}, x, { end_at: new Date(at(TODAY, '12:00')).toISOString() }) : x));
+  rows.push({ staff_id: 'sS02', work_date: TODAY, seq: 2, office: 'day', start_at: new Date(at(TODAY, '12:00')).toISOString(), end_at: new Date(at(TODAY, '17:00')).toISOString(), break_min: 0, kind: 'work', symbol: '応', paid_min: 0 });
+  const pun = [P('sS02', 'in', TODAY, '6:58'), P('sS04', 'in', TODAY, '8:25')];
+  const m = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: pun, days: [], config: {}, now: Date.parse('2026-12-15T10:30:00+09:00') });
+  const blk = m.people.find((p) => p.staff.staff_id === 'sS02').days.find((d) => d.date === TODAY).blocks;
+  t('前提: 乙は1つの勤務（主は施設・通所の分あり）', blk.length === 1 && blk[0].office === 'facility' && blk[0].officeShare.day > 0, blk.map((b) => [b.office, b.officeShare]));
+  const r1 = ev(m, '2026-12-15T10:30:00+09:00', [R('day', '通所', '09:00', '17:00', 2, 'all')], { schedule: rows }).rows[0];
+  t('10:30 の通所: 乙は施設の時間なので通所のいまに数えない（丁だけ＝1人・戊は打刻なしで15分を過ぎた）→ いま足りない', r1.now === 1 && r1.level === 'alert', r1);
+  const m2 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: rows, punches: pun, days: [], config: {}, now: Date.parse('2026-12-15T14:00:00+09:00') });
+  const r2 = ev(m2, '2026-12-15T14:00:00+09:00', [R('facility', '施設', '13:00', '17:00', 1, 'all'), R('day', '通所', '09:00', '17:00', 2, 'all')], { schedule: rows }).rows;
+  t('14:00 の施設: 通所の応援の時間の乙は施設のいまに数えない（0人）', r2.find((x) => x.label === '施設').now === 0, r2);
+  t('14:00 の通所: 乙は通所の行の時間なので数える（乙・丁の2人）', r2.find((x) => x.label === '通所').now === 2, r2);
+  /* 2. 1日の有休（手入力・申請の承認）の人は予定に数えない・打刻待ちにも数えない */
+  const sch2 = sch({ sS01: { 15: '早' }, sS02: { 15: '早' } });
+  const lu = [{ id: 'u1', staff_id: 'sS01', use_date: TODAY, days: 1, note: '', created_at: '2026-12-01T10:00:00+09:00', voided_at: null }];
+  const m3 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: sch2, punches: [], days: [], leave_uses: lu, config: {}, now: Date.parse('2026-12-15T07:05:00+09:00') });
+  const lr = (sch) => ev(m3, '2026-12-15T07:05:00+09:00', [R('facility', '早', '07:00', '12:00', 2, 'all')], sch ? { schedule: sch2 } : {}).rows[0];
+  t('前提: 手入力の1日の有休は日の行の leaveUse', m3.people.find((p) => p.staff.staff_id === 'sS01').days.find((d) => d.date === TODAY).leaveUse.days === 1);
+  t('1日の有休の人は予定にもいま（打刻待ち）にも数えない＝予定1・いま1 → 予定で足りない（予定の行・塊のどちらで数えても）', [lr(true), lr(false)].every((x) => x.plan === 1 && x.now === 1 && x.level !== 'ok'), [lr(true), lr(false)]);
+  const lu2 = [{ id: 'u2', staff_id: 'sS01', use_date: TODAY, days: 0.5, note: '', created_at: '2026-12-01T10:00:00+09:00', voided_at: null }];
+  const m4 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: sch2, punches: [], days: [], leave_uses: lu2, config: {}, now: Date.parse('2026-12-15T06:00:00+09:00') });
+  t('半日の有休の日の予定も数えない（足りているとは言わない側）', ev(m4, '2026-12-15T06:00:00+09:00', [R('facility', '早', '07:00', '12:00', 2, 'all')], { schedule: sch2 }).rows[0].plan === 1);
+  /* 4. 月分の初日の朝: 前の月分の夜勤（甲 11/30 21:00〜12/1 7:00）は予定の行で数え、いまは確かめられない（足りないと言わない） */
+  const nov = C.buildSchedule({ ym: '2026-11', plan: { cells: { sS01: { 30: '(21' } }, subCells: {} }, nextPlan: { cells: { sS01: { 1: '7)' } }, subCells: {} }, staff: STAFF, symbols: Sym.DEFAULT_SYMBOLS, settings: SET }).rows;
+  const dec = sch({ sS02: { 1: '早' } });
+  const m5 = C.computeMonth({ ym: YM, staff: K_STAFF, schedule: dec, punches: [], days: [], config: {}, now: Date.parse('2026-12-01T06:30:00+09:00') });
+  const r5 = ev(m5, '2026-12-01T06:30:00+09:00', [R('facility', '朝', '06:00', '09:00', 1, 'all')], { today: '2026-12-01', schedule: nov.concat(dec) }).rows[0];
+  t('月分の初日 6:30: 前の月分の夜勤を予定に数え（6:00〜7:00 は甲・7:00〜 は乙＝1人）、いまは確かめられない（いま足りないと言わない）', r5.plan === 1 && r5.now === null && r5.nowUnknown === true && r5.level === 'ok' && !r5.partial, r5);
+  /* 5. 設定の大きさは DB と同じバイト数で数える（日本語は3バイト） */
+  const big = { staffRules: Array(20).fill(R('day', 'あ'.repeat(20), '09:00', '10:00', 1, 'job', 'い'.repeat(20))), pad: 'x'.repeat(4000) };
+  t('日本語の多い設定は、文字数で8KB以下でもバイト数で超えれば偽', JSON.stringify(big).length <= 8192 && S.fitsConfig(big) === false);
+  /* 8. シフトにいない人の数は、時間帯にかかる人だけ */
+  const m6 = month({ sS01: { 14: '早', 15: '早' } }, [], '2026-12-15T06:00:00+09:00');
+  t('前の日の日勤（時間帯にかからない）の人は、シフトにいない人の数に入れない', ev(m6, '2026-12-15T06:00:00+09:00', [R('facility', '夜', '21:00', '23:00', 1, 'all')], { staff: STAFF.filter((x) => x.id !== 'sS01'), schedule: sch({ sS01: { 14: '早', 15: '早' } }) }).rows.every((x) => x.missing === 0));
+}
+
+console.log('\n— 4. いまの数え方 —');
+{
+  /* 10:00。甲は 7:00 出勤で勤務中・乙は 7:00〜9:30 で退勤済み・丙は日3（9:00〜）で打刻なし（15分を過ぎた）。時間帯 9:00〜12:00 は必要2 */
+  const pun = [P('sS01', 'in', TODAY, '7:00'), P('sS02', 'in', TODAY, '7:00'), P('sS02', 'out', TODAY, '9:30')];
+  const m = month({ sS01: { 15: '早' }, sS02: { 15: '早' }, sS03: { 15: '日3' } }, pun, '2026-12-15T10:00:00+09:00');
+  const r = ev(m, '2026-12-15T10:00:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]);
+  t('予定は3人いても（いちばん少ない3）、いまは甲だけ＝1人 → いま足りない（alert）', r.rows[0].phase === 'now' && r.rows[0].plan === 3 && r.rows[0].now === 1 && r.rows[0].level === 'alert', r.rows[0]);
+  /* 9:10 なら丙は始まりから15分の打刻待ち＝いる側 */
+  const m2 = month({ sS01: { 15: '早' }, sS03: { 15: '日3' } }, [P('sS01', 'in', TODAY, '7:00')], '2026-12-15T09:10:00+09:00');
+  const r2 = ev(m2, '2026-12-15T09:10:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]);
+  t('始まりから15分までの打刻待ちはいる側（9:10 は丙を数える）', r2.rows[0].now === 2 && r2.rows[0].level === 'ok', r2.rows[0]);
+  t('予定の行で数えても打刻待ちの答えは同じ', ev(m2, '2026-12-15T09:10:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')], { schedule: sch({ sS01: { 15: '早' }, sS03: { 15: '日3' } }) }).rows[0].now === 2);
+  const m3 = month({ sS01: { 15: '早' }, sS03: { 15: '日3' } }, [P('sS01', 'in', TODAY, '7:00')], '2026-12-15T09:15:00+09:00');
+  t('15分ちょうど（9:15）を過ぎたら数えない', ev(m3, '2026-12-15T09:15:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]).rows[0].now === 1);
+  t('時間帯が終わった後（past）はいまの人数を出さず、予定だけで判定', ev(m, '2026-12-15T13:00:00+09:00', [R('facility', '午前', '09:00', '12:00', 2, 'all')]).rows[0].now === null);
+  /* 予定の無い勤務（打刻だけ）はいまの人数には入る・予定には入らない */
+  const m4 = month({}, [P('sS01', 'in', TODAY, '8:00')], '2026-12-15T10:00:00+09:00');
+  const r4 = ev(m4, '2026-12-15T10:00:00+09:00', [R('facility', '午前', '09:00', '12:00', 1, 'all')]);
+  t('予定の無い勤務中は、いまには数え・予定には数えない（予定で足りない）', r4.rows[0].now === 1 && r4.rows[0].plan === 0 && r4.rows[0].level === 'warn', r4.rows[0]);
+}
+
+console.log('\n— 5. 0:00 をまたぐ時間帯 —');
+{
+  /* 14日の夜に甲・乙が夜勤入り21時（翌7時上がり）。15日の夜は甲だけ */
+  const cells = { sS01: { 14: '(21', 15: '7)' }, sS02: { 14: '(21', 15: '7)' } };
+  const cells2 = { sS01: { 14: '(21', 15: '7)' }, sS02: { 14: '(21', 15: '7)' }, sS03: { 15: '(21', 16: '7)' } };
+  const rule = [R('facility', '夜間 職員', '21:00', '07:00', 2, 'all')];
+  const m = month(cells2, [P('sS01', 'in', '2026-12-14', '20:55'), P('sS02', 'in', '2026-12-14', '20:58')], '2026-12-15T03:00:00+09:00');
+  const r = ev(m, '2026-12-15T03:00:00+09:00', rule);
+  const y = r.rows.find((x) => x.date === '2026-12-14'), tn = r.rows.find((x) => x.date === TODAY);
+  t('3:00 は前の日の夜の分（途中・2人とも勤務中）と今日の夜の分の2行', r.rows.length === 2 && y && tn && y.phase === 'now' && y.plan === 2 && y.now === 2 && y.level === 'ok' && y.overnight, r.rows);
+  t('今日の夜の分は丙だけ＝予定で足りない（warn）', tn.phase === 'later' && tn.plan === 1 && tn.level === 'warn', tn);
+  const m2 = month(cells, [], '2026-12-15T08:00:00+09:00');
+  t('前の日の夜の分は、終わった後（8:00）は出さない', ev(m2, '2026-12-15T08:00:00+09:00', rule).rows.every((x) => x.date === TODAY));
+  t('時間帯の始まりと終わりの時刻（21:00〜翌7:00）', y.startMs === at('2026-12-14', '21:00') && y.endMs === at(TODAY, '07:00'));
+  const rS = ev(m, '2026-12-15T03:00:00+09:00', rule, { schedule: sch(cells2) });
+  t('予定の行で数えても日またぎの答えは同じ', JSON.stringify(rS.rows.map((x) => [x.date, x.plan, x.now, x.level])) === JSON.stringify(r.rows.map((x) => [x.date, x.plan, x.now, x.level])), rS.rows);
+}
+
+console.log('\n— 6. 確かめられない時 —');
+{
+  const m = month({ sS01: { 15: '早' } }, [], '2026-12-15T06:00:00+09:00');
+  const r = ev(m, '2026-12-15T06:00:00+09:00', [R('facility', '早', '08:00', '09:00', 1, 'all')], { staff: null });
+  t('シフトの職員が読めない時は unknown（理由 staff）・0人と言わない・足りないに数えない', r.rows[0].level === 'unknown' && r.rows[0].why === 'staff' && r.rows[0].plan === null && r.short === 0 && r.staffOk === false, r);
+  const r2 = ev(m, '2026-12-01T03:00:00+09:00', [R('facility', '夜', '21:00', '07:00', 1, 'all')], { today: '2026-12-01' });
+  t('月分の初日の 3:00: 前の日の夜の分は月分の外＝unknown（理由 period）', r2.rows.some((x) => x.date === '2026-11-30' && x.level === 'unknown' && x.why === 'period'), r2.rows);
+  t('今日の夜の分は、月分の外の日（前の日）の塊を数えていない印 partial', r2.rows.some((x) => x.date === '2026-12-01' && x.partial === true));
+  t('入力が崩れていても例外を出さない', (() => { try { S.evaluate(null); S.evaluate({}); S.evaluate({ month: {}, today: 'x', nowMs: 1, cfg: cfgOf([1, 2]) }); S.evaluate({ month: { people: [{ days: [{ date: TODAY, blocks: [{}] }] }] }, today: TODAY, nowMs: Date.now(), cfg: cfgOf([R('day', 'a', '09:00', '10:00', 1, 'all')]), staff: [null, {}] }); return true; } catch (e) { return false; } })());
+}
+
+console.log('\n— 8. 画面の読み込み —');
+{
+  const html = fs.readFileSync(path.join(ROOT, 'kintai.html'), 'utf8');
+  const iCalc = html.indexOf('kintai-staffing-calc.js?v='), iUi = html.indexOf('kintai-staffing.js?v='), iMain = html.indexOf('kintai.js?v=');
+  t('kintai.html が計算・画面の部品を kintai.js の前に読む', iCalc > 0 && iUi > iCalc && iMain > iUi, { iCalc, iUi, iMain });
+  const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+  t('公開の許可（.gitignore）に2つとも載っている', /^!\/kintai-staffing-calc\.js$/m.test(gi) && /^!\/kintai-staffing\.js$/m.test(gi));
+  const js = fs.readFileSync(path.join(ROOT, 'kintai.js'), 'utf8');
+  t('設定の保存で鍵 staffCheck・staffRules を残す（画面の欄が持つ鍵として送る）', /STF\.readSet/.test(js) && /stfs \? stfs\.keys : \[\]/.test(js));
+}
+
+console.log('\n' + pass + ' 件合格・' + fail + ' 件不合格');
+process.exit(fail ? 1 : 0);

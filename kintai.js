@@ -28,7 +28,7 @@
 (function () {
   'use strict';
   var C = window.KintaiCalc, L = window.KintaiLeave, K36 = window.Kintai36, MON = window.KintaiMonitor, RUL = window.KintaiRules, EX = window.KintaiExtras, KS = window.KintaiShaho;
-  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ）・cert は資格の期限（kintai-cert.js・設定の certAlert が入の時だけ） */
+  var TABS = ['home', 'day', 'review', 'requests', 'grid', 'list', 'shift', 'person', 'staff', 'leave', 'close', 'settings', 'year', 'site', 'holiday', 'shaho', 'cert'];   /* year・site・holiday は kintai-views.js（設定の plusViews が入の時だけ・2026-11-25）・shaho は社保の知らせ（設定の shaho が入の時だけ）・cert は資格の期限（kintai-cert.js・設定の certAlert が入の時だけ） */
   var LS_TAB = 'kintai_tab', LS_YM = 'kintai_ym';
   var gen = 0, view = 'boot', tab = 'home', ym = null, data = null, month = null, shiftInfo = null;
   var selDate = null, selStaff = null, onlyReview = false, role = null, busy = false, editsCache = null;
@@ -387,10 +387,27 @@
     if (vwApi) vwApi.syncTabs(vwIsOn, tab);
     if (vwT && !vwIsOn) { tab = 'home'; vwT = false; paintTabs(); }
     if ((typeof CT !== 'undefined' && CT)) CT.syncTabs(!!data && CT.on(rawCfg()), tab, ctCtx());   /* 資格の期限のタブ（入の時だけ足す） */
+    var KLI = typeof window !== 'undefined' && window.KintaiList || null, klT = !!KLI && KLI.isTab(tab);   /* 勤怠一覧・シフト表（kintai-list.js・2026-11-28）: 部品が無い時はタブを足さず、開こうとしたらホーム */
+    if (KLI) { KLI.syncTabs(tab); KLI.bind(klCtx, function () { if (view === 'app' && KLI.isTab(tab) && !busy && !printAll) paint(); }); }
+    else if (tab === 'list' || tab === 'shift') { tab = 'home'; paintTabs(); }
     var f = { home: paintHome, day: paintDay, review: paintReview, requests: paintRequests, grid: paintGrid, person: paintPerson, staff: paintStaff, leave: paintLeave, close: paintClose, settings: paintSettings, shaho: paintShaho, cert: function () { return (typeof CT !== 'undefined' && CT) ? CT.paint(ctCtx()) : ''; } }[tab];
     var kb = typeof window !== 'undefined' && window.KintaiBoard ? window.KintaiBoard : null;   /* 段B（統合 0130・kintai-board.js）: 申請のタブの下にお知らせと補助項目の申請・締めの画面の上に補助項目の承認待ち（無ければ空） */
-    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
+    m.innerHTML = bands() + (kb && tab === 'close' ? kb.closeHtml() : '') + (vwT ? vwApi.paint(tab, vwCtx()) : klT ? KLI.paint(tab, klCtx()) : f()) + (kb && tab === 'requests' ? kb.html() : '');
     setInit = tab === 'settings' && $('g-set') ? settingsState() : null;   /* v5 C4: 描いた時の設定の入力（保存していない変更を確かめる） */
+  }
+  /* ── 勤怠一覧・シフト表（kintai-list.js・2026-11-28 本人指示）: 数え方は月の一覧の month のまま渡す ── */
+  function klCtx() {
+    if (!masterSt && !masterBusy) loadMaster();
+    return { ym: ym, month: month, locked: isLocked(), esc: esc, fm: fm, wd: wd, dateList: dateList, printHead: printHead, dispName: dispName,
+      officeName: officeName, period: function () { var p = per(); return p && p.from ? p : null; }, hm: function (v) { return v == null ? '' : C.jstHM(typeof v === 'number' ? v : Date.parse(v)); },
+      jd: function (d) { return d ? (+d.slice(0, 4)) + '年' + (+d.slice(5, 7)) + '月' + (+d.slice(8, 10)) + '日' : ''; },
+      masterOf: masterOf,
+      leaveRemain: function (s) {
+        if (!L) return null;
+        if (!leaveSt) { if (!leaveBusy) loadLeave(false); return null; }
+        if (leaveSt.err) return null;
+        try { var b = leaveOf(s).sm.balance; return b && b.remain != null ? dTxt(b.remain, s.staff_id) : null; } catch (e) { note('勤怠一覧の有給', e); return null; }
+      } };
   }
   /* ── 年別・事業所別・休日のタブ（kintai-views.js・2026-11-25・ROOT-v7 段B・段C）: 部品が無い・設定の plusViews が切の時は何もしない ── */
   var VW = window.KintaiViews || null;
@@ -422,6 +439,13 @@
     c.rpc = rpc; c.okOr = okOr; c.noDb = noDb; c.toast = toast; c.pressBusy = pressBusy; c.today = today;
     c.staff = function () { return data && data.staff || []; };
     c.repaint = function () { if (view === 'app' && !busy && !printAll && (tab === 'cert' || tab === 'home')) paint(); };
+    return c;
+  }
+  /* ── 今日の人員配置（kintai-staffing.js・2026-11-28・代表者の決定 2026-11-28）: 部品が無い・設定の staffCheck が切の時は何もしない ── */
+  var STF = window.KintaiStaffingUI || null;
+  function stfCtx() {
+    var c = ctCtx();
+    c.month = function () { return month; }; c.schedule = function () { return data && Array.isArray(data.schedule) ? data.schedule : null; }; c.period = function () { return data ? per() : null; }; c.officeFilter = function () { return officeFilter; };
     return c;
   }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
@@ -594,6 +618,29 @@
   function waitBox(title, txt, err) {
     return '<div class="hbox wait"><span class="ht"><span>' + esc(title) + '</span></span><span class="hl">' + esc(txt) + '</span>' + (err ? '<span class="hl"><button type="button" class="btn" data-act="lv-reload">読み直す</button></span>' : '') + '</div>';
   }
+  /* ── ホームの「今日の出勤状況」（2026-11-27・代表者の決定 2026-11-27・文と位置は仮置き）──
+   * 行は kintai-today.js の board（「今日」の箱と同じ数え方を行に分けたもの）。事業所の切り替えは日ごと・月の一覧と同じ officeFilter（画面の中だけ・端末に残さない）。
+   * 行を押すとその日の「日ごと」へ移る（その人の所までは移らない・仮置き）。札は普段と違う状態（遅れ・打刻なし・退勤の打刻なし・要確認）だけ。画面だけで印刷しない */
+  var TDY = window.KintaiToday || null;
+  var TDY_CLS = { working: 'wk', done: 'dn', leave: 'dn', absent: 'dn' };
+  function tdHm(v) { return hm(v).replace(/^0(?=\d:)/, ''); }   /* 一覧は 9:30 の形（頭の0を付けない） */
+  function todayBoardHtml(td) {
+    var bd = TDY.board(month, td, officeFilter);
+    var seg = '<div class="chips" role="group" aria-label="事業所">' + [''].concat(['facility', 'visit', 'day']).map(function (o) {
+      return '<button type="button" class="chip" data-act="tdof" data-o="' + o + '" aria-pressed="' + (officeFilter === o ? 'true' : 'false') + '">' + (o ? esc(officeName(o) || o) : '全部') + '</button>';
+    }).join('') + '</div>';
+    var rows = bd.rows.map(function (r) {
+      var sc = r.scheduled && r.schedStart != null ? tdHm(r.schedStart) + '〜' + (r.nextDay ? '翌' : '') + tdHm(r.schedEnd) : '予定なし';
+      var st = r.unusual ? '<span class="tag rv">' + esc(r.label) + '</span>' : '<span class="tds ' + (TDY_CLS[r.status] || '') + '">' + esc(r.label) + '</span>';
+      if (r.review && !r.unusual) st += '<span class="tag rv">要確認</span>';
+      var inT = r.inAt != null ? tdHm(r.inAt) : '—', outT = r.outAt != null ? tdHm(r.outAt) : '—';
+      return '<li><button type="button" class="tdr' + (r.cont ? ' tdc' : '') + '" data-tab="day" data-tdr="1" data-date="' + esc(r.date) + '">' +
+        '<span class="tdn">' + esc(r.name) + '</span><span class="tdo">' + esc(officeName(r.office)) + '</span>' +
+        '<span class="tdp">' + esc(sc) + (r.prevDay ? '<small>前の日から</small>' : '') + '</span><span class="tdi"><small>出 </small>' + esc(inT) + '</span><span class="tdx"><small>退 </small>' + esc(outT) + '</span><span class="tdt">' + st + '</span><span class="tdbr" aria-hidden="true"></span></button></li>';
+    }).join('');
+    return '<section class="tdb no-print" aria-labelledby="tdb-h"><div class="tdb-hd"><h3 id="tdb-h">今日の出勤状況</h3>' + seg + '</div>' + (bd.total ? '<p class="tdb-help">行を押すと、その日の「日ごと」を開きます。</p>' : '') +
+      (bd.total ? '<div class="tdr tdh" aria-hidden="true"><span class="tdn">氏名</span><span class="tdo">事業所</span><span class="tdp">予定</span><span class="tdi">出勤</span><span class="tdx">退勤</span><span class="tdt">状態</span></div><ul class="tdl">' + rows + '</ul>' : '<p class="tdb-none">なし</p>') + '</section>';
+  }
   function paintHome() {
     var h = '<div class="cd no-print">';
     if (!MON) return h + '<div class="band ng" role="alert">ホームの部品を読み込めませんでした。ページを読み込み直してください。</div></div>';
@@ -614,7 +661,8 @@
       if (b.key === 'today') {
         if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
         var c = b.counts;
-        out.push(ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in')));
+        var tbx = ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in'));
+        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + ((typeof STF !== 'undefined' && STF) ? STF.homeHtml(stfCtx()) : '') + '</div>' : tbx);   /* 2026-11-28: その下に今日の人員配置（入れた時だけ） */   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（予定・勤務の1つごとに1行）。部品が無い時は今の箱だけ */
         return;
       }
       if (b.key === 'a36') {
@@ -635,7 +683,7 @@
     var shb = shBoxHtml(); if (shb) out.push(shb);   /* 社保の知らせ（入れた時だけ） */
     var ctb = (typeof CT !== 'undefined' && CT) ? CT.homeBox(ctCtx(), boxHtml, waitBox) : ''; if (ctb) out.push(ctb);   /* 資格の期限（入れた時だけ） */
     return h + '<h2 style="font-size:16px;margin:0 0 4px">' + esc(perLabel()) + 'のようす</h2><p class="help">箱を押すと、その一覧の画面へ移ります。今日・要確認・勤務の決まりは30秒ごとに読み直します。勤務の決まり（休憩・勤務の間・続けて働いた日）は知らせだけで、数えた時間は変えません。</p>' +
-      '<div class="hgrid">' + out.join('') + '</div></div>';
+      homeFlowHtml() + '<div class="hgrid">' + out.join('') + '</div></div>';
   }
 
   /* 要確認の一覧（v2・C-2）: 月の要確認を日付順に1列 */
@@ -819,7 +867,7 @@
   function masterIdOf(s) { return s && s.master_id ? String(s.master_id) : null; }   /* 外した m_ の行は master_id が空（休止）＝結んでいない */
   function masterOf(s) { var id = masterIdOf(s); return id && masterSt && masterSt.byId ? masterSt.byId[id] || null : null; }
   function inService(m) { return !!m && (!m.retire_date || m.retire_date >= today()); }
-  var REORDER_TABS = { home: 1, day: 1, review: 1, grid: 1, person: 1, staff: 1, leave: 1 };
+  var REORDER_TABS = { home: 1, day: 1, review: 1, grid: 1, list: 1, shift: 1, person: 1, staff: 1, leave: 1 };
   function loadMaster() {
     if (masterBusy && masterP) return masterP;
     masterBusy = true;
@@ -947,7 +995,7 @@
       if (my !== leaveGen) return;
       leaveBusy = false;
       /* v5 段2・3: ホーム・月の一覧・個人の月も、有給と36協定の箱・印をこの読み込みから出す */
-      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'person' || tab === 'shaho') && !busy && !printAll) paint();   /* 社保の知らせも同じ月分を使う */
+      if (view === 'app' && (tab === 'leave' || tab === 'home' || tab === 'grid' || tab === 'list' || tab === 'shift' || tab === 'person' || tab === 'shaho') && !busy && !printAll) paint();   /* 社保の知らせも同じ月分を使う */
       /* v5 C3: 開き直した窓に、保存していない入力（今の保存で使った欄を除く）を戻す（読み直しで黙って消さない） */
       if (dlgCtx && dlgCtx.mode === 'leave' && $('g-dlg').open) { var kp = dlgCtx.keep || null; openLeave(dlgCtx.sid); if (kp) dlgPut(kp); absKindShow(); }   /* v5 段4: 戻した休暇の種類に合う欄を出す */
     });
@@ -1225,26 +1273,61 @@
       if (y0 === ym) { dropMonthCaches(); return load(false); }
     })['catch'](function (e) { busy = false; restore(); note('freee の取り込みの取り消し', e); alert(fiMsg(e)); });
   }
+  /* 締めの手順の段階（2026-11-26・見せるだけ。締めの動きは変えない）: 要確認を決める → 月を締める → 給与で計算（給与の画面）。
+     済んだ段は done、最初のまだの段を cur。印刷には出さない（no-print） */
+  function closeSteps(review, locked, blocked) {
+    var done = [locked || review === 0, locked, false], cur = done.indexOf(false);
+    return [['要確認を決める', review > 0 && !locked ? '残り ' + review + ' 件' : ''], ['月を締める', !locked && blocked ? 'まだ締められません' : ''], ['給与で計算', '給与の画面']].map(function (x, i) {
+      return { name: x[0], sub: x[1], state: done[i] ? 'done' : (i === cur ? 'cur' : 'todo') };
+    });
+  }
+  function closeStepsHtml(review, locked, blocked) {
+    return '<ol class="su-steps no-print" aria-label="締めの手順">' + closeSteps(review, locked, blocked).map(function (x) {
+      return '<li class="' + x.state + '"' + (x.state === 'cur' ? ' aria-current="step"' : '') + '>' + esc(x.name) + '<span class="su-st-s">' + esc(x.sub || (x.state === 'done' ? '済み' : x.state === 'cur' ? '次はここ' : 'まだ')) + '</span></li>';
+    }).join('') + '</ol>';
+  }
+  /* 締めを止めている理由の文（期間の末日の前・シフトを取り込めていない）。締めと出力とホームの進み具合で同じ判定を使う（2026-11-26・判定を2つに分けない）。
+     返す文は esc 済みの HTML（空なら締められる） */
+  function closeStop(lk) {
+    var nx = C.addDays(per().to, 1);
+    return !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
+      (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
+  }
+  /* 給与の画面でこの月分を計算する（2026-11-26: from=kintai で給与の画面が1回だけ自動で計算する） */
+  function payHref(y) { return 'payroll.html?ym=' + encodeURIComponent(y || '') + '&from=kintai'; }
+  /* ホームの「この月分の進み具合」（2026-11-26）: 締めと出力と同じ3段（closeSteps・closeStop）と、今の段の主ボタン1つ。ホームからは締めない。印刷に出さない */
+  function homeFlowHtml() {
+    if (!month) return '';
+    var lk = isLocked(), review = month.totals.reviewCount, stop = closeStop(lk), act;
+    if (lk) act = isAdmin() ? '<a class="btn pri" href="' + esc(payHref(ym)) + '">💴 給与の画面でこの月分を計算する</a>' : '<span class="tag ok">✓ 締めてあります</span>';
+    else if (review) act = '<button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button>';
+    else if (stop) act = '<span class="hf-why" role="status">' + stop + '</span>';
+    else act = '<button type="button" class="btn pri" data-tab="close">締めと出力へ進む</button>';
+    return '<section class="hflow no-print" aria-label="この月分の進み具合"><h3>この月分の進み具合</h3>' + closeStepsHtml(review, lk, !!stop) + '<div class="row hf-act">' + act + '</div></section>';
+  }
   function paintClose() {
     var lk = isLocked(), afterLock = month.people.some(function (p) { return p.days.some(function (d) { return d.flags.indexOf('after_lock') >= 0; }); });
     var review = month.totals.reviewCount;
     var diff = lk ? snapDiff() : [];
-    var nx = C.addDays(per().to, 1);
-    var stop = !lk && notYet() ? '期間の末日を過ぎてから締められます（' + esc(perLabel()) + 'は ' + esc((+nx.slice(5, 7)) + '月' + (+nx.slice(8, 10)) + '日') + 'から締められます）。' :
-      (!lk && shiftInfo && !shiftInfo.ok ? 'シフトを取り込めていないため、まだ締められません（' + esc(shiftInfo.why) + '）。上の「シフトを取り込み直す」を押してから締めてください。' : '');
-    var h = printHead('締めと出力') + fiHtml() + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' +
+    var stop = closeStop(lk);
+    var h = printHead('締めと出力') + (lk ? '' : fiHtml()) + '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">月の締め</h2>' + closeStepsHtml(review, lk, !!stop) +
       (diff.length ? '<div class="band warn">締めた時の数字と今の数字が違う職員がいます（' + diff.map(esc).join('・') + '）。締めた後の打刻・計算の決まりの見直しなどが原因です。給与へ渡したのは締めた時の数字です（月の集計の CSV も締めた時の数字で出します）。</div>' : '') +
       (lk ? '<p>締めた日時: ' + esc(new Date(data.month.locked_at).toLocaleString('ja-JP')) + '</p>' +
-        (isAdmin() ? '<p class="no-print"><a class="btn pri" href="payroll.html?ym=' + esc(encodeURIComponent(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
+        (isAdmin() ? '<p class="no-print su-next"><span class="su-next-l">次は給与の画面で計算します:</span><a class="btn pri" href="' + esc(payHref(ym)) + '">💴 給与の画面でこの月分を計算する</a></p>' : '') + (afterLock ? '<div class="band warn">締めた後に足された打刻があります（印「締めた後の打刻」）。給与へ渡した後なら、来月の調整を検討してください。</div>' : '') +
         '<button type="button" class="btn ng" data-act="unlock"' + (isAdmin() ? '' : ' disabled') + '>締めを解除する（管理者）</button>' :
-        (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
+        (review ? '<div class="band warn">要確認が ' + review + ' 件残っているため、まだ締められません。1件ずつ「認める／認めない」を決めてください（認めない時は理由を残します）。</div><div class="row no-print"><button type="button" class="btn pri" data-act="rvd-start">要確認を1件目から決める</button></div>' : '<div class="band ok">要確認はありません。</div>') +
         (stop ? '<div class="band warn" role="status">' + stop + '</div>' : '') +
-        '<button type="button" class="btn pri" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button><p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
+        (!stop && !review && isAdmin() ? '<button type="button" class="btn pri no-print" data-act="lock-pay">この月を締めて、給与へ渡す</button> ' : '') +   /* 2026-11-26: 締めが成功した時だけ給与の画面へ移る（締めの流れは同じ lockMonth・紙に出さない） */
+        /* 画面で塗りに見せるのは次に押す1つだけ: 要確認あり・止めあり・「給与へ渡す」を出す時は「この月を締める」に印 su-sub（画面だけ枠のボタン・紙と class の pri は今のまま） */
+        '<button type="button" class="btn pri' + (stop || review || isAdmin() ? ' su-sub' : '') + '" data-act="lock"' + (stop ? ' disabled' : '') + '>この月を締める</button>' +
+        (!stop && !review && isAdmin() ? '<p class="help no-print">「この月を締める」は締めるだけで、給与の画面へは移りません。</p>' : '') + '<p class="help">締める直前に月を読み直して数え直し、その数字を「締めた時の控え」としてデータベースに残します。締めると、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。タブレットの打刻は締めた後も記録され、「締めた後の打刻」の印が付きます。</p>') + '</div>';
+    if (lk) h += fiHtml();   /* 締めた後は取り込めないので、freee の箱は月の締めの後ろへ（箱は紙に出さない no-print・締める前の並びは今のまま・2026-11-26） */
     h += reqCloseHtml();   /* v5 段5: 承認待ちの申請と月の確認の数（締めは止めない・画面だけ） */
     var hist = (data.month && Array.isArray(data.month.history)) ? data.month.history : [];
     if (hist.length) h += '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">締めと解除の記録</h2><div class="tw"><table><thead><tr><th>日時</th><th>した人</th><th>内容</th><th>理由</th></tr></thead><tbody>' +
       hist.slice().reverse().map(function (x) { return '<tr><td>' + esc(x && x.at ? new Date(x.at).toLocaleString('ja-JP') : '') + '</td><td>' + esc(x && x.by) + '</td><td>' + esc(x && x.action === 'unlock' ? '締めを解除した' : x && x.action === 'lock' ? '締めた' : (x && x.action) || '') + '</td><td>' + esc(x && x.reason) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
     h += '<div class="cd"><h2 style="font-size:16px;margin:0 0 8px">給与計算への出力（CSV）</h2>' +
+      '<p class="help no-print">自社の給与の画面は、締めた勤怠をそのまま読みます（CSV の書き出し・取り込みは要りません）。この CSV は、ほかの給与ソフトへ渡す時だけ使います。</p>' +
       '<div class="row"><label>文字コード <select id="g-enc"><option value="utf8">UTF-8（BOM 付き）</option><option value="sjis">Shift_JIS（Excel・古い給与ソフト）</option></select></label></div>' +
       '<div class="row"><button type="button" class="btn" data-act="csv-sum">月の集計（1人1行）</button><button type="button" class="btn" data-act="csv-day">日ごとの明細（1人1日1行）</button></div>' +
       '<p class="help">月の集計の列: ' + esc(C.SUMMARY_HEAD.concat(C.SUMMARY_EXTRA_HEAD).join('・')) + '・実働_（事業所ごと）。日ごとの明細の列: ' + esc(C.DAILY_HEAD.concat(C.DAILY_EXTRA_HEAD).join('・')) + '。前の版の列はそのままの順で、新しい列は後ろに足してあります。従業員コードの無い職員は出しません（出せなかった人は知らせます）。時間の書き方は「設定」で 8:30／8.50 を選べます。' +
@@ -1431,6 +1514,7 @@
     if (typeof window !== 'undefined' && window.KintaiBoard) h += window.KintaiBoard.settingsHtml(rawCfg(), isAdmin());   /* 段B（統合 0130）: 職員のスマホの画面のお知らせと補助項目の申請の入り切り */
     h += shSetHtml();   /* 社保の知らせ（部品が無い時は出さない） */
     if ((typeof CT !== 'undefined' && CT)) h += CT.setHtml(rawCfg());   /* 資格の期限の知らせの入り切り（既定は切） */
+    if ((typeof STF !== 'undefined' && STF)) h += STF.setHtml(rawCfg(), isAdmin(), officeName);   /* 今日の人員配置の入り切りと決まり（既定は切・2026-11-28） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -2880,7 +2964,8 @@
     ctx.keep = keepOf(ctx, act);
     busy = true; msg.textContent = '保存しています…';
     var restore = pressBusy(btn, '保存しています…', $('g-dlg-b'));
-    rpc(call[0], call[1]).then(okOr).then(function () { return then2 ? rpc(then2[0], then2[1]).then(okOr) : null; }).then(function () {
+    var firstOk = false, secondOk = false;   /* 付与（1段目）を保存できたか。2段目（移行日）で断られた時に、窓を同じ値で残して二重に付与させないため */
+    rpc(call[0], call[1]).then(okOr).then(function () { firstOk = true; return then2 ? rpc(then2[0], then2[1]).then(okOr).then(function (v) { secondOk = true; return v; }) : null; }).then(function () {
       busy = false; toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）' + (warnAfter ? '。' + warnAfter : ''));
       /* v5 段4: 休暇の行は月の読み出しにだけ入るので、その日の月分を読み直してから有給を数え直す */
       var p2 = isAbs ? refreshAbsMonths([at, at2]).then(function () { return loadLeave(false); }) : loadLeave(false);
@@ -2888,7 +2973,21 @@
       /* 開き直した窓にも注意を残す（知らせは消えるため） */
       if (warnAfter) p2 = p2.then(function () { if ($('g-dlg').open && dlgCtx && dlgCtx.mode === 'leave' && $('e-msg')) $('e-msg').textContent = warnAfter; });
       return p2;
-    })['catch'](function (e) { busy = false; restore(); note('有給の保存', e); var em = isAbs ? absMsg(e) : leaveMsg(e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = em; else toast('保存できませんでした: ' + em); });
+    })['catch'](function (e) {
+      busy = false; note('有給の保存', e);
+      if (firstOk && (!then2 || secondOk)) {
+        /* 保存は全部済んで、その後の読み直し・描き直しだけが失敗した時は「保存できませんでした」と出さない */
+        closeDlg(); toast('保存しました（' + nameOf(ctx.sid) + ' さんの有給）。表示を読み直せなかったので、画面を読み込み直してください');
+        return;
+      }
+      if (firstOk && then2 && !secondOk) {
+        /* 付与は保存できて移行日だけ入らなかった時は、窓を閉じて有給を読み直す（もう一度押して同じ付与を二重に足さない・直しの保存の一部だけ保存と同じ扱い） */
+        var m2 = '付与は保存しました。移行日は入っていません（' + leaveMsg(e) + '）。読み直したので、移行日は有給の窓の設定の「移行日」でもう一度入れてください。';
+        closeDlg(); loadLeave(false); alert(m2);
+        return;
+      }
+      restore(); var em = isAbs ? absMsg(e) : leaveMsg(e); if ($('g-dlg').open && $('e-msg') === msg) msg.textContent = em; else toast('保存できませんでした: ' + em);
+    });
   }
 
   /* ── 職員・締め・出力・設定 ── */
@@ -2934,8 +3033,10 @@
       '<p>「締める」を押した時にもう一度読み直して数え直し、その数字を「締めた時の控え」にします。</p><div class="kv"><span>要確認の残り</span><b>' + fig.review + ' 件（' + fig.rvPeople + ' 人）</b><span>人数</span><b>' + fig.people + ' 人（働いた・有休のあった人 ' + fig.worked + ' 人）</b><span>総労働の合計</span><b>' + fm(fig.workMin) + '</b><span>欠勤の合計</span><b>' + fig.absent + ' 日</b></div>' +
       '<p class="help">締めた後は、この月の打刻の足し・取り消し・承認・休憩の直し・シフトの取り込みが止まります。解除できるのは管理者だけです。</p><p class="help" id="e-msg" role="alert"></p>', bl.length > 0 || fig.review > 0, '締める', 'lock-go');   /* 0120: 要確認が残る間は締めるボタンを出さない */
   }
-  function lockMonth(btn) {
+  var lockAfter = null;   /* 締めが成功した後に移る先（「この月を締めて、給与へ渡す」の時だけ {ym}・2026-11-26）。普通の「この月を締める」で必ず null に戻す */
+  function lockMonth(btn, after) {
     if (busy || !month) return;
+    lockAfter = after || null;
     if (notYet()) { toast(NG.notyet); return; }
     if (shiftInfo && !shiftInfo.ok) { toast('シフトを取り込めていないため、まだ締められません。'); return; }
     var my = ++gen; busy = true; sync('締める前に読み直しています…');
@@ -2969,7 +3070,9 @@
         openLock(now, diff.join('・'));
         return;
       }
-      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました'); return load(false); }, function (e) { fail(e, '締め'); });
+      return rpc('kintai_month_lock', { p_ym: ym, p_snapshot: C.snapshotOf(month) }).then(okOr).then(function () { busy = false; closeDlg(); toast('締めました');
+        var go = lockAfter; lockAfter = null; if (go && go.ym === ym) location.href = payHref(go.ym);   /* 締めて給与へ渡す（成功した時だけ）。移るのを取りやめた時に締める前の画面を残さないよう、下で読み直す */
+        return load(false); }, function (e) { fail(e, '締め'); });
     }, function (e) { if (my !== gen) return; fail(e, '締める時の読み直し'); });
   }
   function unlockMonth(btn) {
@@ -3065,12 +3168,14 @@
     if (exs && exs.bad.length) { alert('補助項目の欄を入れ直してください: ' + exs.bad.join('、')); return; }
     var vws = typeof VW !== 'undefined' && VW ? VW.readSet(rawCfg()) : null;   /* 年別・事業所別・休日のタブの入り切り（欄が無い時は今の設定のまま） */
     var cts = (typeof CT !== 'undefined' && CT) ? CT.readSet(rawCfg()) : null;   /* 資格の期限の知らせの入り切り（欄が無い時は今の設定のまま） */
+    var stfs = (typeof STF !== 'undefined' && STF) ? STF.readSet(rawCfg()) : null;   /* 今日の人員配置の入り切りと決まり（欄が無い時は今の設定のまま・2026-11-28） */
+    if (stfs && stfs.bad.length) { alert('人員配置の決まりを入れ直してください: ' + stfs.bad.join('、')); return; }
     /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
     var kc = exs ? exKindChanged(exs.items) : [];
     if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []).concat(stfs ? stfs.keys : []);
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
@@ -3079,6 +3184,7 @@
     if (typeof window !== 'undefined' && window.KintaiBoard) window.KintaiBoard.readSettings(outCfg);   /* 段B（統合 0130）: 鍵 selfAnnounce・selfExtraReq（欄が無い時は今の設定のまま） */
     if (vws) for (k in vws.vals) outCfg[k] = vws.vals[k];
     if (cts) for (k in cts.vals) outCfg[k] = cts.vals[k];
+    if (stfs) for (k in stfs.vals) outCfg[k] = stfs.vals[k];
     if (shs && ('shaho' in cur || JSON.stringify(shs.vals) !== JSON.stringify(KS.fillConfig({})))) outCfg.shaho = shs.vals;   /* 触っていない・既定のままなら鍵を作らない（履歴に載せない） */
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
@@ -3670,11 +3776,14 @@
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       var t = b.getAttribute('data-tab');
+      if (t && b.hasAttribute('data-tdr')) dayFilter = null;   /* ホームの今日の出勤状況の行から移る時だけ、日ごとの札の絞り込みを外す（押した人が見えるように・2026-11-27） */
       if (t) { var td0 = b.getAttribute('data-date'); if (td0 && C.isDate(td0)) selDate = td0; if (b.getAttribute('data-rq') === 'pending') reqF = { status: 'pending', ym: '' }; setTab(t); return; }   /* v5 段5: 申請の箱・締めの画面からは承認待ち・すべての月分で開く */   /* ホームの「今日」の箱は今日の日ごとへ */
       var a = b.getAttribute('data-act');
       if (!a) return;
+      if (a === 'tdof') { var o0 = b.getAttribute('data-o') || ''; officeFilter = ['facility', 'visit', 'day'].indexOf(o0) >= 0 ? o0 : ''; paint(); return; }   /* ホームの今日の出勤状況の事業所（日ごとの絞り込みと同じ・2026-11-27） */
       if (a.indexOf('vw-') === 0) { if (typeof VW !== 'undefined' && VW) VW.act(a, b, vwCtx()); return; }   /* 年別・事業所別・休日（2026-11-25） */
       if (a.indexOf('ct-') === 0) { if ((typeof CT !== 'undefined' && CT)) CT.act(a, b, ctCtx()); return; }   /* 資格の期限（2026-11-25） */
+      if (a.indexOf('sf-') === 0) { if ((typeof STF !== 'undefined' && STF)) STF.act(a, b, stfCtx()); return; }   /* 今日の人員配置（2026-11-28） */
       if (a === 'nt-add') { ntAdd(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-kind'), b); return; }   /* v6: 打刻漏れの知らせ */
       if (a === 'nt-void') { ntVoid(b.getAttribute('data-id'), b.getAttribute('data-sid'), b); return; }
       if (a === 'edit') openEdit(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.hasAttribute('data-bi') ? +b.getAttribute('data-bi') : null, b.getAttribute('data-rv'));
@@ -3683,6 +3792,7 @@
       else if (a === 'dlg-save') saveEdit(b, false);
       else if (a === 'dlg-save-next') saveEdit(b, true);
       else if (a === 'pick-open') pickOpen();
+      else if (a === 'lock-pay') lockMonth(b, { ym: ym });   /* 2026-11-26: 締めと出力の「この月を締めて、給与へ渡す」（窓の「締める」は下の行のまま） */
       else if (a === 'lock-go') lockGo(b);
       else if (a === 'rvd-start') { if (dlgCtx && dlgCtx.mode === 'lock') closeDlg(); openDecide(0); }   /* 0120 */
       else if (a === 'rvd-save') saveDecide(b);
@@ -3809,7 +3919,7 @@
     $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
     $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } });
     /* v5 段5: 上の「読み直す」は申請の一覧と数も捨てて読み直す（反証レビュー 2026-11-21）。月を読み直す受けより先に足し、読み込みの最初の描き直しで新しく読むようにする */
-    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); if ((typeof CT !== 'undefined' && CT)) CT.drop(); });
+    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); if ((typeof CT !== 'undefined' && CT)) CT.drop(); if ((typeof STF !== 'undefined' && STF)) STF.drop(); });
     $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) { dropMonthCaches(); load(false); } });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else { dlgCtx = null; wipeEnroll(); } });   /* v5 段5: Esc の時はその場で QR と番号を消す（close の知らせは後から届くため） */

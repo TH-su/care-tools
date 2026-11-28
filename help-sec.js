@@ -22,6 +22,8 @@
     'care-meeting': 'h-care-meeting',
     'supplies': 'h-supplies',
     'equip-log': 'h-equip-log',
+    'hospital-visit': 'h-hospital-visit',
+    'accident-report': 'h-accident-report',
     'kintai': 'h-kintai',
     'payroll': 'h-payroll',
     'visit-overview': 'h-visit-overview',

@@ -117,7 +117,8 @@
   :root[data-su-theme] .sui-x:focus-visible { outline-color: var(--su-ink); }
 
   /* ログインの確かめの覆い（su-app-gate.css）：地と主なボタンを型の色にそろえる。文言・動きは変えない */
-  :root[data-su-theme] .sug { background: var(--su-paper); color: var(--su-ink); font-family: var(--su-font); }
+  /* 覆いの箱（div#su-app-gate.sug）だけに当てる。:where() で強さは前の :root[data-su-theme] .sug のまま（裸の .sug が打刻の画面の勧めるボタンに当たっていた・2026-11-27） */
+  :root[data-su-theme] :where(#su-app-gate).sug { background: var(--su-paper); color: var(--su-ink); font-family: var(--su-font); }
   :root[data-su-theme] .sug-cd { border-color: var(--su-line); }
   :root[data-su-theme] .sug-app { color: var(--su-ink2); }
   :root[data-su-theme] .sug-h { color: var(--su-ink); }

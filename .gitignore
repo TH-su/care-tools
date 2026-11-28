@@ -49,6 +49,14 @@
 !/check/compare-calc.mjs
 !/check/jscheck.mjs
 !/check/csp.mjs
+# 週間計画の計画の版（予約・切替・年表）の通し試験（2026-11-27・架空データ・通信は全部偽物）
+!/check/care_plan_e2e.mjs
+# 予約を使わない端末で、計画の版の改修の前（git の HEAD）と後の保存データ・送信の中身が同じことを確かめる通し試験（架空データ）
+!/check/care_plan_nochange_e2e.mjs
+# 古い版の週間計画のタブと新しい版のタブが同じ端末にある時に、切り替えた後の計画へ前の計画が混ざらないことを確かめる通し試験（架空データ）
+!/check/care_plan_oldtab_e2e.mjs
+# デイ利用表が週間計画を送る時の版の印（共通 DB の口が答えた時だけ付ける）を確かめる通し試験（架空データ）
+!/check/care_plan_daycare_e2e.mjs
 !/check/res-read-gas-sync.mjs
 !/check/name-guard.mjs
 !/check/run.mjs
@@ -70,9 +78,12 @@
 # 勤怠の日ごとの補助項目の通し試験（2026-11-25・統合 0127・関数の無い時と有る時・通信は全部偽物・架空の職員）
 !/check/kintai_extras_e2e.mjs
 !/check/kintai_views_e2e.mjs
+!/check/kintai_list_e2e.mjs
 !/check/build-holidays-fixture.mjs
 !/check/kintai_board_e2e.mjs
 !/check/kintai_shaho_e2e.mjs
+!/check/kintai_lockpay_e2e.mjs
+!/check/kintai_clock_e2e.mjs
 # 給与の画面の通し試験と撮影（2026-11-19・偽のデータベースと偽の部品・架空の職員10人）
 !/check/payroll_e2e.mjs
 !/check/payroll_santei_e2e.mjs
@@ -120,6 +131,8 @@
 # 帳票の紙を架空データで撮るための材料（2026-10-26・snap.mjs が画面名で探す）
 !/check/fixtures
 /check/fixtures/*
+# 計画の版の切替（applyDue）を共通 DB の写しと同じ答えにそろえる材料（架空データ）
+!/check/fixtures/care-plan-parity.json
 !/check/fixtures/*.mjs
 # 内閣府の祝日の一覧（公開の資料・祝日の算出の答え合わせ・2026-11-25）
 !/check/fixtures/holidays-jp-cao.csv
@@ -168,6 +181,9 @@
 # 担当者会議の記録の振り分け・確定の確かめ・期限の知らせの純関数（2026-10-23 代表者の決定）。
 # 規則だけで、入居者の氏名・会議の中身は含まない
 !/care-meeting-calc.js
+# 週間計画の計画の版（履歴・予約・版ごとの介護度）の切替・統合・介護度の決まりの純関数（2026-11-27 代表者の依頼）。
+# 規則だけで、利用者の氏名・予定の中身は含まない
+!/care-plan-calc.js
 # 担当者会議の記録のページ（2026-10-23 代表者の決定・段階2）。コードのみ公開。会議の中身・氏名は入居者マスタの GAS にだけあり、端末には残さない
 !/care-meeting.html
 # 採用管理の画面と純関数（2026-10-26 代表者承認）。コードのみ公開。応募者の情報は共通ログインのデータベース（管理者＋2段階認証だけ）にあり、端末には残さない
@@ -176,6 +192,11 @@
 # 設備・修繕の記録の画面と純関数（2026-11-03 本人の決定）。コードのみ公開。設備・対応の記録は共通ログインのデータベース（事務所・管理者だけ）にあり、端末には残さない
 !/equip-log.html
 !/equip-calc.js
+!/hospital-visit.html
+!/hospital-visit-calc.js
+# 事故報告書の画面と純関数（2026-11-28 本人指示）。コードのみ公開。報告書は共通ログインのデータベース（事務所・管理者だけ）にあり、端末には残さない
+!/accident-report.html
+!/accident-report-calc.js
 # 勤怠管理の画面・打刻の画面・純関数（2026-11-18 本人指示）。コードのみ公開。職員・打刻の記録は共通ログインのデータベースにあり、
 # 端末には UI の状態と、通信できない時の打刻の控え（番号・種類・時刻だけ・名前なし）しか残さない。shift-symbols.js はシフトアプリの記号の解釈の写し
 !/kintai.html
@@ -187,6 +208,10 @@
 # 36協定のアラートと管理者のホーム（勤怠モニター）の純関数（2026-11-20・勤怠 v5 の段2・段3）。計算だけで、職員の氏名・時間は含まない
 !/kintai-36.js
 !/kintai-monitor.js
+# ホームの今日の出勤状況（予定・勤務の1つごとに1行）の純関数（2026-11-27）。計算だけで、職員の氏名・時間は含まない
+!/kintai-today.js
+!/kintai-staffing-calc.js
+!/kintai-staffing.js
 !/kintai-rules.js
 !/kintai-freee-import.js
 !/kintai-extras.js
@@ -198,6 +223,7 @@
 !/kintai-cert-calc.js
 !/kintai-cert.js
 !/check/kintai_cert_e2e.mjs
+!/check/kintai_staffing_e2e.mjs
 !/kintai-ledger.js
 # 職員本人のスマホの勤怠の画面と純関数（2026-11-20・勤怠 v5 の段5・care-backend 統合 0114）。コードのみ公開。端末に置くのは鍵（受け口が作った乱数）とタブの印だけで、
 # 暗証番号・勤怠・有給・申請・表示名はメモリだけ。読み書きは受け口 kintai-self（service_role の本人の口）だけ
@@ -226,6 +252,9 @@
 # 給与の画面（2026-11-19 新設）。コードのみ公開。給与・口座は共通ログインのデータベースの関数でだけ読み書きし、端末には開いていたタブしか残さない。
 !/payroll.html
 !/payroll.js
+!/payroll-list.js
+!/office-list.css
+!/kintai-list.js
 # 収支の見通し（入居者マスタの「💴 収支の見通し」）の計算の純関数（2026-11-07 本人指示）。規則だけで、入居者の氏名・金額は含まない
 !/revenue-calc.js
 # 共通データ層（Phase 0・2026-08-13）。各アプリの通信をここへ寄せる契約とドライバ。
@@ -243,6 +272,8 @@
 !/su-dialog.css
 !/su-shell.js
 !/su-shell.css
+# 事務所の管理画面（勤怠管理・給与）の見た目の仕上げ（2026-11-26・画面だけ・印刷は変えない）
+!/su-office.css
 # 「不具合を報告」と画面の指摘の見た目（2026-10-27）。CSP で直書きの style を禁じる画面でも効くように外の CSS にした
 !/su-report.css
 # 見出しの下の初回の案内の帯と、その見た目（2026-11-02 本人の決定）。文言だけを持ち、端末に残すのは閉じた印（su_intro_closed_<画面>）だけ
@@ -333,6 +364,7 @@ mailer/.DS_Store
 # 1つずつ名前で足す（*.md でまとめて開けない）。テーマの手元には公開しない内部の決まり（データの約束事・個人情報の扱い）が同じフォルダにあるため（2026-11-22）
 !/.claude/rules
 /.claude/rules/*
+!/.claude/rules/accident-report.md
 !/.claude/rules/accounts.md
 !/.claude/rules/admission.md
 !/.claude/rules/ats.md
@@ -434,3 +466,5 @@ mailer/.DS_Store
 !/su-health-calc.js
 !/su-health.js
 !/su-health-badge.js
+!/su-office-look.css
+!/su-office-look.js

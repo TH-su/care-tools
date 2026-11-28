@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-su-theme>
+<html lang="ja" data-su-theme data-sul-palette="blue">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
@@ -13,8 +13,8 @@
 <!-- 画面が黙って壊れないようにする共通部品（いちばん先に読む）→ 速さの記録 → ログインの役割の確かめ → 施設情報 → 印刷（年次有給休暇管理簿の紙だけ・v5 段4）→ シフトの読み口 → 記号の解釈 → 勤怠の計算 → 有給の計算 → 管理簿の行（v5 段4）→ 36協定の判定 → ホームの箱 → 勤務の決まりの見張り（v5 段2・3）→ freee の取り込み → 日ごとの補助項目（段A1） -->
 <script src="su-errors.js?v=2026-11-21"></script>
 <script src="su-perf.js?v=2026-10-27"></script>
-<script src="su-app-gate.js?v=2026-11-21"></script>
-<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-app-gate.js?v=2026-11-28.2"></script>
+<script src="su-facility.js?v=2026-11-28"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="su-kv.js?v=2026-11-16"></script>
 <script src="shift-symbols.js?v=2026-11-18"></script>
@@ -23,6 +23,7 @@
 <script src="kintai-ledger.js?v=2026-11-20.2"></script>
 <script src="kintai-36.js?v=2026-11-20"></script>
 <script src="kintai-monitor.js?v=2026-11-20.2"></script>
+<script src="kintai-today.js?v=2026-11-27"></script>
 <script src="kintai-rules.js?v=2026-11-20"></script>
 <script src="kintai-freee-import.js?v=2026-11-23"></script>
 <script src="kintai-extras.js?v=2026-11-25"></script>
@@ -32,8 +33,12 @@
 <script src="kintai-shaho.js?v=2026-11-25"></script>
 <script src="kintai-cert-calc.js?v=2026-11-25"></script>
 <script src="kintai-cert.js?v=2026-11-25"></script>
-<link rel="stylesheet" href="su-theme.css?v=2026-11-03.2">
+<script src="kintai-staffing-calc.js?v=2026-11-28"></script>
+<script src="kintai-staffing.js?v=2026-11-28"></script>
+<link rel="stylesheet" href="su-theme.css?v=2026-11-27">
 <link rel="stylesheet" href="su-shell.css?v=2026-11-13">
+<link rel="stylesheet" href="su-office.css?v=2026-11-27">
+<link rel="stylesheet" href="office-list.css?v=2026-11-28">
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
 <style>
 :root{--ink:#14213d;--sub:#3d4a5c;--line:#c9d2de;--bg:#f4f6f9;--card:#fff;--ok:#0b5d2a;--ok-bg:#e3f4e8;--warn:#6b4100;--warn-bg:#fff4d6;--ng:#8a1020;--ng-bg:#fde8eb;--focus:#1f4fbf;--muted:#414b5a;
@@ -124,6 +129,70 @@ legend{font-weight:600;padding:0 6px}
 .hbox .hnote{display:block;margin-top:6px;font-size:13px;color:var(--warn);overflow-wrap:anywhere}
 /* v6: ホームの箱の下の「本人のスマホに知らせる」の並び（画面だけ・状態は文字でも出す＝色だけで伝えない） */
 .hcell{display:grid;gap:6px;align-content:start}
+/* ホームの今日の出勤状況（2026-11-27・画面だけ）。「今日」の箱の升を横いっぱいに広げ、箱のすぐ下に予定・勤務の1つごとに1行で並べる。iPhone の幅（700px 以下）では1人2行 */
+@media screen{
+.tdw{grid-column:1/-1;display:grid;gap:8px;align-content:start}
+/* ホームの箱は例外を先に並べる（su-office.css の order）。今日の升も中の「今日」の箱の色と同じ段に置く */
+:root[data-su-theme] .hgrid > .tdw:has(.hbox.alert){order:-2}:root[data-su-theme] .hgrid > .tdw:has(.hbox.warn){order:-1}:root[data-su-theme] .hgrid > .tdw:has(.hbox.ok){order:1}
+.tdb{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px 4px}
+.tdb-hd{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.tdb-hd h3{font-size:16px;margin:0}
+.tdb-hd .chips{margin:0}
+.tdl{list-style:none;margin:0;padding:0}
+.tdr{display:grid;grid-template-columns:minmax(7em,1.4fr) minmax(4em,.7fr) minmax(9em,1fr) 4.5em 4.5em minmax(8em,1fr);align-items:center;column-gap:12px;width:100%;min-height:44px;padding:6px 6px;border:0;border-top:1px solid var(--line);border-radius:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.tdr.tdh{min-height:0;padding:2px 6px 4px;border-top:0;font-size:13px;color:var(--muted);cursor:default}
+.tdl .tdr:hover{background:var(--th)}
+.tdr:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+.tdn{font-weight:700;overflow-wrap:anywhere}
+/* 同じ人の2行目から（分けた勤務など）: 名前を薄く・上の線を点線にして、前の行の続きに見せる（仮置き） */
+.tdl .tdr.tdc{border-top-style:dashed}.tdr.tdc .tdn{color:var(--muted);font-weight:400}
+.tdo{color:var(--sub);font-size:15px}
+.tdp,.tdi,.tdx{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tdp small{display:block;font-size:15px;color:var(--muted)}
+.tdbr{display:none}
+/* 出勤・退勤の見出しの語は PC では列の見出しがあるので見せず、読み上げにだけ残す */
+.tdi small,.tdx small{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;font-size:15px}
+.tds{color:var(--sub)}.tds.wk{color:var(--wk);font-weight:700}.tds.dn{color:var(--muted)}
+.tdt{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.tdt .tag{margin:0;font-size:15px;font-weight:700}
+.tdb-none{margin:2px 0 8px;color:var(--sub)}
+.tdb-help{margin:0 0 4px;font-size:15px;color:var(--muted)}
+/* 今日の人員配置（2026-11-28・画面だけ）。足りない行だけ札（予定で足りない＝注意の色・いま足りない＝赤）と左の線で目立たせ、足りている行は札にしない */
+.sfb .tdb-hd .tag{margin:0;font-size:15px;font-weight:700}
+.sfr{display:grid;grid-template-columns:minmax(10em,1.6fr) minmax(8em,1fr) 4.5em 5.5em 5.5em minmax(10em,1.4fr);align-items:center;column-gap:12px;min-height:44px;padding:6px 6px;border-top:1px solid var(--line)}
+.sfr.sfh{min-height:0;padding:2px 6px 4px;border-top:0;font-size:13px;color:var(--muted)}
+.sfr.sfx{box-shadow:inset 3px 0 0 var(--warn)}.sfr.sfa{box-shadow:inset 3px 0 0 var(--ng)}
+.sfn{overflow-wrap:anywhere;color:var(--sub);font-size:15px}.sfn b{color:var(--ink);font-size:16px}
+.sfp,.sfq{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sfp small{margin-left:6px;font-size:15px;color:var(--muted)}
+.sfq small{font-size:13px;color:var(--muted)}
+.sfq .sfk{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sft{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.sft .tag{margin:0;font-size:15px;font-weight:700}
+.sfat{font-size:15px;color:var(--muted)}
+.sfb-why{margin:4px 0 8px;font-size:15px;color:var(--warn)}
+.kv > .sfs-lb,.kv > .sfs{grid-column:1/-1}.sfs-lb{font-weight:700;margin-top:10px}
+.sfs{min-width:0;max-width:100%}.sfs-r > *{min-width:0;max-width:100%}
+.sfs-t{display:grid;gap:6px}
+.sfs-r{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.sfs-no{min-width:1.6em;color:var(--muted);font-variant-numeric:tabular-nums}
+.sfs-r input[type=text]{width:10em}.sfs-r input[type=number]{width:4.5em}.sfs-r input[id^="sf-k-"]{width:10em}
+}
+@media screen and (max-width:700px){
+.tdr.tdh{display:none}
+.tdr{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px;row-gap:2px;padding:8px 2px}
+/* 1行目に名前・事業所・状態、2行目に予定・出勤・退勤 */
+.tdn{order:1;flex:0 1 auto;min-width:0}.tdo{order:2;flex:1 1 auto;min-width:0}.tdt{order:3;margin-left:auto;justify-content:flex-end}.tdbr{display:block;order:4;flex-basis:100%;height:0}
+.tdp{order:5}.tdi{order:6}.tdx{order:7}
+.sfr.sfh{display:none}
+.sfr{display:flex;flex-wrap:wrap;column-gap:10px;row-gap:2px;padding:8px 2px 8px 8px}
+.sfn{flex-basis:100%}.sfp{flex-basis:100%;font-size:15px;color:var(--sub)}
+.sfq{font-size:15px}.sfq .sfk{position:static;width:auto;height:auto;overflow:visible;clip:auto;color:var(--muted)}
+.sft{flex-basis:100%}
+.sfs-r input[type=text],.sfs-r input[id^="sf-k-"],.sfs-r select{width:100%;max-width:100%}
+.sfs-r{padding:8px 0;border-top:1px solid var(--line)}
+.tdo,.tdp,.tdi,.tdx{font-size:15px;color:var(--sub)}
+.tdp small{display:inline;margin-left:4px}
+.tdi small,.tdx small{position:static;width:auto;height:auto;overflow:visible;clip:auto;display:inline;margin-right:3px;font-size:15px;color:var(--muted)}
+}
 .hnt{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:8px 12px}
 .hnt .hnt-h{margin:0 0 4px;font-size:13px;font-weight:700;color:var(--sub)}
 .hnt .hnt-s{margin:4px 0 0;font-size:13px;color:var(--sub);overflow-wrap:anywhere}
@@ -214,6 +283,9 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 #k-ledger .lg-t .num{text-align:right}
 #k-ledger .lg-t th:nth-child(1){width:11%}#k-ledger .lg-t th:nth-child(2){width:8%}#k-ledger .lg-t th:nth-child(3){width:19%}#k-ledger .lg-t th:nth-child(5){width:8%}#k-ledger .lg-t th:nth-child(6){width:8%}#k-ledger .lg-t th:nth-child(7){width:12%}
 </style>
+<!-- 事務所の管理画面の PC の並び（左の縦のメニュー・題の帯・パンくず・丸い月の並び）と色（2026-11-27 本人指示） -->
+<link rel="stylesheet" href="su-office-look.css?v=2026-11-28.1">
+<script src="su-office-look.js?v=2026-11-27" defer></script>
 </head>
 <body>
 <header class="hdr su-shell-hdr">
@@ -225,12 +297,17 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 </header>
 <div class="cd gate" id="g-gate" hidden></div>
 <div id="g-app" hidden>
-  <div class="bar no-print">
-    <label>月分 <input type="month" id="g-ym" aria-label="表示する月分（締め日で切った期間）"></label> <span id="g-period" class="raw"></span>
-    <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
-    <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
-    <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
-    <button type="button" class="btn sm" id="g-reload">読み直す</button>
+  <div class="bar no-print su-mbar">
+    <div class="su-mnav" role="group" aria-label="月分の切り替え">
+      <button type="button" class="btn sm" id="g-prev" aria-label="前の月">◀ 前の月</button>
+      <label>月分 <input type="month" id="g-ym" aria-label="表示する月分（締め日で切った期間）"></label>
+      <button type="button" class="btn sm" id="g-next" aria-label="次の月">次の月 ▶</button>
+    </div>
+    <span id="g-period" class="raw"></span>
+    <div class="su-mact">
+      <button type="button" class="btn sm" id="g-import">シフトを取り込み直す</button>
+      <button type="button" class="btn sm" id="g-reload">読み直す</button>
+    </div>
   </div>
   <nav class="tabs no-print" role="tablist" aria-label="画面の切り替え">
     <button type="button" role="tab" data-tab="home">ホーム</button>
@@ -251,11 +328,12 @@ body:has(#g-gate:not([hidden])) .sui-band{display:none}
 <div id="k-ledger" aria-hidden="true"></div>
 <dialog id="g-dlg" aria-labelledby="g-dlg-h"><div class="dlg-h" id="g-dlg-h"></div><div class="dlg-b" id="g-dlg-b"></div><div class="dlg-f" id="g-dlg-f"></div></dialog>
 <script src="su-dialog.js?v=2026-11-14.2"></script>
+<script src="kintai-list.js?v=2026-11-28"></script>
 <script src="su-qr.js?v=2026-11-08"></script>
-<script src="kintai.js?v=2026-11-25.7"></script>
+<script src="kintai.js?v=2026-11-28.2"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-board.js?v=2026-11-25"></script>
-<script src="su-shell.js?v=2026-11-19"></script>
+<script src="su-shell.js?v=2026-11-28.2"></script>
 <script src="su-net.js?v=2026-11-12.2"></script>
 <script src="su-intro.js?v=2026-11-18"></script>
 <script src="su-report.js?v=2026-11-23.2" data-tool="勤怠管理"></script>

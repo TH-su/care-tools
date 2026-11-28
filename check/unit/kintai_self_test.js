@@ -302,5 +302,90 @@ for (const [nm, set] of [['明るい表示', light], ['暗い表示', dark]]) {
   t(nm + ': 文字と地の差はどれも 4.5:1 以上', bad.length === 0, bad);
 }
 
+say('— 2026-11-27: 確かめが要る日・見た目の直し —');
+{
+  const J = read('kintai-self.js'), CSS = read('kintai-self.css'), H = read('kintai-self.html');
+  t('確かめが要る日は、日の札（S.dayRows の flags）と計算の部品の C.REVIEW・C.FLAG_LABEL から数える（計算の部品を変えず、判定を2つに分けない）・確認済みの日と先の日は数えない',
+    /function needDays\(rows\) \{[\s\S]*?\(C && C\.REVIEW\)[\s\S]*?\(C && C\.FLAG_LABEL\)[\s\S]*?!r\.future && r\.flags\.some[\s\S]*?r\.flags\.indexOf\(chk\) < 0/.test(J) && /paintNeed\(needDays\(rows\)\);/.test(J));
+  t('帯は日付を3つまで・それ以上は「ほか n 日」・押すとその日の箱へ（画面の中だけの印 data-date）・textContent の部品で作る',
+    /need\.slice\(0, 3\)/.test(J) && /' ほか ' \+ \(need\.length - 3\) \+ ' 日'/.test(J) && /'確かめが要る日が ' \+ need\.length \+ ' 日あります（' \+ shown \+ '）'/.test(J) && /c\.setAttribute\('data-date', r\.date\)/.test(J) && !/innerHTML/.test(J));
+  t('帯の箱は月の合計の箱の上（月の切り替えの下）・閉じる時に捨てる', /<div id="need-box" class="need-box" role="status" hidden><\/div>\s*<div class="cd" id="days-head"><\/div>/.test(H) && /clear\(\$\('need-box'\)\); \$\('need-box'\)\.hidden = true;/.test(J));
+  t('予定も打刻も無い月は合計を出さずに空の箱だけ', /if \(!rows\.length\) \{ head\.appendChild\(el\('p', 'muted empty', 'この月分の予定と打刻はまだありません。'\)\); return; \}/.test(J));
+  t('月の切り替えは塗らない（淡い地と下線）・塗りは上のタブだけ', /\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri-l\);/.test(CSS) && !/\.seg \.btn\[aria-pressed="true"\] \{ background: var\(--pri\);/.test(CSS));
+  /* 審査役の指摘（2026-11-27）: 時間単位の有休の注意は、残りの数を読み違えないよう黄の箱に戻した。黄の箱はこの2つまで・年5日は注記のまま */
+  t('有給: 黄の箱は「いちばん早く消える残り」と時間単位の有休の注意の2つだけ（年5日は注記）', (J.match(/'msg warn'/g) || []).length === 2 && /el\('p', 'msg warn', 'いちばん早く消える残り: '/.test(J) && /el\('p', 'msg warn', S\.HOURLY_NOTE\)/.test(J) && /v\.ob5Warn \? 'help em' : 'muted'/.test(J));
+  t('帯で送る先の日の箱は、見出しの高さ（--hdr-h・画面が測る）の分だけ下で止める', /\.day \{ scroll-margin-top: calc\(var\(--hdr-h, 112px\) \+ 8px\); \}/.test(CSS) && /function syncHdr\(\)/.test(J) && /syncHdr\(\); t\.scrollIntoView/.test(J));
+}
+
+say('— 2026-11-27: 今月の箱の夜勤の回数と有給の残り・日の種類の札（代表者の決定 2026-11-27） —');
+{
+  const J = read('kintai-self.js'), CSS = read('kintai-self.css');
+  const P = { from: '2022-05-01', to: '2022-05-31' }, ST = [{ staff_id: SID, office: 'facility', active: true }];
+  const nightRow = (d, d2, sym) => ({ staff_id: SID, work_date: d, seq: 0, office: 'facility', start_at: d + 'T21:00:00+09:00', end_at: d2 + 'T07:00:00+09:00', break_min: 120, kind: 'night', symbol: sym || '(21', paid_min: 0 });
+  const workRow = (d) => ({ staff_id: SID, work_date: d, seq: 0, office: 'facility', start_at: d + 'T09:00:00+09:00', end_at: d + 'T18:00:00+09:00', break_min: 60, kind: 'work', symbol: '日1', paid_min: 0 });
+  const paidRow = (d) => ({ staff_id: SID, work_date: d, seq: 0, office: 'facility', start_at: null, end_at: null, break_min: 0, kind: 'paid', symbol: '有', paid_min: 480 });
+  const pin = (id, d, hh) => ({ id: id, staff_id: SID, kind: 'in', at: d + 'T' + hh + '+09:00', source: 'tablet', created_at: d + 'T' + hh + '+09:00' });
+  const pout = (id, d, hh) => ({ id: id, staff_id: SID, kind: 'out', at: d + 'T' + hh + '+09:00', source: 'tablet', created_at: d + 'T' + hh + '+09:00' });
+  const NOW = Date.parse('2022-06-05T12:00:00+09:00');
+  /* 期間の前の日（4/30）に入った夜勤・5/10 に入って 5/11 に明ける夜勤・期間の最終日（5/31）に入る夜勤・先の予定の夜勤（打刻なし）・有給の日・半日・時間単位・休暇 */
+  const schedule = [nightRow('2022-04-30', '2022-05-01'), paidRow('2022-05-01'), nightRow('2022-05-10', '2022-05-11'), paidRow('2022-05-11'), workRow('2022-05-12'),
+    nightRow('2022-05-20', '2022-05-21'), nightRow('2022-05-31', '2022-06-01')];
+  const punches = [pin('n0', '2022-04-30', '20:55:00'), pout('n1', '2022-05-01', '07:05:00'), pin('n2', '2022-05-10', '20:55:00'), pout('n3', '2022-05-11', '07:05:00'),
+    pin('w1', '2022-05-12', '08:55:00'), pout('w2', '2022-05-12', '18:05:00'), pin('n4', '2022-05-31', '20:55:00'), pout('n5', '2022-06-01', '07:05:00')];
+  const absences = [{ id: 'a1', date: '2022-05-13', kind: 'hourly_paid', minutes: 120, paid: true, type_code: null, link_date: null },
+    { id: 'a2', date: '2022-05-14', kind: 'special', minutes: null, paid: true, type_code: 'keicho', link_date: null },
+    { id: 'a3', date: '2022-05-15', kind: 'special', minutes: 240, paid: false, type_code: 'other', link_date: null },
+    { id: 'a4', date: '2022-05-16', kind: 'comp', minutes: null, paid: false, type_code: null, link_date: '2022-05-08' },
+    { id: 'a5', date: '2022-05-17', kind: 'swap', minutes: null, paid: false, type_code: null, link_date: '2022-05-22' }];
+  const leaveUses = [{ id: 'u1', staff_id: SID, use_date: '2022-05-18', days: 0.5, voided_at: null }];
+  const mon = { period: P, staff: ST, schedule: schedule, punches: punches, days: [], leave_uses: leaveUses, absences: absences, month: null, settings: { config: {} } };
+  const mm = S.computeOf(mon, '2022-05', C, NOW);
+  const tt = S.monthTotals(mm);
+  const dir = C.computeMonth({ ym: '2022-05', period: P, staff: ST, schedule: schedule, punches: punches, days: [], leave_uses: leaveUses,
+    absences: absences.map((a) => Object.assign({ staff_id: SID }, a)), config: {}, now: NOW });
+  t('夜勤の回数は computeMonth の nightShiftCount のまま（数え方を新しく作らない）', tt.nightCount === dir.people[0].sum.nightShiftCount, { tt, n: dir.people[0].sum.nightShiftCount });
+  t('夜勤の回数: 入りの日の月分で数える＝期間の前の日（4/30）に入った夜勤は入れず、5/10 と期間の最終日（5/31）に入る夜勤は数え、働いていない先の予定（5/20）は入れない＝2回', tt.nightCount === 2, tt);
+  /* 締めた月分は締めた時の設定で数える（computeOf）。回数も computeMonth を締めた時の設定で直接呼んだ合計と同じ */
+  const lockedMon = Object.assign({}, mon, { month: { locked_at: '2022-06-02T00:00:00Z', snapshot: { config: { nightBreakH: 1 } } } });
+  const mL = S.computeOf(lockedMon, '2022-05', C, NOW);
+  const dirL = C.computeMonth({ ym: '2022-05', period: P, staff: ST, schedule: schedule, punches: punches, days: [], leave_uses: leaveUses,
+    absences: absences.map((a) => Object.assign({ staff_id: SID }, a)), config: { nightBreakH: 1 }, lockedAt: '2022-06-02T00:00:00Z', now: NOW });
+  t('締めた月分: 夜勤の回数は締めた時の設定で computeMonth を直接呼んだ合計と同じ', S.monthTotals(mL).nightCount === dirL.people[0].sum.nightShiftCount && S.monthTotals(mL).nightCount === 2);
+  t('今月の箱の合計の形（実働・出勤・有休・予定を超えた時間は今のまま・夜勤の回数を足す）', JSON.stringify(Object.keys(tt)) === JSON.stringify(['workMin', 'workDays', 'paidDays', 'overtimeMin', 'nightCount']));
+
+  const rr = S.dayRows(mm, C, '2022-06-05');
+  const kd = (d) => { const r = rr.find((x) => x.date === d); return r ? r.kinds.map((k) => k.k + ':' + k.t).join(',') : null; };
+  t('日をまたぐ夜勤: 入りの日（5/10）に「夜勤」', kd('2022-05-10') === 'night:夜勤', kd('2022-05-10'));
+  t('明け: 夜勤の明けの日に箱が出る時（5/11 は有給の日）は「明け」と「有給」', kd('2022-05-11') === 'ake:明け,off:有給', kd('2022-05-11'));
+  t('期間の初日（5/1）の明けは、前の夜勤が期間の前の日の側で分からない＝明けの札を付けない（有給だけ）', kd('2022-05-01') === 'off:有給', kd('2022-05-01'));
+  t('普段の勤務（夜勤でない予定）には札を付けない', kd('2022-05-12') === '', kd('2022-05-12'));
+  t('先の予定の夜勤（5/20）も予定の種類として「夜勤」・期間の最終日に入る夜勤（5/31）も「夜勤」', kd('2022-05-20') === 'night:夜勤' && kd('2022-05-31') === 'night:夜勤', [kd('2022-05-20'), kd('2022-05-31')]);
+  t('明けだけの日（5/21・6/1 の側）は日の行が無い＝箱も札も出ない', kd('2022-05-21') === null);
+  t('有給の時間単位「有給 時間」・特別休暇・特別休暇 半日（無給でも種類だけ）・代休・振替休日', kd('2022-05-13') === 'off:有給 時間' && kd('2022-05-14') === 'off:特別休暇'
+    && kd('2022-05-15') === 'off:特別休暇 半日' && kd('2022-05-16') === 'off:代休' && kd('2022-05-17') === 'off:振替休日', ['13', '14', '15', '16', '17'].map((x) => kd('2022-05-' + x)));
+  t('有給の半日（手入力の 0.5 日）は「有給 半日」', kd('2022-05-18') === 'off:有給 半日', kd('2022-05-18'));
+  t('締めた月分でも札は同じ', JSON.stringify(S.dayRows(mL, C, '2022-06-05').map((r) => r.kinds)) === JSON.stringify(rr.map((r) => r.kinds)));
+  t('札の純関数: 分からない日・崩れた日は空・振替で働く日は札なし・同じ札は1つ',
+    S.dayKinds(null, {}).length === 0 && S.dayKinds({ date: '2022-05-01' }, null).length === 0
+    && S.dayKinds({ date: '2022-05-02', blocks: [], absences: [{ kind: 'swap', role: 'work', date: '2022-05-09' }, null, 'x'] }, {}).length === 0
+    && S.dayKinds({ date: '2022-05-03', blocks: [{ night: true, schedStart: 1 }, { night: true, schedStart: 2 }], paidDays: 0 }, {}).length === 1
+    && S.dayKinds({ date: '2022-05-03', blocks: [{ night: true, schedStart: null }] }, {}).length === 0);
+  t('明けの日は夜勤の塊の予定の終わりの日（ちょうど0時に終わる夜勤は入りの日のまま）',
+    JSON.stringify(S.nightEndsOf([{ date: '2022-05-10', blocks: [{ night: true, schedEnd: Date.parse('2022-05-11T07:00:00+09:00') }] }])) === '{"2022-05-11":true}'
+    && JSON.stringify(S.nightEndsOf([{ date: '2022-05-10', blocks: [{ night: true, schedEnd: Date.parse('2022-05-11T00:00:00+09:00') }, { night: false, schedEnd: Date.parse('2022-05-11T07:00:00+09:00') }] }])) === '{}');
+  t('画面: 今月の箱に「夜勤の回数」の行・「有給の残り」は有給のタブと同じ数え方（S.leaveView(S.leaveOf(…))）と同じ出し方（dTxt・1日の時間も同じ答えから）で、今月分の箱だけ',
+    /\['夜勤の回数', tot\.nightCount \+ ' 回'\]/.test(J) && /if \(ym === curYm\) paintLeaveRemain\(t, head\);/.test(J)
+    && /function leaveViewNow\(lv\) \{\s*try \{ return S\.leaveView\(S\.leaveOf\(lv \|\| leaveData, C, L, S\.todayOf\(Date\.now\(\)\)\)\); \}/.test(J)
+    && /function dTxtOf\(n, lv\) \{ return L\.daysHm \? L\.daysHm\(n, S\.dayMinOfLeave\(lv, C, L\)\) : n \+ ' 日'; \}/.test(J)
+    && /el\('span', null, '有給の残り'\)\); row\.appendChild\(el\('b', null, dTxtOf\(v\.remain, lv\)\)\)/.test(J) && /box\.appendChild\(el\('p', 'big', dTxt\(v\.remain\)\)\);/.test(J));
+  t('画面: 箱の有給の読み取りは1本にまとめ・有給のタブの控えには入れない（有給のタブは今までどおり押した時に読む）・閉じる時に捨てる・断りの文を出さない・時間単位の注意も添える',
+    /if \(!boxWait\) \{ var w = boxWait = call\('leave'/.test(J) && /monthWait = \{\}; boxLeave = null; boxWait = null;/.test(J) && /if \(r\.ok !== true\) \{ handleAuth\(r\); return null; \}\s*boxLeave = r;/.test(J)
+    && !/leaveData = r;[\s\S]*boxLeave = r;[\s\S]*leaveData = /.test(J) && /if \(!lv \|\| my !== gen \|\| viewYm !== ym0 \|\| !t\.isConnected\) return;/.test(J) && /S\.hourlyNoteOn\(lv\)\) t\.parentNode\.insertBefore\(el\('p', 'help', S\.HOURLY_NOTE\)/.test(J));
+  t('画面: 札は日付の横（.d の中の先頭の span）に textContent の部品で出す・色は今の変数だけ',
+    /var lb = el\('span', 'dl0', r\.label\);\s*\(r\.kinds \|\| \[\]\)\.forEach\(function \(k\) \{ lb\.appendChild\(el\('span', 'kd kd-' \+ k\.k, k\.t\)\); \}\);/.test(J)
+    && /\.kd-night \{ background: var\(--pri-l\); color: var\(--pri\); \}/.test(CSS) && /\.kd-off \{ background: var\(--ok-l\); color: var\(--ok\); \}/.test(CSS)
+    && !/\.kd[^{]*\{[^}]*#[0-9a-fA-F]{3,6}/.test(CSS));
+}
+
 say('\n' + (ng ? '✗ 失敗 ' + ng + ' 件' : '✓ 全部合格') + '（' + ok + ' 件合格）');
 process.exit(ng ? 1 : 0);

@@ -220,7 +220,7 @@ async function opened(opt) {
     const head = HTML.slice(0, HTML.indexOf('</head>'));
     const srcs = [...head.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]);
     t('head の部品は su-errors → su-devcfg → su-gas-auth → su-res-read → su-cfg-hint → su-perf → su-login-band → su-app-gate → su-facility → su-print → care-meeting-calc → su-resident-hop の順（su-cfg-hint は改善プロンプト第6弾の2・su-gas-auth と su-res-read は 2026-10-29・su-devcfg は統合 0080）', JSON.stringify(srcs) === JSON.stringify(
-      ['su-errors.js?v=2026-11-21', 'su-devcfg.js?v=2026-11-16', 'su-gas-auth.js?v=2026-11-17', 'su-res-read.js?v=2026-11-21', 'su-cfg-hint.js?v=2026-11-21.2', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-16', 'su-app-gate.js?v=2026-11-21', 'su-facility.js?v=2026-11-17', 'su-print.js?v=2026-11-13', 'care-meeting-calc.js?v=2026-11-17', 'su-resident-hop.js?v=2026-11-13']), srcs);
+      ['su-errors.js?v=2026-11-21', 'su-devcfg.js?v=2026-11-16', 'su-gas-auth.js?v=2026-11-17', 'su-res-read.js?v=2026-11-21', 'su-cfg-hint.js?v=2026-11-21.2', 'su-perf.js?v=2026-11-02', 'su-login-band.js?v=2026-11-16', 'su-app-gate.js?v=2026-11-28.2', 'su-facility.js?v=2026-11-28', 'su-print.js?v=2026-11-13', 'care-meeting-calc.js?v=2026-11-17', 'su-resident-hop.js?v=2026-11-13']), srcs);
     t('su-print.css を読み、su-errors.js より前にスクリプトが無い', /<link rel="stylesheet" href="su-print\.css\?v=2026-11-13">/.test(head) && head.indexOf('<script') === head.indexOf('<script src="su-errors.js'));
     t('CSP・拡大を禁止しない viewport・no-store・noindex・題', /data-su-csp/.test(head) && /<meta name="viewport" content="width=device-width,initial-scale=1">/.test(head) && !/user-scalable=no|maximum-scale=1[^.0-9]/.test(head) &&
       /Cache-Control" content="no-store"/.test(head) && /robots" content="noindex/.test(head) && /<title>担当者会議の記録<\/title>/.test(head));
@@ -1557,6 +1557,51 @@ async function opened(opt) {
     XH.ctx.impcLoadText_(['利用者名,開催日,結論', '架空 一郎,' + ymd(6) + ',' + EVIL, '架空 二郎,' + ymd(7) + ',' + EVIL + ',' + EVIL].join('\n'), ''); await XH.ctx.impcPlan_(); await settle();
     t('15-10 本文の頭・列の数の知らせも esc を通す', !bad(XH.el('cm-pick').innerHTML) && XH.el('cm-pick').innerHTML.indexOf('&lt;img src=x onerr') >= 0 && /列の数が見出しと違う（取り込みません）：1 件/.test(XH.el('cm-pick').innerHTML));
     t('15-9 innerHTML は増やしていない（選ぶ一覧 pickerHtml_ の中に描く）', /impHtml_\(\)\+impcHtml_\(\)/.test(cutF(S, 'pickerHtml_')));
+  }
+
+  {
+    /* 16. 録音から作った議事録のファイルを開く → 貼り付けと同じ道で振り分ける・端末に残さない */
+    const EVIL = '<img src=x onerror=alert(1)>';
+    const bad = (h) => /<img/i.test(h) || /<script/i.test(h) || /["']\s*on[a-z]+\s*=/i.test(h);
+    const T = await opened();
+    await T.ctx.openNew_('');
+    const h = T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur);
+    t('16 貼り付けの箱に「録音から作った議事録のファイル（.txt）を開く」とファイルの選び口（ラベル付き）を出す',
+      /<label class="fl" for="cm-paste-file">または、録音から作った議事録のファイル（\.txt）を開く<\/label><input type="file" id="cm-paste-file" accept="\.txt,text\/plain">/.test(h));
+    const file = (s) => ({ size: s.length * 3, text: () => Promise.resolve(s) });
+    const tgt = (f) => ({ id: 'cm-paste-file', files: f ? [f] : [], value: 'x', getAttribute() { return null; } });
+    const ev = tgt(file('\uFEFF◆利用者名：' + EVIL + '\n◆結論：ファイルの結論\n◆出席者：\n本人／架空　一郎'));
+    T.ctx.onEdChange_({ target: ev }); await settle(); await settle();
+    t('16 開いたファイルを各欄へ振り分ける（頭の BOM を外す）', T.ctx.ed.rec.conclusion === 'ファイルの結論' && T.ctx.ed.rec.sourceName === EVIL && T.ctx.ed.paste.charAt(0) === '◆', T.ctx.ed.rec);
+    t('16 選び口の値を空に戻す（同じファイルをもう一度選べる）', ev.value === '');
+    t('16 ファイルの中身を esc を通して描く', !bad(T.ctx.editorHtml_(T.ctx.ed, T.ctx.cur)));
+    const allowed = (w) => (w[1] === 'remove' && w[2] === 'cm_open_meeting') || (cmDueW(w) && w[1] === 'set');
+    t('16 開いたファイルの中身を端末に書かない', T.writes.every(allowed), T.writes);
+    const U = await opened();
+    await U.ctx.openNew_('');
+    U.ctx.onEdChange_({ target: tgt(file('   \n')) }); await settle();
+    t('16 空のファイルは「ファイルに文字がありません」と出して欄に入れない', /ファイルに文字がありません/.test(U.ctx.ed.fileMsg));
+    const uh = U.ctx.editorHtml_(U.ctx.ed, U.ctx.cur);
+    t('16 断りは選び口のすぐ下に出し、貼り付けの箱を開いたままにする', /<details class="paste" id="cm-paste-box" open>/.test(uh) && /開くと、そのまま各欄へ振り分けます<\/span><p class="msg ng" role="alert">⚠ ファイルに文字がありません<\/p><\/div><\/details>/.test(uh));
+    U.ctx.onEdChange_({ target: tgt({ size: CALC.INPUT_MAX * 4 + 1, text: () => Promise.resolve('◆結論：x') }) }); await settle();
+    t('16 大きすぎるファイルは読まずに断る', /ファイルが大きすぎます/.test(U.ctx.ed.fileMsg) && U.ctx.ed.rec.conclusion !== 'x');
+    U.ctx.onEdChange_({ target: tgt({ size: 10, text: () => Promise.reject(new Error('read')) }) }); await settle();
+    t('16 読めない時は「ファイルを読めませんでした」', /ファイルを読めませんでした/.test(U.ctx.ed.fileMsg));
+    U.ctx.onEdChange_({ target: tgt(file('����p����x')) }); await settle();
+    t('16 UTF-8 でないファイル（読めない文字）は「UTF-8 で保存したファイルを」と出し、貼り付け欄に入れない', /UTF-8 で保存したファイル/.test(U.ctx.ed.fileMsg) && !/�/.test(U.ctx.ed.paste));
+    U.ctx.onEdChange_({ target: tgt(file('◆結論：正しいファイル')) }); await settle(); await settle();
+    t('16 失敗の後に正しいファイルで振り分けたら、断りの文を消す', U.ctx.ed.fileMsg === '' && U.ctx.ed.rec.conclusion === '正しいファイル' && !/role="alert">⚠ ファイル/.test(U.ctx.editorHtml_(U.ctx.ed, U.ctx.cur)));
+    const R = await opened({ answer: false });
+    await R.ctx.openNew_('');
+    R.el('cm-paste').value = '◆結論：手で貼ったまだ振り分けていない文'; R.ctx.ed.paste = R.el('cm-paste').value;
+    R.ctx.onEdChange_({ target: tgt(file('◆結論：ファイルの文')) }); await settle(); await settle();
+    t('16 貼り付け欄に振り分けていない別の文がある時は確かめ、やめたら置き換えない', R.cnt.ask.some((x) => /貼り付け欄の文を置き換えますか/.test(x.title)) && R.ctx.ed.paste === '◆結論：手で貼ったまだ振り分けていない文' && R.ctx.ed.rec.conclusion !== 'ファイルの文');
+    const V = await opened();
+    await V.ctx.openNew_('');
+    let release; const slow = { size: 10, text: () => new Promise((ok) => { release = ok; }) };
+    V.ctx.onEdChange_({ target: tgt(slow) }); await settle();
+    const e0 = V.ctx.ed; V.ctx.ed = Object.assign({}, e0); release('◆結論：遅れて届いた'); await settle(); await settle();
+    t('16 読んでいる間に別の記録へ移ったら、届いた中身を捨てる', V.ctx.ed.rec.conclusion !== '遅れて届いた' && e0.rec.conclusion !== '遅れて届いた');
   }
 
   say('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');

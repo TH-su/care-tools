@@ -90,9 +90,47 @@
     if (a.kind === 'comp') return '代休' + (a.minutes != null ? ' 半日' : '') + (a.link_date ? '（' + mdOf(a.link_date) + ' の休日出勤）' : '');
     return '';
   }
+  /* 日の種類の札（2026-11-27・代表者の決定「推奨どおり」）。日付の横に出す短い種類名。新しい判定は作らず、computeMonth の日の行にある物だけを読む:
+     ・夜勤: 予定の塊の night（kintai-calc.js がシフトの記号の夜勤入りから作った印）
+     ・明け: その日に終わる夜勤の塊（前の日に入った夜勤・塊の予定の終わりの日付）がある日。明けだけの日は日の行が無いので、ほかに何かあって箱が出る日だけ。
+       期間の初日の明けは、前の夜勤が期間の前の日の側にあって日の行に出ないので分からない＝札を付けない
+     ・有給 / 有給 半日: 日の行の paidDays（1 か 0.5）・有給 時間: 休暇の hourly_paid
+     ・特別休暇 / 代休（半日はそれぞれ「 半日」）・振替休日（振替で休む日）: 日の行の absences（absLabel と同じ種類）
+     普段の勤務（夜勤でない予定）には札を付けない（仮置き・ai-tells 4）。分からない日は空。
+     nightEnds: { 'YYYY-MM-DD': true }（その日に終わる夜勤がある日・dayRows が作る）。返す: [{ k:'night'|'ake'|'off', t:文 }] */
+  function dayKinds(d, nightEnds) {
+    var out = [];
+    if (!d || typeof d !== 'object') return out;
+    var add = function (k, t) { if (!out.some(function (x) { return x.t === t; })) out.push({ k: k, t: t }); };
+    if (nightEnds && nightEnds[d.date]) add('ake', '明け');
+    (d.blocks || []).forEach(function (b) { if (b && b.night && b.schedStart != null) add('night', '夜勤'); });
+    if (d.paidDays === 1) add('off', '有給'); else if (d.paidDays === 0.5) add('off', '有給 半日');
+    (Array.isArray(d.absences) ? d.absences : []).forEach(function (a) {
+      if (!a || typeof a !== 'object') return;
+      var half = a.minutes != null ? ' 半日' : '';
+      if (a.kind === 'hourly_paid') add('off', '有給 時間');
+      else if (a.kind === 'special') add('off', '特別休暇' + half);
+      else if (a.kind === 'comp') add('off', '代休' + half);
+      else if (a.kind === 'swap' && a.role === 'off') add('off', '振替休日');
+    });
+    return out;
+  }
+  /* 夜勤の塊が終わる日（日をまたいだ分だけ）。終わりがちょうど0時の時は前の日（kintai-calc.js の jstDate(終わり−1) と同じ見方） */
+  function nightEndsOf(days) {
+    var ends = {};
+    (days || []).forEach(function (d) {
+      (d && d.blocks || []).forEach(function (b) {
+        if (!b || !b.night || b.schedEnd == null || !isFinite(b.schedEnd)) return;
+        var e = todayOf(b.schedEnd - 1);
+        if (e !== d.date) ends[e] = true;
+      });
+    });
+    return ends;
+  }
   function dayRows(month, C, today) {
     var p = month && month.people && month.people[0];
     if (!p) return [];
+    var ends = nightEndsOf(p.days);
     var FL = (C && C.FLAG_LABEL) || {};
     var types = [];
     try { types = C && typeof C.leaveTypesOf === 'function' ? C.leaveTypesOf(month.config) : []; } catch (e) { types = []; }
@@ -111,13 +149,15 @@
       if (d.paidDays > 0) sched.push(d.paidDays === 0.5 ? '有休（半日）' : '有休');
       var absences = (Array.isArray(d.absences) ? d.absences : []).map(function (a) { return absLabel(a, types); }).filter(Boolean);
       return { date: d.date, label: dayLabel(d.date), sched: sched.join('・'), punches: punches.join('　'), counted: counted.join('・'),
-        work: d.workMin > 0 ? minText(d.workMin) : '', workMin: d.workMin || 0, paid: d.paidDays || 0, flags: flags, absences: absences, future: !!(today && d.date > today) };
+        work: d.workMin > 0 ? minText(d.workMin) : '', workMin: d.workMin || 0, paid: d.paidDays || 0, flags: flags, absences: absences, future: !!(today && d.date > today),
+        kinds: dayKinds(d, ends) };
     });
   }
-  /* 月の合計（実働・出勤日数・有休の日数・残業） */
+  /* 月の合計（実働・出勤日数・有休の日数・残業・夜勤の回数）。
+     夜勤の回数は computeMonth の nightShiftCount（実際に働いた夜勤の塊の数・入りの日の月分で数える・先の予定の夜勤は入らない）をそのまま使う（2026-11-27） */
   function monthTotals(month) {
     var p = month && month.people && month.people[0], s = (p && p.sum) || {};
-    return { workMin: s.workMin || 0, workDays: s.workDays || 0, paidDays: s.paidDays || 0, overtimeMin: s.overtimeMin || 0 };
+    return { workMin: s.workMin || 0, workDays: s.workDays || 0, paidDays: s.paidDays || 0, overtimeMin: s.overtimeMin || 0, nightCount: s.nightShiftCount || 0 };
   }
   /* 締めてあるか・期間の表示 */
   function monthHead(data, C, ym) {
@@ -406,7 +446,7 @@
     isDate: isDate, isYm: isYm, todayOf: todayOf, ymOf: ymOf, nextYm: nextYm, prevYm: prevYm, addDays: addDays, hm: hm, minText: minText,
     dayLabel: dayLabel, ymdJa: ymdJa, ymJa: ymJa, shortOf: shortOf, codeFromHash: codeFromHash, pinProblem: pinProblem,
     currentYm: currentYm, dayRows: dayRows, monthTotals: monthTotals, monthHead: monthHead, computeOf: computeOf,
-    absLabel: absLabel, leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText,
+    absLabel: absLabel, dayKinds: dayKinds, nightEndsOf: nightEndsOf, leaveOf: leaveOf, leaveView: leaveView, buildRequest: buildRequest, requestRow: requestRow, errorText: errorText,
     hourlyNoteOn: hourlyNoteOn, leaveCfgOf: leaveCfgOf, dayMinOfLeave: dayMinOfLeave,
     NOTICE_TAIL: NOTICE_TAIL, punchesOn: punchesOn, noticeText: noticeText, noticeRows: noticeRows,
     LEAVE_TYPES: LEAVE_TYPES, LEAVE_JA: LEAVE_JA, ERR_LEAVE: ERR_LEAVE, leaveTypeOptions: leaveTypeOptions, leaveText: leaveText, leaveRequest: leaveRequest

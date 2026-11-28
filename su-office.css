@@ -1,0 +1,157 @@
+/* su-office.css — 事務所の管理画面（勤怠管理 kintai.html・給与 payroll.html）の見た目の仕上げ（2026-11-26 新設）
+ *
+ * ・「つむぐケアの型」（su-theme.css）の色味はそのまま。色は各画面が持つ色の名前（--ink・--line・--card・--th・--ok…）だけを使う＝暗い表示もそのまま効く。
+ * ・当てるのは画面だけ（全部 @media screen の中）。印刷の紙は変えない（印刷は画素一致を確かめる）。
+ * ・画面の <style> より後に効くよう、:root[data-su-theme] から書く（su-theme.css と同じ高さ）。
+ * ・HTML・保存・通信には触れない。手順の段階（.su-steps）は画面の JS が描き、この部品は見た目だけを持つ。
+ * 参考（2026-11-26 調査）: SmartHR Design System の Stepper（番号の丸を線でつなぎ、下に名前）・StatusLabel（色だけで伝えず名前を付ける）、
+ *   マネーフォワード クラウド勤怠の締めの3段（承認申請・上長承認・勤怠締め＝済んだ段を緑）、Gusto の給与の流れ（確認→確定の段を見せる）。
+ */
+@media screen {
+  /* ── 月分の帯: 「◀ 月分 ▶」をひとまとまりに、期間を添え、読み直すなどの操作は右へ寄せる ── */
+  :root[data-su-theme] .bar.su-mbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; background: var(--card); border-bottom: 1px solid var(--line); }
+  :root[data-su-theme] .su-mnav { display: inline-flex; align-items: stretch; gap: 0; }
+  :root[data-su-theme] .su-mnav .btn { border-radius: 0; }
+  :root[data-su-theme] .su-mnav > .btn:first-child { border-radius: 10px 0 0 10px; }
+  :root[data-su-theme] .su-mnav > .btn:last-child { border-radius: 0 10px 10px 0; }
+  :root[data-su-theme] .su-mnav label { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--card); font-weight: 600; }
+  :root[data-su-theme] .su-mnav input[type="month"] { min-height: 44px; border-color: transparent; background: transparent; font-weight: 700; font-variant-numeric: tabular-nums; }
+  :root[data-su-theme] .su-mact { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ── タブ: PC では上に貼り付けて、長い表を下へ送ってもタブがすぐ押せる ── */
+  @media (min-width: 900px) {
+    :root[data-su-theme] .tabs { position: sticky; top: 0; z-index: 30; box-shadow: 0 1px 0 var(--line); }
+  }
+
+  /* ── 数字は桁をそろえる（表・合計・箱の件数・給与の行） ── */
+  :root[data-su-theme] #g-main table, :root[data-su-theme] #p-main table, :root[data-su-theme] .num, :root[data-su-theme] .sumbar b, :root[data-su-theme] .hbox .hn { font-variant-numeric: tabular-nums; }
+
+  /* ── 状態の札: 角を丸め、高さをそろえる（色と言葉はそのまま） ── */
+  :root[data-su-theme] .tag { border-radius: 999px; padding: 2px 10px; font-weight: 600; }
+
+  /* ── 手順の段階（SmartHR の Stepper に倣う: 番号の丸を線でつなぎ、下に名前。済んだ段は ✓ と緑、今の段は藍で太字） ── */
+  :root[data-su-theme] .su-steps { list-style: none; display: flex; margin: 4px 0 14px; padding: 0; counter-reset: sustep; }
+  :root[data-su-theme] .su-steps li { flex: 1 1 0; position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 15px; color: var(--sub); counter-increment: sustep; min-width: 0; }
+  :root[data-su-theme] .su-steps li::before { content: counter(sustep); display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--muted); background: var(--card); color: var(--sub); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
+  :root[data-su-theme] .su-steps li + li::after { content: ""; position: absolute; top: 15px; right: 50%; width: 100%; height: 2px; background: var(--muted); }
+  :root[data-su-theme] .su-steps li.done::before { content: "✓"; border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+  :root[data-su-theme] .su-steps li.done + li::after, :root[data-su-theme] .su-steps li.done + li.done::after { background: var(--ok); }
+  :root[data-su-theme] .su-steps li.cur { color: var(--ink); font-weight: 700; }
+  :root[data-su-theme] .su-steps li.cur::before { border-color: var(--focus); background: var(--focus); color: var(--pri-tx); }
+  :root[data-su-theme] .su-steps li { text-wrap: balance; }   /* 幅390 で段の名前の最後の1字だけが折れないように（2026-11-26） */
+  :root[data-su-theme] .su-steps .su-st-s { display: block; font-size: 15px; font-weight: 400; color: var(--muted); }
+
+  /* ── 勤怠管理のホーム: 「なし」の箱を隣の長い箱の高さまで伸ばさない（空いた大きな箱を作らない） ── */
+  :root[data-su-theme] .hgrid { align-items: start; }
+
+  /* ── 給与の一覧: 見出しの行と各行を同じ幅の列にして、数字の右端をそろえる（PC・900px 以上。列の最小の合計は約 584px＝文字200% でも 1280 の幅に収まる） ── */
+  @media (min-width: 900px) {
+    :root[data-su-theme] .ihd, :root[data-su-theme] details.it > summary { display: grid; grid-template-columns: minmax(7rem, 1.4fr) repeat(4, minmax(5.5rem, 1fr)) minmax(5rem, 1fr); gap: 8px; flex-wrap: nowrap; }
+    :root[data-su-theme] .ihd span, :root[data-su-theme] details.it > summary .num, :root[data-su-theme] details.it > summary .nm { min-width: 0; }
+    :root[data-su-theme] .ihd { font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--line); padding: 6px 4px; }
+    :root[data-su-theme] .ihd span:last-child { text-align: left; }
+    :root[data-su-theme] details.it > summary > .tag { justify-self: start; }
+    :root[data-su-theme] details.it > summary:hover { background: var(--th); }
+  }
+  /* 合計の帯: 数字を大きく、項目の名前を小さく上に */
+  :root[data-su-theme] .sumbar > div { display: flex; flex-direction: column; gap: 2px; font-size: 15px; color: var(--sub); }
+  :root[data-su-theme] .sumbar b { font-size: 22px; color: var(--ink); }
+
+  /* ── 2026-11-26 の上積み ── */
+  /* 勤怠のホームの箱: 左の太い色の帯をやめ、状態は札（言葉）＋箱の地の淡い色＋並び（要対応 → 注意 → なし）で伝える。「なし」の箱は低くまとめる */
+  :root[data-su-theme] .hbox { border-left-width: 1px; border-left-color: var(--line); }
+  :root[data-su-theme] .hbox.warn { background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }
+  :root[data-su-theme] .hbox.alert { background: color-mix(in srgb, var(--ng-bg) 55%, var(--card)); }
+  :root[data-su-theme] .hbox.ok { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; padding-top: 8px; padding-bottom: 8px; }
+  /* 「なし」の箱は 題・札・件数 を1行に（題の行の箱 .ht をほどいて並べ直す・行の説明 .hl は下の行のまま） */
+  :root[data-su-theme] .hbox.ok .ht { display: contents; }
+  :root[data-su-theme] .hbox.ok .ht > span:first-child { order: 1; }
+  :root[data-su-theme] .hbox.ok .hv { order: 2; margin-top: 0; }
+  :root[data-su-theme] .hbox.ok .hn { order: 3; margin-left: auto; font-size: 22px; }
+  :root[data-su-theme] .hbox.ok .hl, :root[data-su-theme] .hbox.ok .hnote { order: 4; flex-basis: 100%; }
+  :root[data-su-theme] .hbox .hn { font-size: 26px; line-height: 1.1; }
+  :root[data-su-theme] .hbox .hn small { font-size: 15px; font-weight: 600; color: var(--sub); }
+  :root[data-su-theme] .hgrid > .hbox.alert, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.alert) { order: -2; }
+  :root[data-su-theme] .hgrid > .hbox.warn, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.warn) { order: -1; }
+  :root[data-su-theme] .hgrid > .hbox.ok, :root[data-su-theme] .hgrid > .hcell:has(> .hbox.ok) { order: 1; }
+
+  /* 勤怠のホームの「この月分の進み具合」（締めと出力と同じ3段＋今の段の主ボタン1つ） */
+  /* ホームでいちばん目に入る箱にする（次に押す物の箱・藍の 2px の枠と淡い地・2026-11-26） */
+  :root[data-su-theme] .hflow { border: 2px solid var(--focus); border-radius: 12px; background: color-mix(in srgb, var(--wk-bg) 60%, var(--card)); padding: 12px 14px; margin: 8px 0 16px; min-width: 0; }
+  :root[data-su-theme] .hflow h3 { font-size: 16px; margin: 0 0 10px; }
+  :root[data-su-theme] .hflow .su-steps { margin-bottom: 8px; }
+  :root[data-su-theme] .hflow .hf-act { justify-content: center; margin: 4px 0 0; }
+  :root[data-su-theme] .hflow .hf-why { font-size: 15px; color: var(--warn); overflow-wrap: anywhere; }
+  /* 締めと出力: 締めた後の「給与の画面でこの月分を計算する」が手順の3段目だと分かるように、段の名前を添える */
+  :root[data-su-theme] .su-next { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  :root[data-su-theme] .su-next-l { font-size: 15px; font-weight: 600; color: var(--sub); }
+
+  /* 給与: 勤怠管理から受け取った時の帯・警告のある人だけ */
+  :root[data-su-theme] .kin-band { font-size: 15px; margin: 0 0 10px; }
+  :root[data-su-theme] .wfilt { margin: 10px 0 6px; }
+
+  /* 次に押す1つだけを塗りに見せる: 印 su-sub の付いた塗りのボタンは、画面だけ枠のボタンに見せる（紙と class の pri は今のまま・2026-11-26） */
+  :root[data-su-theme] .btn.pri.su-sub { background-color: var(--card); color: var(--ink); border-color: var(--line); }
+  :root[data-su-theme] .btn.pri.su-sub:not(:disabled):hover { background-color: var(--th); }
+
+  /* 押した手応え: 地の色を短く変え、押した瞬間に少し縮む（押せない時は動かさない・動きを減らす設定では縮めない） */
+  :root[data-su-theme] .btn, :root[data-su-theme] .hdr-btn, :root[data-su-theme] .tabs button { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
+  :root[data-su-theme] .btn:not(.pri):not(:disabled):hover, :root[data-su-theme] .hdr-btn:hover, :root[data-su-theme] .tabs button:hover { background-color: var(--th); }
+  :root[data-su-theme] .hbox:not(.wait):hover { border-color: var(--muted); }
+  :root[data-su-theme] .btn:not(:disabled):active, :root[data-su-theme] .hdr-btn:active, :root[data-su-theme] .tabs button:active { transform: scale(.97); }
+  @media (prefers-reduced-motion: reduce) {
+    :root[data-su-theme] .btn, :root[data-su-theme] .hdr-btn, :root[data-su-theme] .tabs button { transition: none; }
+    :root[data-su-theme] .btn:not(:disabled):active, :root[data-su-theme] .hdr-btn:active, :root[data-su-theme] .tabs button:active { transform: none; }
+  }
+
+  /* 箱の間と区画の見出しの下をそろえる（影は足さない・枠線のまま） */
+  :root[data-su-theme] .cd { margin-bottom: 14px; }
+  :root[data-su-theme] .cd > h2 { margin-bottom: 10px; }
+  /* 空の状態: 中央に寄せ、上下を広く */
+  :root[data-su-theme] .cd.empty { text-align: center; padding: 32px 16px; color: var(--sub); }
+  :root[data-su-theme] .cd.empty p { margin: 14px 0 0; }
+
+  /* freee の取り込み: 期間の1行は画面では本文と同じ大きさで太字だけ（style 直書きの 18px を画面だけ上書き・紙はこの箱ごと出ない） */
+  :root[data-su-theme] #g-fi > p[style] { font-size: inherit !important; }
+  :root[data-su-theme] #g-fi input[type="file"] { max-width: 100%; min-width: 0; }
+
+  @media (max-width: 700px) {
+    :root[data-su-theme] .su-mact { margin-left: 0; }
+    /* 給与の一覧（iPhone の幅）: 1行目に氏名・差引（太字）・警告の札、2行目に総支給・控除・前月差を小見出しつきで横に（2026-11-26） */
+    /* 1行目と2行目で別の割り方にするため flex の折り返しにする（summary::after を改行に使う・DOM と data-l はそのまま・2026-11-27） */
+    :root[data-su-theme] details.it > summary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 2px; padding-left: 2px; padding-right: 2px; }
+    /* 一覧の箱だけ左右の余白を詰め、2行目の3つ（7桁まで）が小見出しと同じ行に収まる幅を作る（ほかの箱は今のまま） */
+    :root[data-su-theme] #p-main .cd:has(> details.it) { padding-left: 8px; padding-right: 8px; }
+    :root[data-su-theme] details.it > summary::after { content: ""; order: 4; flex-basis: 100%; height: 0; }
+    :root[data-su-theme] details.it > summary .nm { order: 1; flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+    :root[data-su-theme] details.it > summary .num[data-l="差引"] { order: 2; flex: none; font-size: 17px; }
+    :root[data-su-theme] details.it > summary .num[data-l="差引"]::before { content: none; }
+    :root[data-su-theme] details.it > summary > .tag { order: 3; flex: none; }
+    /* 2行目: 総支給は中身の幅で左・控除は残りの中ほど・前月差は中身の幅で右端（狭い幅では小見出しの下に折れてよい） */
+    :root[data-su-theme] details.it > summary .num[data-l="総支給"] { order: 5; flex: 0 1 auto; justify-content: flex-start; }
+    :root[data-su-theme] details.it > summary .num[data-l="控除"] { order: 6; flex: 1 1 auto; justify-content: center; }
+    :root[data-su-theme] details.it > summary .num[data-l="前月差"] { order: 7; flex: 0 1 auto; margin-left: auto; justify-content: flex-end; }
+    :root[data-su-theme] details.it > summary .num:not([data-l="差引"]) { min-width: 0; flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 3px; font-size: 15px; color: var(--sub); white-space: nowrap; }
+    /* 右下の「不具合を報告」が末尾の中身に被らないよう、本文の下を空ける（2026-11-26） */
+    :root[data-su-theme] #g-main, :root[data-su-theme] #p-main { padding-bottom: 96px; }
+    /* iPhone 幅: 「◀ 月分 ▶」を1行に収める（「月分」の字は欄の読み上げ名 aria-label に任せて見せない・欄の字は 16px） */
+    :root[data-su-theme] .su-mnav { width: 100%; }
+    :root[data-su-theme] .su-mnav .btn { white-space: nowrap; padding: 0 10px; }
+    :root[data-su-theme] .su-mnav label { flex: 1 1 auto; justify-content: center; font-size: 0; gap: 0; padding: 0 4px; }
+    :root[data-su-theme] .su-mnav input[type="month"] { font-size: 16px; width: 100%; min-width: 0; }
+  }
+  /* 幅320・文字200% 相当: 月分の欄を上の段に、◀ ▶ を下の段に分ける（横にはみ出さない） */
+  @media (max-width: 420px) {
+    :root[data-su-theme] .su-mnav { flex-wrap: wrap; }
+    :root[data-su-theme] .su-mnav label { order: -1; flex: 1 1 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+    :root[data-su-theme] .su-mnav > .btn { flex: 1 1 0; min-width: 0; white-space: normal; }
+    :root[data-su-theme] .su-mnav > .btn:first-child { border-radius: 0 0 0 10px; }
+    :root[data-su-theme] .su-mnav > .btn:last-child { border-radius: 0 0 10px 0; }
+    /* 手順の段は縦に並べ、全部の段の名前と状態を読めるようにする（丸を左・名前と状態を右・丸どうしを縦の線でつなぐ・読み上げの順と名前は同じ・2026-11-26） */
+    :root[data-su-theme] .su-steps { flex-direction: column; gap: 10px; }
+    :root[data-su-theme] .su-steps li { flex: none; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 10px; row-gap: 0; text-align: left; font-size: 15px; }
+    :root[data-su-theme] .su-steps li::before { flex: none; }
+    :root[data-su-theme] .su-steps li + li::after { top: -14px; left: 14px; right: auto; width: 2px; height: 18px; }
+    :root[data-su-theme] .su-steps .su-st-s { display: inline; font-size: 15px; }
+  }
+}

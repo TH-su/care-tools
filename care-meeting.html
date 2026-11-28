@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-8bWApAIN4RqFAPt4mp8BAjaZva0yUZ1nQ86YrUUw1+4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" data-su-csp content="default-src 'self'; script-src 'self' 'sha256-FGtMlMtzwt4ExycMziqPry+Jh+xicdHXUvXBPH3PJqQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://jhbernqawjrzqwrmqrih.supabase.co wss://jhbernqawjrzqwrmqrih.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
 <!-- 拡大縮小を禁止しない（弱視の職員が読めなくなるため。HIG/WCAG準拠） -->
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- 会議の記録（要配慮の情報）を扱うためキャッシュ無効 -->
@@ -19,8 +19,8 @@
 <script src="su-cfg-hint.js?v=2026-11-21.2"></script>
 <script src="su-perf.js?v=2026-11-02"></script>
 <script src="su-login-band.js?v=2026-11-16"></script>
-<script src="su-app-gate.js?v=2026-11-21"></script>
-<script src="su-facility.js?v=2026-11-17"></script>
+<script src="su-app-gate.js?v=2026-11-28.2"></script>
+<script src="su-facility.js?v=2026-11-28"></script>
 <script src="su-print.js?v=2026-11-13"></script>
 <script src="care-meeting-calc.js?v=2026-11-17"></script>
 <script src="su-resident-hop.js?v=2026-11-13"></script>
@@ -148,6 +148,8 @@ h3{font-size:1.0625rem; margin:14px 0 6px}
 .paste{border:1px solid var(--g3); border-radius:10px; padding:8px 12px; margin:0 0 12px; background:var(--g0)}
 .paste summary{min-height:44px; padding:10px 0; font-weight:700; cursor:pointer}
 .paste-row{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px}
+.paste-file{margin-top:12px; padding-top:8px; border-top:1px solid var(--g3)}
+.paste-file input[type="file"]{display:block; min-height:44px; max-width:100%; margin:4px 0}
 .pn{border:1px solid var(--warn-tx); background:var(--warn-bg); border-radius:10px; padding:8px 12px; margin:0 0 12px}
 .pn.clean{border-color:var(--ok); background:var(--ok-l)}
 .pn h3{margin:0 0 4px}
@@ -1373,9 +1375,10 @@ function editorHtml_(e,c){
   h+=conflictHtml_(e);
   if(e.view) return h+viewHtml_(r)+actionsHtml_(e);
   h+='<fieldset class="ed-fs" id="cm-fs"'+(e.busy?' disabled':'')+'><legend class="sr">記録の欄</legend>';
-  h+='<details class="paste" id="cm-paste-box"'+(e.mode==='new'&&!e.parse?' open':'')+'><summary>議事録を貼り付けて、各欄へ振り分ける</summary>'+
+  h+='<details class="paste" id="cm-paste-box"'+((e.mode==='new'&&!e.parse)||e.fileMsg?' open':'')+'><summary>議事録を貼り付けて、各欄へ振り分ける</summary>'+
     '<label class="fl" for="cm-paste">NotebookLM の議事録（「◆欄名：」の印つき）</label><textarea id="cm-paste" rows="6">\n'+esc(e.paste)+'</textarea>'+
-    '<div class="paste-row"><button type="button" class="btn pri" data-act="parse">振り分ける</button><span class="fhint">貼った文章は端末に残しません</span></div></details>';
+    '<div class="paste-row"><button type="button" class="btn pri" data-act="parse">振り分ける</button><span class="fhint">貼った文章は端末に残しません</span></div>'+
+    '<div class="paste-file"><label class="fl" for="cm-paste-file">または、録音から作った議事録のファイル（.txt）を開く</label><input type="file" id="cm-paste-file" accept=".txt,text/plain"><span class="fhint">開くと、そのまま各欄へ振り分けます</span>'+(e.fileMsg?'<p class="msg ng" role="alert">⚠ '+esc(e.fileMsg)+'</p>':'')+'</div></details>';
   h+=parseNoticeHtml_(e.parse);
   h+=guessHtml_(e.guess);
   h+='<div class="nb" id="cm-nb"><div class="fi"><label for="cm-f-sourceName">議事録の利用者名</label><input id="cm-f-sourceName" type="text" data-f="sourceName" value="'+esc(r.sourceName)+'" autocomplete="off" aria-describedby="cm-cnt-sourceName">'+
@@ -1736,7 +1739,7 @@ function writeOp_(what,body,flow){
 function adopt_(e,row,keep){
   e.mode='edit'; e.meetingId=String(row.meetingId); e.baseRev=Number(row.rev)||0; e.clientKey='';
   e.status=row.status!=='draft'?'final':'draft'; e.view=e.status==='final';
-  e.base=recOf_(row); e.rec=(keep&&!e.view)?keep:recOf_(row); e.touched=false; e.conflict=null; e.parse=null; e.guess=null; e.paste=''; e.nameNote=false;
+  e.base=recOf_(row); e.rec=(keep&&!e.view)?keep:recOf_(row); e.touched=false; e.conflict=null; e.parse=null; e.guess=null; e.paste=''; e.fileMsg=''; e.nameNote=false;
   saveOpenMeeting_(e.meetingId);
 }
 /* 新しい記録の保存が「前に送った分が保存されていた」と分かったが、その行の版が 1 より大きい（ほかの端末で手が入った）時。
@@ -1913,6 +1916,37 @@ function parsePlan_(rec,res){
   });
   return {over:over,keep:keep};
 }
+/* 録音から作った議事録のファイル（議事録を作る道具の「結果」の .txt）を貼り付け欄へ読み、貼り付けと同じ道（cmParse_）で振り分ける。
+   読んだ文字は貼り付けと同じくメモリだけで、端末には残さない。読んでいる間に別の記録へ移ったら捨てる */
+function pasteFile_(f){
+  if(!ed||ed.view||ed.busy||!f) return Promise.resolve(false);
+  var e=ed;
+  var fail=function(m){ e.fileMsg=m; paintEditor_(); return false; };
+  if(Number(f.size)>CareMeetingCalc.INPUT_MAX*4) return Promise.resolve(fail('ファイルが大きすぎます。1回の会議の議事録のファイルを選んでください'));
+  var rd=typeof f.text==='function'?Promise.resolve().then(function(){ return f.text(); }):new Promise(function(ok,ng){
+    var FR=window.FileReader; if(!FR) return ng(new Error('nofr'));
+    var r=new FR(); r.onload=function(){ ok(String(r.result||'')); }; r.onerror=function(){ ng(new Error('read')); }; r.readAsText(f,'utf-8');
+  });
+  return rd.then(function(text){
+    if(ed!==e||e.view||e.busy) return false;
+    text=String(text||'').replace(/^\uFEFF/,'');
+    if(!text.trim()) return fail('ファイルに文字がありません');
+    /* UTF-8 でないファイル（Shift_JIS など）は読めない文字（U+FFFD）になる。化けた文を欄へ入れない */
+    if(/\uFFFD/.test(text)) return fail('ファイルの文字が読めません（UTF-8 で保存したファイルを選んでください）');
+    var ta=$('cm-paste'), cur=ta?ta.value:e.paste;
+    /* 貼り付け欄にまだ振り分けていない別の文がある時は、置き換える前に確かめる（黙って捨てない） */
+    var go=(String(cur||'').trim()&&String(cur).trim()!==text.trim())?askConfirm_('貼り付け欄の文を置き換えますか？',['貼り付け欄に、まだ振り分けていない文があります。ファイルの中身で置き換えます。'],'置き換える',false):Promise.resolve(true);
+    return go.then(function(ok){
+      if(!ok||ed!==e||e.view||e.busy) return false;
+      e.fileMsg=''; e.paste=text; var t2=$('cm-paste'); if(t2) t2.value=text;
+      return cmParse_();
+    });
+  },function(err){
+    if(ed!==e) return false;
+    cmNote_('議事録のファイル', err);
+    return fail('ファイルを読めませんでした。もう一度選んでください');
+  });
+}
 function cmParse_(){
   if(!ed||ed.view||ed.busy) return Promise.resolve(false);
   var e=ed, ta=$('cm-paste'), text=ta?ta.value:e.paste;
@@ -2004,6 +2038,7 @@ function onEdInput_(ev){
 }
 function onEdChange_(ev){
   var t=ev.target; if(!ed||ed.view||!t||!t.getAttribute) return;
+  if(t.id==='cm-paste-file'){ var pf=t.files&&t.files[0]; t.value=''; pasteFile_(pf); return; }
   var ak=t.getAttribute('data-apk'); if(ak!=null){ attPick_(String(ak),t.checked===true); return; }
   var gi=t.getAttribute('data-gi'); if(gi!=null){ guessPick_(parseInt(gi,10),t.checked===true); return; }
   var gk=t.getAttribute('data-gk'); if(gk!=null){ guessKey_(parseInt(gk,10),String(t.value)); return; }

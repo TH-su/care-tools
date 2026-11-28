@@ -66,9 +66,10 @@
   var idleTimer = null;
   function lock(text) {
     gen++;
-    open = null; months = {}; curYm = null; viewYm = null; leaveData = null; reqRows = null; lastReq = null; notices = null; monthWait = {};
+    open = null; months = {}; curYm = null; viewYm = null; leaveData = null; reqRows = null; lastReq = null; notices = null; monthWait = {}; boxLeave = null; boxWait = null;
     if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     ['days-head', 'days-list', 'leave-box', 'req-list', 'nt-box'].forEach(function (id) { clear($(id)); });
+    clear($('need-box')); $('need-box').hidden = true;   /* 確かめが要る日の帯も捨てる（2026-11-27） */
     $('nt-box').hidden = true; $('rq-lv-remain').textContent = '';
     $('who').textContent = '';
     $('f-req').reset(); msg('rq-msg', ''); msg('app-msg', '');
@@ -210,33 +211,62 @@
   async function loadDays(ym) {
     var my = gen, today = S.todayOf(Date.now());
     if (!(await ensureCur(my, today))) return;
-    viewYm = ym || curYm;
+    var want = ym || curYm;   /* 問い合わせを出した時の月分（答えが遅れて届いた時に、別の月分の見出しで描かない・反証レビュー 2026-11-28） */
+    viewYm = want;
     $('b-cur').setAttribute('aria-pressed', viewYm === curYm ? 'true' : 'false');
     $('b-prev').setAttribute('aria-pressed', viewYm !== curYm ? 'true' : 'false');
-    var d = await getMonth(viewYm, my);
-    if (!d || my !== gen) return;
-    paintDays(d, viewYm, today);
+    var d = await getMonth(want, my);
+    if (!d || my !== gen || viewYm !== want) return;   /* 待つ間に別の月分へ切り替えた時は捨てる */
+    paintDays(d, want, today);
+  }
+  /* 確かめが要る日（2026-11-27）: 日の札（S.dayRows の flags）のうち、計算の部品の要確認（C.REVIEW）の札がある日。確認済みの札がある日は数えない。
+     札の名前は計算の部品の FLAG_LABEL をそのまま使う（判定を2つに分けない）。返す: [{ date, label }] */
+  function needDays(rows) {
+    var rv = (C && C.REVIEW) || {}, fl = (C && C.FLAG_LABEL) || {}, labels = {};
+    Object.keys(rv).forEach(function (k) { if (fl[k]) labels[fl[k]] = 1; });
+    var chk = fl.checked;
+    return rows.filter(function (r) { return !r.future && r.flags.some(function (f) { return labels[f]; }) && r.flags.indexOf(chk) < 0; });
+  }
+  /* 上に貼り付く見出しの高さを CSS の --hdr-h に写す（送った先の日の箱が見出しの下に隠れないように・見出しが2段に折れても追従・審査役の指摘 2026-11-27） */
+  function syncHdr() { var h = document.querySelector('.hdr'); if (h) document.documentElement.style.setProperty('--hdr-h', Math.ceil(h.getBoundingClientRect().height) + 'px'); }
+  try { if (window.ResizeObserver) new ResizeObserver(syncHdr).observe(document.querySelector('.hdr')); else window.addEventListener('resize', syncHdr); } catch (e) { /* 測れない端末は CSS の既定の値 */ }
+  function md(date) { return (+date.slice(5, 7)) + '/' + (+date.slice(8, 10)); }
+  function paintNeed(need) {
+    var box = $('need-box');
+    clear(box);
+    box.hidden = !need.length;
+    if (!need.length) return;
+    var shown = need.slice(0, 3).map(function (r) { return md(r.date); }).join('・') + (need.length > 3 ? ' ほか ' + (need.length - 3) + ' 日' : '');
+    var b = el('button', 'need', '確かめが要る日が ' + need.length + ' 日あります（' + shown + '）');
+    b.type = 'button';
+    b.addEventListener('click', function () { var t = document.querySelector('#days-list .day[data-date="' + need[0].date + '"]'); if (t) { syncHdr(); t.scrollIntoView({ block: 'start', behavior: 'smooth' }); try { t.focus({ preventScroll: true }); } catch (e) { /* 焦点を移せない時は送るだけ */ } } });
+    box.appendChild(b);
   }
   function paintDays(d, ym, today) {
     var head = $('days-head'), list = $('days-list');
-    clear(head); clear(list);
+    clear(head); clear(list); paintNeed([]);
     var m;
     try { m = S.computeOf(d, ym, C, Date.now()); } catch (e) { msg('app-msg', '勤怠を数えられませんでした。ページを読み込み直してください。', 'ng'); return; }
     var h = S.monthHead(d, C, ym), tot = S.monthTotals(m);
     head.appendChild(el('h2', null, h.label));
     if (h.locked) head.appendChild(el('p', 'msg ok', 'この月分は締めてあります。直しが要る時は事務所に伝えてください。'));
-    if (S.draftNote(h)) head.appendChild(el('p', 'msg warn', S.draftNote(h)));   /* 締めていない月分の数字は目安（反証レビュー 2026-11-21） */
+    var rows = S.dayRows(m, C, today);
+    if (!rows.length) { head.appendChild(el('p', 'muted empty', 'この月分の予定と打刻はまだありません。')); return; }   /* 予定も打刻も無い月は、0 の並ぶ合計を出さずに空の箱だけ（2026-11-27） */
+    if (S.draftNote(h)) head.appendChild(el('p', 'help draft-note', S.draftNote(h)));   /* 締めていない月分の数字は目安（反証レビュー 2026-11-21）。目立たせない注記にした（2026-11-27） */
+    paintNeed(needDays(rows));
     var t = el('div', 'tot');
-    [['実働の合計', S.minText(tot.workMin)], ['出勤の日数', tot.workDays + ' 日'], ['有休', tot.paidDays + ' 日'], ['予定を超えた時間', S.minText(tot.overtimeMin)]].forEach(function (x) {
+    [['実働の合計', S.minText(tot.workMin)], ['出勤の日数', tot.workDays + ' 日'], ['夜勤の回数', tot.nightCount + ' 回'], ['有休', tot.paidDays + ' 日'], ['予定を超えた時間', S.minText(tot.overtimeMin)]].forEach(function (x) {
       var row = el('div'); row.appendChild(el('span', null, x[0])); row.appendChild(el('b', null, x[1])); t.appendChild(row);
     });
     head.appendChild(t);
+    if (ym === curYm) paintLeaveRemain(t, head);   /* 有給の残り（今日の時点）は今月分の箱だけに出す（仮置き・2026-11-27） */
     head.appendChild(el('p', 'help', '「数えた時刻」は勤怠として数える時刻です（早出・残業は事務所が認めた分だけ数えます）。違っていたら「申請」から直しを出してください。'));
-    var rows = S.dayRows(m, C, today);
-    if (!rows.length) { list.appendChild(el('p', 'muted', 'この月分の予定と打刻はまだありません。')); return; }
     rows.forEach(function (r) {
       var c = el('div', 'day'), top = el('div', 'd');
-      top.appendChild(el('span', null, r.label)); top.appendChild(el('span', 'w', r.work ? '実働 ' + r.work : ''));
+      c.setAttribute('data-date', r.date); c.tabIndex = -1;   /* 確かめが要る日の帯から送る先（画面の中だけの印） */
+      var lb = el('span', 'dl0', r.label);
+      (r.kinds || []).forEach(function (k) { lb.appendChild(el('span', 'kd kd-' + k.k, k.t)); });   /* 日の種類の札（夜勤・明け・有給など・普段の勤務には付けない・2026-11-27） */
+      top.appendChild(lb); top.appendChild(el('span', 'w', r.work ? '実働 ' + r.work : ''));
       c.appendChild(top);
       var dl = el('dl');
       [['予定', r.sched || 'なし'], ['打刻', r.punches || 'なし'], ['数えた時刻', r.counted || '—']].forEach(function (x) { dl.appendChild(el('dt', null, x[0])); dl.appendChild(el('dd', null, x[1])); });
@@ -252,6 +282,8 @@
   // ── 有給 ──
   /* 日数の文字（半日きざみは「9.5 日」・時間単位の端数は「9 日 6 時間」・管理画面の dTxt と同じ L.daysHm） */
   function dTxt(n) { return L.daysHm ? L.daysHm(n, S.dayMinOfLeave(leaveData, C, L)) : n + ' 日'; }
+  /* 今月の箱の有給の残りの文字（dTxt と同じ式・1日の時間は箱が読んだ有給の答えから・2026-11-27） */
+  function dTxtOf(n, lv) { return L.daysHm ? L.daysHm(n, S.dayMinOfLeave(lv, C, L)) : n + ' 日'; }
   async function getLeave(my) {
     if (leaveData) return leaveData;
     var r = await call('leave', { key: key, open: open });
@@ -260,26 +292,56 @@
     leaveData = r;
     return r;
   }
+  /* 有給のタブと同じ数え方・同じ出し方（S.leaveOf → S.leaveView・dTxt）。数えられない時は null */
+  function leaveViewNow(lv) {
+    try { return S.leaveView(S.leaveOf(lv || leaveData, C, L, S.todayOf(Date.now()))); } catch (e) { return null; }
+  }
+  /* 今月の箱の有給の答え（2026-11-27）。有給のタブの控え（leaveData）があればそれを使い、無ければ箱のためだけに読む（読んでいる最中は1本にまとめる）。
+     有給のタブの控えには入れない（有給のタブは今までどおり押した時に読む＝鍵の取り消しにそのタブの通信で気付く）。閉じた時に捨てる。
+     読めない時は断りの文を出さない（行を出さないだけ・鍵の断りは今までどおり） */
+  var boxLeave = null, boxWait = null;
+  async function getBoxLeave(my) {
+    if (leaveData) return leaveData;
+    if (boxLeave) return boxLeave;
+    if (!boxWait) { var w = boxWait = call('leave', { key: key, open: open }); w.then(function () { if (boxWait === w) boxWait = null; }); }
+    var r = await boxWait;
+    if (my !== gen) return null;
+    if (r.ok !== true) { handleAuth(r); return null; }
+    boxLeave = r;
+    return r;
+  }
+  /* 今月の箱に「有給の残り」の行を足す（2026-11-27）。月の描画は待たせず、届いた時に閉じていない・同じ月分を見ている時だけ入れる。
+     読めない・数えられない時は行を出さない。時間単位の分が残りに入っていない間は、有給のタブと同じ注意を添える */
+  async function paintLeaveRemain(t, head) {
+    var my = gen, ym0 = viewYm, lv = await getBoxLeave(my);
+    if (!lv || my !== gen || viewYm !== ym0 || !t.isConnected) return;
+    var v = leaveViewNow(lv);
+    if (!v) return;
+    var row = el('div'); row.appendChild(el('span', null, '有給の残り')); row.appendChild(el('b', null, dTxtOf(v.remain, lv)));
+    var after = t.children[4] || null;   /* 「有休」（今月使った日数）の次・「予定を超えた時間」の前に置く */
+    t.insertBefore(row, after);
+    if (S.hourlyNoteOn(lv)) t.parentNode.insertBefore(el('p', 'help', S.HOURLY_NOTE), t.nextSibling);
+  }
   async function loadLeave() {
     var my = gen, box = $('leave-box');
     if (!leaveData) {
       clear(box); box.appendChild(el('p', 'muted', '有給の記録を読んでいます…'));
       if (!(await getLeave(my))) { if (my === gen) clear(box); return; }
     }
-    var v;
-    try { v = S.leaveView(S.leaveOf(leaveData, C, L, S.todayOf(Date.now()))); } catch (e) { v = null; }
+    var v = leaveViewNow();
     clear(box);
     if (!v) { box.appendChild(el('p', 'msg ng', '有給を数えられませんでした。ページを読み込み直してください。')); return; }
     box.appendChild(el('h2', null, '有給の残り'));
     box.appendChild(el('p', 'big', dTxt(v.remain)));
     /* 時間単位の有休を使う施設で、受け口がまだ休暇の行（absences）を返さない間だけ（反証レビュー 2026-11-21・v6 で返す後は残りから引いてあるので出さない） */
-    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));
+    if (S.hourlyNoteOn(leaveData)) box.appendChild(el('p', 'msg warn', S.HOURLY_NOTE));   /* 大きく出ている残りが時間単位で使った分だけ多く見える知らせなので、黄の箱に戻す（審査役の指摘 2026-11-27） */
     if (v.soon) box.appendChild(el('p', 'msg warn', 'いちばん早く消える残り: ' + v.soon.days + ' 日（' + v.soon.expires + ' まで）'));
-    if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'msg warn' : 'muted', v.ob5));
+    if (v.ob5) box.appendChild(el('p', v.ob5Warn ? 'help em' : 'muted', v.ob5));
     if (v.lots.length) {
       box.appendChild(el('h2', 'sh', '付与ごとの残りと期限'));
       var ul = el('ul', 'rows');
-      v.lots.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', null, '残り ' + dTxt(l.remain) + '・' + l.expires + ' まで')); ul.appendChild(li); });
+      /* 1行目に付与日（左）と残り（右）、2行目に期限（日付は折らない・2026-11-27） */
+      v.lots.forEach(function (l) { var li = el('li', 'lot'); li.appendChild(el('span', 'lot-g', l.granted + ' の付与（' + l.days + ' 日）')); li.appendChild(el('b', 'lot-r', '残り ' + dTxt(l.remain))); var e = el('span', 'lot-e', '期限 '); e.appendChild(el('span', 'nw', l.expires)); e.appendChild(document.createTextNode(' まで')); li.appendChild(e); ul.appendChild(li); });
       box.appendChild(ul);
     }
     if (v.next) box.appendChild(el('p', 'muted', '次の付与: ' + v.next.date + '（' + v.next.days + ' 日）'));
