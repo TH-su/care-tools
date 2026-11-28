@@ -3814,6 +3814,7 @@
       else if (a === 'work-open') openWork();
       else if (a === 'work-save') saveWork(b);
       else if (a === 'sched-open') openSched(tab === 'person' ? selStaff : null, selDate);
+      else if (a === 'sched-cell') openSched(b.getAttribute('data-sid'), b.getAttribute('data-date'));   /* シフト表の升から（kintai-list.js・2026-11-28） */
       else if (a === 'sched-day') { var sd = b.getAttribute('data-sid'), dd2 = b.getAttribute('data-date'); if (!dirty() || confirm('保存していない直しがあります。閉じて予定の窓を開きますか？')) { closeDlg(); openSched(sd, dd2); } }
       else if (a === 'sched-save') saveSched(b);
       else if (a === 'fx-open') openFixed(b.getAttribute('data-sid') || selStaff);

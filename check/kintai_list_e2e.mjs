@@ -88,6 +88,15 @@ try {
     t('升は予定の時刻（HH:MM-HH:MM）か「所定休日」か「有休」', cells.length > 0 && cells.every((x) => /^(\d{1,2}:\d{2}-\d{1,2}:\d{2})(・\d{1,2}:\d{2}-\d{1,2}:\d{2})*$|^所定休日$|^有休$/.test(x)), cells.slice(0, 5));
     t('予定の時刻の升がある', cells.some((x) => /:/.test(x)));
     await page.screenshot({ path: path.join(OUT, 'shift_pc.png'), fullPage: false });
+    /* 升を押すと出勤予定を直す窓がその人・その日で開く（2026-11-28） */
+    const b0 = page.locator('#g-main table.kl-shift tbody td.kl-s button[data-act="sched-cell"]').nth(2);
+    const want = { sid: await b0.getAttribute('data-sid'), date: await b0.getAttribute('data-date') };
+    t('升はボタン（読み上げの名前に「予定を直す」）', /の予定を直す$/.test(await b0.getAttribute('aria-label') || ''), await b0.getAttribute('aria-label'));
+    await b0.click();
+    await page.waitForSelector('dialog[open]', { timeout: 10000 });
+    const dlg = await page.evaluate(() => { const d = document.querySelector('dialog[open]'); const sel = d.querySelector('select'); const dt = d.querySelector('input[type="date"], select[id*="date"], input[id*="date"]'); return { title: d.textContent.slice(0, 60), sid: sel ? sel.value : null, date: dt ? dt.value : null }; });
+    t('窓の題は「出勤予定を直す・入れる」・押した人と日が選ばれている', /出勤予定を直す・入れる/.test(dlg.title) && dlg.sid === want.sid && (dlg.date === want.date || dlg.date === null), [dlg, want]);
+    await page.keyboard.press('Escape');
     t('画面のエラー 0', errs.length === 0, errs);
     await ctx.close();
   }
