@@ -71,6 +71,20 @@
   function sync(t) { $('p-sync').textContent = t || ''; }
   function isField() { try { return localStorage.getItem('su_device_role') === 'field'; } catch (_) { return false; } }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+  /* ログインの印（supabase-js の sb-…-auth-token）の利用者 id。読むだけ（書かない・残さない）。読めない時は '' */
+  /* 給与が使う共通 DB（su-auth.js の接続先）のログインの印だけを見る。同じ公開元のほかのアプリ（厨房など）が別の Supabase に
+     ログインした印（sb-<別の番号>-auth-token）は拾わない（反証レビュー 2026-11-28） */
+  var SESS_KEY = 'sb-jhbernqawjrzqwrmqrih-auth-token', bootUid = null, leaving = false;
+  function sessUid() {
+    try {
+      var o = JSON.parse(localStorage.getItem(SESS_KEY) || 'null');
+      return o && o.user && o.user.id ? String(o.user.id) : '';
+    } catch (_) {}
+    return '';
+  }
+  /* ほかのアカウントに替わった時は読み込み直す（前の人の計算をメモリにも残さない・離れる時の確かめは出さない） */
+  function swapReload() { leaving = true; location.reload(); }
+  function swapped() { var u = sessUid(); return bootUid !== null && !!u && u !== bootUid; }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
   /* 勤怠管理との行き来（2026-11-25 本人指示）: 勤怠管理から ?ym=YYYY-MM で来た時だけ、その月分で開く（形で確かめ、違えば今月）。
      読んだら URL から消す。月分は端末に残さない（今までどおり再読み込みは今月で開く） */
@@ -2559,6 +2573,7 @@
     var done = hold(btn, '確かめています…');
     Promise.resolve().then(function () { return window.SUAuth.check({ fresh: true }); }).then(function (st) {
       done();
+      if (swapped()) { swapReload(); return; }   /* 隠している間にほかのアカウントに替わった */
       if (!st || st.status !== window.SUAuth.STATUS.OK || st.role !== role || st.aal !== 'aal2') { location.reload(); return; }
       masked = false; lastAct = Date.now();
       /* 隠している間に名簿から外された・権限が変わったかを DB に確かめ直す（42501 なら覆いに倒れる）。計算した物は読み直しで捨てない */
@@ -2588,7 +2603,7 @@
   function pinErr(r) {
     var e = r && r.error;
     if (e === 'locked') return '暗証番号を5回続けて間違えたため、' + (r.until ? pinHm(r.until) + ' まで' : 'しばらく') + '止めています。時間をおいてから入れてください。';
-    if ((e === 'wrong' || e === 'oldpin') && r.left != null) return PIN_NG[e] + '（あと ' + r.left + ' 回間違えると15分止めます）';
+    if ((e === 'wrong' || e === 'oldpin') && r.left != null) return PIN_NG[e] + '（あと ' + r.left + ' 回間違えるとしばらく止めます）';   /* 止める長さは回ごとに延びる（0110）・DB は次の長さを返さないので分数を書かない */
     return PIN_NG[e] || 'うまくいきませんでした（' + String(e || '') + '）。';
   }
   /* 起動の時: 状態を読み、開いていても一度鍵をかけてから鍵の画面を出す（読み込み直しのたびに番号を入れる） */
@@ -2631,14 +2646,14 @@
         pinIn('p-pin1', '暗証番号（4〜6桁）') + pinIn('p-pin2', 'もう一度') +
         '<div class="row"><button type="button" class="btn pri" data-act="pin-set">決めて開く</button></div>';
     } else {
-      h = '<h2>給与の暗証番号を入れてください</h2><p>' + (msg === 'idle' ? '10分のあいだ操作が無かったため、鍵をかけました。' : msg === 'manual' ? '鍵をかけました。' : msg === 'manual-other' ? 'ほかのタブで鍵をかけました。' : msg === 'expired' ? '鍵がかかっています。' : '') +
+      h = '<h2>給与の暗証番号を入れてください</h2><p>' + (msg === 'idle' ? '10分のあいだ操作が無かったため、鍵をかけました。' : msg === 'manual' ? '鍵をかけました。' : msg === 'manual-other' ? 'ほかのタブで鍵をかけました。' : msg === 'expired' ? '鍵がかかっています。' : msg === 'account' ? 'ほかのタブでログインが変わったため、鍵をかけました。' : '') +
         '給与の画面を開くには、あなたの暗証番号を入れてください。</p>' + pinIn('p-pin', '暗証番号') +
         '<div class="row"><button type="button" class="btn pri" data-act="pin-open">開く</button></div>' +
         (st.admin ? '<p class="help">番号を忘れた時は、ほかの管理者に「設定」のタブで消してもらってください（管理者が1人の時は、代表者の手順で消します）。</p>' :
           '<p class="help">番号を忘れた時は、管理者に「設定」のタブで暗証番号を消してもらってください。</p>');
       if (st.locked_until) msg = 'locked';
     }
-    h += '<p id="p-pin-msg" class="help" role="alert">' + (st.locked_until ? esc(pinErr({ error: 'locked', until: st.locked_until })) : (msg && !/^(idle|manual|manual-other|expired)$/.test(msg) ? esc(msg) : '')) + '</p>' +
+    h += '<p id="p-pin-msg" class="help" role="alert">' + (st.locked_until ? esc(pinErr({ error: 'locked', until: st.locked_until })) : (msg && !/^(idle|manual|manual-other|expired|account)$/.test(msg) ? esc(msg) : '')) + '</p>' +
       '<p><a class="btn" href="index.html">メニューへ戻る</a></p>';
     put(g, h);
     var f = $('p-pin1') || $('p-pin'); if (f) try { f.focus(); } catch (_) {}
@@ -2646,6 +2661,7 @@
   function pinVal(id) { var el = $(id); var x = el ? String(el.value || '').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).trim() : ''; if (el) el.value = ''; return x; }
   function pinSay(t) { var el = $('p-pin-msg'); if (el) el.textContent = t; }
   function pinOpened() {
+    if (swapped()) { swapReload(); return Promise.resolve(null); }   /* 鍵の画面の間にほかのアカウントに替わった */
     view = 'app'; pinGen++; $('p-gate').hidden = true; put($('p-gate'), ''); $('p-app').hidden = false;
     lastAct = Date.now(); lastTouch = Date.now(); paintLockBtn();
     return load(true);
@@ -2863,7 +2879,17 @@
     document.addEventListener('visibilitychange', function () { if (!document.hidden) idleCheck(); });
     window.addEventListener('focus', idleCheck);
     setInterval(idleCheck, 15000);
-    window.addEventListener('beforeunload', function (e) { if (isDirty() || bonusDirty()) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', function (e) { if (!leaving && (isDirty() || bonusDirty())) { e.preventDefault(); e.returnValue = ''; } });
+    /* 別のタブでログアウトした・別のアカウントでログインした時は、確かめの答えを待たずにすぐ鍵の画面（暗証番号の無い DB では金額を隠す）にする。
+       門番（su-app-gate.js）は開けるアカウントに戻ると覆いを外すため、前の人の金額が番号なしで見えた（反証レビュー）。
+       同じ人のログインの印の更新（期限の延長）では何もしない。ほかの人に替わった時は読み込み直す */
+    window.addEventListener('storage', function (e) {
+      if (!e || !(e.key === null || e.key === SESS_KEY)) return;
+      var u = sessUid();
+      if (u && u === bootUid) return;
+      if (view === 'app') { if (pinOn) pinLockNow('account'); else mask(); }
+      if (swapped()) swapReload();
+    });
     window.addEventListener('storage', function (e) { if (e.key === 'su_device_role' && isField()) location.reload(); });
     window.addEventListener('pageshow', function (e) { if (e && e.persisted && isField()) location.reload(); else if (e && e.persisted && pinOn && view === 'app') pinLockNow('expired'); });   /* 戻るボタンで戻った時は鍵の画面から */
     if (pinCh) pinCh.onmessage = function (e) { if (e && e.data === 'lock' && pinOn && view === 'app') pinLockNow('manual-other'); };
@@ -2879,7 +2905,7 @@
         if (!st || st.status === S.ERROR) { showGate('error'); return null; }
         if (st.status !== S.OK) { showGate('denied'); return null; }
         if (st.aal !== 'aal2') { showGate('mfa'); return null; }
-        role = st.role;
+        role = st.role; bootUid = sessUid();   /* 開いた時のアカウント（替わったら鍵・読み込み直し） */
         /* 鍵（暗証番号）が決まるまで中身の帯を出さない・押させない（0110 の前の DB では pinStart が出す） */
         view = 'boot';
         $('p-app').hidden = true;

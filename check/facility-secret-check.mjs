@@ -179,6 +179,15 @@ export function checkFacilityProfile(text, sampleText) {
       }
     }
   }
+  /* 事故報告書の紙だけの事業所名・所在地の書き方（代表者の決定 2026-11-28）。読む部品（accident-report-calc.js の accidentLabelsOf）を
+     そのまま使い（同じ決まりを2か所に書かない）、崩れた鍵が1つでもあれば止める（画面は黙ってその鍵だけ捨て、offices の formalName・address に戻るため・値は出さない） */
+  if ('accidentReport' in p) {
+    let lab = null;
+    try { lab = createRequire(import.meta.url)(path.join(ROOT, 'accident-report-calc.js')).accidentLabelsOf(p.accidentReport, Array.isArray(p.offices) ? p.offices : []); } catch (e) { lab = null; }
+    if (!lab) ng('accidentReport', '確かめる決まり（事故報告書の画面の読み方）を読めませんでした。道具の不具合なので管理者に知らせてください');
+    else if (p.accidentReport === null) ng('accidentReport', '{ } のかたまりではありません（書かない時は accidentReport ごと消してください）');
+    else lab.bad.forEach((b) => ng(b.where, b.why + '（崩れた所は事故報告書の紙に使わず、offices の formalName・address のまま出します）'));
+  }
   if ('visitingClinics' in p) {
     if (!Array.isArray(p.visitingClinics)) ng('visitingClinics', '一覧（[ ]）ではありません');
     else p.visitingClinics.forEach((c, i) => { if (!isObj(c) || !filled(c.name)) ng(`visitingClinics[${i}].name`, '文字が入っていません'); });
