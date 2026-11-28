@@ -18,6 +18,9 @@
  *       古い版と断られると帯を出して送り直さない・Google の道とログインなしでは予約のボタンが出ない
  *   (12) 口 cs_plan_gate の答えが3秒に間に合わず印なしで送って oldapp → 確かめ直して印つきで1回だけ送り直して通る／
  *        印つきで oldapp の時は送り直さない／口が「なし」のままなら1回で止まる／送り直しても oldapp なら2本で止まる（2026-11-27 反証）
+ *   (13) 送信の往復の最中に入れた次の直しは、送信が成功しても未送信のまま残り、ほかの端末の新しい版の取得で消えず、続けて送られる
+ *        （往復が2秒の自動送信より長い時（a）と短い時（b）・だれも進めない時（c）・別のタブが共有の版数を進めた時は競合に倒れる（d）・
+ *        往復の最中に試算を始めた時は閉じた後に送る（e）・2026-11-28）
  * どの流れも、画面のエラー（pageerror）が出たら失敗にする。成功で exit 0、1つでも落ちたら exit 1。
  */
 import fs from 'node:fs';
@@ -665,6 +668,94 @@ if (run(12)) {
       t('(12d) 止めて案内（古い版の印・未送信は端末に残る・帯が出る・送り直しの印は戻る）', await page.evaluate(() => !!SYNC._oldApp && SYNC._dirty === true && !SYNC._oldAppRetry) && await bandOn(page), r);
       await page.close();
     } finally { endChecks(env, '(12d)'); await env.context.close(); }
+  }
+}
+
+/* ═════ (13) 送信の往復の最中に入れた次の直しは、成功の後も未送信のまま残り、取得で消えず、続けて送られる（2026-11-28） ═════
+   1つ目の直しを送り、答えを止めている間に2つ目の直しを入れる → 答え（成功）→ 続けて送る。
+   直す前は、成功で未送信の印が消え、取得がほかの端末の版を取り込んで2つ目の直しが画面からもサーバーからも消えていた。
+   (a)(b) ほかの端末がサーバーを進める（往復が2秒の自動送信より長い・短い）→ 定期の取得
+   (c) だれも進めない → 続けて送る版は1つ目の答えの版で、競合にならない
+   (d) 同じ端末の別のタブ（ワークスケジュール）がサーバーと共有の版数を進める → 続けて送る送信は1つ目の答えの版を名乗って競合に倒れ、相手の変更を上書きしない
+   (e) 往復の最中に試算を始め、答えの後に閉じる → 試算の間は送らず、閉じた後に本物の中身を続けて送る */
+if (run(13)) {
+  for (const [tag, holdMs, other] of [['a', 2600, 'server'], ['b', 400, 'server'], ['c', 400, 'none'], ['d', 400, 'tab'], ['e', 400, 'sim']]) {
+    console.log('\n— (13' + tag + ') 送信の往復（' + holdMs + 'ms）の最中に入れた直しは、成功の後も消えずに続けて送られる（' + ({ server: 'ほかの端末が進める', none: 'だれも進めない', tab: '別のタブが共有の版数を進める', sim: '往復の最中に試算を始め、答えの後に閉じる' })[other] + '） —');
+    let held = false, release = null, firstRev = null;
+    const ev = (id, h) => ({ id, dayOfWeek: 4, serviceType: 'visit', category: '身体１', startTime: h + ':00', endTime: h + ':30', detail: '架空の支援', notes: '', units: 0, bathing: false });
+    const env = await makeEnv({ db: baseDb(), flags: ROUTED, rpc: {
+      kv_put: (b, st) => {
+        if (!held && JSON.stringify(b.p_data || {}).includes('e_first')) {
+          held = true;
+          /* 答えを返す時に、ほかの端末（または別のタブ）がサーバーを進めた形にする（成功の答えが届いた時には、もうサーバーが先にある） */
+          return new Promise((ok) => { release = () => {
+            const r = GATE.kvPut(st.sbKv, b);
+            firstRev = st.sbKv.rev; st.logAt = (st.sbKv.log || []).length;
+            if (other === 'server' || other === 'tab') {
+              const d = JSON.parse(JSON.stringify(st.sbKv.data));
+              d.residents.find((x) => x.id === 'fl03').events.push(ev('e_other', '15'));
+              st.sbKv.data = d; st.sbKv.rev++;
+            }
+            ok(r);
+          }; });
+        }
+        return GATE.kvPut(st.sbKv, b);
+      },
+    } });
+    const has = (d, rid, id) => !!(d && d.residents.find((x) => x.id === rid).events.some((e) => e.id === id));
+    try {
+      const page = await openCs(env);
+      /* 起動の後の送信（単位マスタの押し戻し・900ms 後）が済んで静かになるまで待つ（試験の送信と競わないため） */
+      await waitFor(() => page.evaluate(() => !SYNC._busy && !SYNC._dirty), 15000);
+      await page.waitForTimeout(2000);
+      await waitFor(() => page.evaluate(() => !SYNC._busy && !SYNC._dirty), 15000);
+      /* 1つ目の直し（fl01）を保存して送る（2秒の自動送信は待たずにすぐ送る） */
+      await page.evaluate((e) => {
+        DB.residents.find((x) => x.id === 'fl01').events.push(e);
+        recalcAllEventUnits(); saveDB();
+        clearTimeout(SYNC._pushTimer);
+        /* 送信の終わりと同じ流れで、未送信の印と固定した版を控える（続けて送る送信と競走しないため） */
+        window.__p13 = SYNC.push().then((ok) => ({ ok, dirty: SYNC._dirty === true, mark: localStorage.getItem('care_schedule_dirty_v1') === '1', base: SYNC._baseRev }));
+      }, ev('e_first', '13'));
+      t('(13' + tag + ') 1つ目の送信が届き、答えを止めている', !!(await waitFor(() => release, 10000)));
+      /* 答えを待つ間に、2つ目の直し（fl02）を保存する（2秒後の自動送信が予約される） */
+      await page.evaluate((e) => {
+        DB.residents.find((x) => x.id === 'fl02').events.push(e);
+        recalcAllEventUnits(); saveDB();
+      }, ev('e_second', '14'));
+      if (other === 'sim') await page.evaluate(() => SIM.enter());
+      await page.waitForTimeout(holdMs);
+      release();
+      const r1 = await page.evaluate(() => window.__p13);
+      t('(13' + tag + ') 1つ目の送信は成功し、サーバーに1つ目の直しが入る', r1.ok === true && has(env.st.sbKv.data, 'fl01', 'e_first'), r1);
+      t('(13' + tag + ') 成功の後も、2つ目の直しは未送信のまま（印が残る・版は1つ目の答えの版に固定）', r1.dirty && r1.mark && r1.base === firstRev, Object.assign({ firstRev }, r1));
+      if (other === 'server') {
+        /* 定期の取得（ほかの端末が進めた版がサーバーにある） */
+        await page.evaluate(() => SYNC.pollIfNeeded());
+        t('(13' + tag + ') 取得の後も、画面に2つ目の直しが残る', await page.evaluate(() => DB.residents.find((x) => x.id === 'fl02').events.some((e) => e.id === 'e_second')));
+      }
+      if (other === 'sim') {
+        await page.waitForTimeout(2500);
+        t('(13' + tag + ') 試算の間は送らない（続けて送る送信は0本）', (env.st.sbKv.log || []).length === env.st.logAt, (env.st.sbKv.log || []).slice(env.st.logAt));
+        await page.evaluate(() => SIM.exit(true));
+      }
+      if (other === 'tab') {
+        /* 別のタブがサーバーへ送り、共有の版数（ws_sync_revs.care）をその版へ進めた */
+        await page.evaluate((rev) => { const o = JSON.parse(localStorage.getItem('ws_sync_revs') || '{}'); o.care = rev; localStorage.setItem('ws_sync_revs', JSON.stringify(o)); }, env.st.sbKv.rev);
+      }
+      const done = await waitFor(() => has(env.st.sbKv.data, 'fl02', 'e_second') && page.evaluate(() => !SYNC._busy && !SYNC._dirty), 12000);
+      const srvD = env.st.sbKv.data;
+      const want = [['fl01', 'e_first'], ['fl02', 'e_second']].concat(other === 'server' || other === 'tab' ? [['fl03', 'e_other']] : []);
+      t('(13' + tag + ') 2つ目の直しも続けて送られ、サーバーに' + want.length + 'つとも残る', !!done && want.every(([r, id]) => has(srvD, r, id)), want.map(([r, id]) => id + ':' + has(srvD, r, id)));
+      const after = (env.st.sbKv.log || []).slice(env.st.logAt || 0);
+      if (other === 'none' || other === 'sim') t('(13' + tag + ') 続けて送る送信は競合にならず1本で通る', after.length === 1 && after[0].result === 'ok', after);
+      else t('(13' + tag + ') 続けて送る送信は1つ目の答えの版を名乗って競合に倒れ、取り込んで送り直す', after.length === 2 && after[0].result === 'conflict' && after[1].result === 'ok', after);
+      const n0 = env.st.rpc.filter((r) => r.fn === 'kv_put').length;
+      await page.waitForTimeout(3000);
+      t('(13' + tag + ') 送り終えた後は送り続けない（3秒で保存0本・未送信なし）', env.st.rpc.filter((r) => r.fn === 'kv_put').length === n0 && await page.evaluate(() => !SYNC._dirty), env.st.rpc.filter((r) => r.fn === 'kv_put').length - n0);
+      t('(13' + tag + ') 送り終えた後の画面にも残る', await page.evaluate((w) => w.every(([r, id]) => DB.residents.find((x) => x.id === r).events.some((e) => e.id === id)), want));
+      await page.close();
+    } finally { endChecks(env, '(13' + tag + ')'); await env.context.close(); }
   }
 }
 
