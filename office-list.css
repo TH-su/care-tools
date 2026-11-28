@@ -108,6 +108,8 @@
   .kl-t .tag{margin-left:6px}
   .kl-code{display:block;font-size:13px;font-weight:400;color:var(--muted)}
   .kl-shift td.kl-s{font-size:14px;min-width:7.2em}
+  .kl-sb{font:inherit;color:inherit;background:none;border:0;padding:0;min-height:36px;width:100%;text-align:left;cursor:pointer}
+  .kl-sb:hover{text-decoration:underline}
   .kl-shift td.kl-s.off{color:var(--focus)}
   .kl-shift td.kl-s.paid{color:var(--ok);font-weight:700}
   .kl-shift th.kl-d{text-align:center;font-size:13px;line-height:1.25}
