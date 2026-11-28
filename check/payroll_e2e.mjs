@@ -842,6 +842,39 @@ await scene_('ファイルを選ぶ窓を開いている間の描き直し（職
   await o.ctx.close();
 });
 
+/* ── 職員の項目を選んで書き出す（2026-11-28） ── */
+console.log('\n— 職員の項目を選んで書き出す —');
+await scene_('職員の項目を選んで書き出す（CSV）', async () => {
+  const o = await open({ tab: 'profile', start: 'confirmed' });
+  const p = o.page;
+  await waitApp(p); await settle(p);
+  await p.click('[data-act="empcsv"]');
+  await p.waitForSelector('#p-dlg[open] input[data-empcol]', { timeout: 10000 });
+  const first = await p.evaluate(() => [...document.querySelectorAll('#p-dlg input[data-empcol]')].filter((e) => e.checked).map((e) => e.getAttribute('data-empcol')));
+  t('窓: 初めは 社員番号・氏名・給与形態・基本給・標準報酬2つに✔︎', JSON.stringify(first) === JSON.stringify(['code', 'name', 'pay_type', 'base', 'health_std', 'pension_std']), first);
+  t('窓: 口座の項目は無い', !(await p.evaluate(() => /口座/.test([...document.querySelectorAll('#p-dlg label')].map((l) => l.textContent).join('')))));
+  await p.click('#p-dlg [data-act="empcsv-none"]');
+  await p.click('#p-dlg [data-act="empcsv-go"]');
+  t('何も選ばずに押すと窓の中に「1つ以上選んで」・窓は開いたまま', await p.isVisible('#empcsv-msg') && /1つ以上選んでください/.test(await p.textContent('#empcsv-msg')) && await p.evaluate(() => document.getElementById('p-dlg').open));
+  const logs0 = o.routes.db.audit.filter((a) => a.action === 'export_csv').length;
+  await p.check('#p-dlg input[data-empcol="name"]');
+  await p.check('#p-dlg input[data-empcol="commute"]');
+  await p.check('#p-dlg input[data-empcol="al:qual"]');
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#p-dlg [data-act="empcsv-go"]')]);
+  const csv = fs.readFileSync(await dl.path(), 'utf8').replace(/^﻿/, '');
+  t('CSV の名前 payroll-staff-<月分>.csv', /^payroll-staff-\d{4}-\d{2}\.csv$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+  t('CSV: 選んだ3列が画面の並び（氏名・手当・通勤）・見本 一郎の行', csv.split('\r\n')[0] === '氏名,手当：資格手当,通勤手当（月）' && /見本 一郎,10000,8000/.test(csv), csv.slice(0, 200));
+  t('書き出したことを記録（export_csv が1件増える）', o.routes.db.audit.filter((a) => a.action === 'export_csv').length === logs0 + 1, o.routes.db.audit.slice(-3));
+  t('窓は閉じる', !(await p.evaluate(() => document.getElementById('p-dlg').open)));
+  await p.click('[data-act="empcsv"]');
+  await p.waitForSelector('#p-dlg[open] input[data-empcol]', { timeout: 10000 });
+  const again = await p.evaluate(() => [...document.querySelectorAll('#p-dlg input[data-empcol]')].filter((e) => e.checked).map((e) => e.getAttribute('data-empcol')));
+  t('もう一度開くと前に選んだ項目のまま（この画面の中だけ）', JSON.stringify(again) === JSON.stringify(['name', 'al:qual', 'commute']), again);
+  t('選んだ項目は端末に残さない（localStorage に empcol の鍵なし）', await p.evaluate(() => !Object.keys(localStorage).some((k) => /empcol|emp_sel/i.test(k))));
+  t('画面のエラー 0', o.errors.length === 0, o.errors);
+  await o.ctx.close();
+});
+
 /* ── 7. 賞与のタブ（統合 0121・2026-11-23）── */
 /* 賞与額が空の欄に 0 を入れる・前月の給与の欄を全員「前月の給与なし」にする（代表者の答え 2026-11-23「誰も外さない」で、空の人がいると確定できないため） */
 const fillZero = async (pg, skip = []) => { const ids = await pg.evaluate((sk) => [...document.querySelectorAll('[data-bk="amt"]')].filter((e) => !e.value && !sk.includes(e.getAttribute('data-bsid'))).map((e) => e.id), skip); for (const id of ids) await pg.fill('#' + id, '0'); return ids.length; };
