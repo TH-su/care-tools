@@ -254,7 +254,7 @@ console.log('11. 出す物の形・行の合計・ほかの知らせ');
   const sum = (sec) => r.lines.filter((l) => l.sec === sec).reduce((s, l) => s + l.amount, 0);
   t('支給の行の和＝総支給・控除の行の和＝総控除・差引＝総支給−総控除', sum('pay') === r.gross && sum('deduct') === r.deduct && r.net === r.gross - r.deduct);
   t('住民税の行は無い', !r.lines.some((l) => l.code === 'resident_tax'));
-  eq('月の給与の版は変えていない', C.CALC_VER, 'payroll-calc-3');
+  eq('月の給与の版は賞与で変えていない（2026-11-28 に手当の月の上限で payroll-calc-4 へ上げた）', C.CALC_VER, 'payroll-calc-4');
   /* 2026-11-23 反証レビュー（指摘1・3）で leave_check と tax_col を止めに足した */
   eq('止めの警告の一覧', Object.keys(C.BONUS_BLOCK).sort(), ['badinput', 'calc_error', 'emp_rate_missing', 'leave_check', 'prev_missing', 'prev_unconfirmed', 'rate_missing', 'std_missing', 'tax_col', 'tax_table_missing']);
   t('過去12か月に4回目の賞与は知らせ four_times', has(run(500000, { extra: { count12: 2, count12Other: 1 } }), 'four_times'));
