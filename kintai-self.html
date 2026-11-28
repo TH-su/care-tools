@@ -21,7 +21,7 @@
   ★勤怠の数え方は管理画面と同じ部品（kintai-calc.js の computeMonth・kintai-leave.js）。画面だけで印刷しない。
   ★表示はすべて textContent と部品の組み立て（HTML の代入は使わない）。console は使わない。
 -->
-<link rel="stylesheet" href="kintai-self.css?v=2026-11-28">
+<link rel="stylesheet" href="kintai-self.css?v=2026-11-28.1">
 </head>
 <body>
 <header class="hdr">
@@ -88,6 +88,7 @@
       <button type="button" role="tab" class="tab" id="t-days" data-tab="days" aria-controls="p-days">勤怠</button>
       <button type="button" role="tab" class="tab" id="t-leave" data-tab="leave" aria-controls="p-leave">有給</button>
       <button type="button" role="tab" class="tab" id="t-req" data-tab="req" aria-controls="p-req">申請</button>
+      <button type="button" role="tab" class="tab" id="t-slip" data-tab="slip" aria-controls="p-slip">給与明細</button>
     </div>
     <div class="msg ng" id="app-msg" role="alert" hidden></div>
 
@@ -103,6 +104,11 @@
 
     <div class="pane" id="p-leave" role="tabpanel" aria-labelledby="t-leave" hidden>
       <div class="cd" id="leave-box"></div>
+    </div>
+
+    <!-- 給与明細（統合 0145・2026-11-28・中身は kintai-self-slip.js が作る・確定済みの本人の明細だけ） -->
+    <div class="pane" id="p-slip" role="tabpanel" aria-labelledby="t-slip" hidden>
+      <div class="cd" id="slip-box"></div>
     </div>
 
     <div class="pane" id="p-req" role="tabpanel" aria-labelledby="t-req" hidden>
@@ -188,10 +194,11 @@
 <script src="kintai-calc.js?v=2026-11-23.1"></script>
 <script src="kintai-leave.js?v=2026-11-20.4"></script>
 <script src="kintai-self-calc.js?v=2026-11-27"></script>
-<script src="kintai-self.js?v=2026-11-28"></script>
+<script src="kintai-self.js?v=2026-11-28.1"></script>
 <script src="kintai-extras.js?v=2026-11-25"></script>
 <script src="kintai-board-calc.js?v=2026-11-25"></script>
 <script src="kintai-self-board.js?v=2026-11-25"></script>
+<script src="kintai-self-slip.js?v=2026-11-28"></script>
 <script src="su-report.js?v=2026-11-23.2" data-tool="自分の勤怠"></script>
 </body>
 </html>

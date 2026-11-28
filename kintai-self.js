@@ -13,7 +13,7 @@
   var ENDPOINT = 'https://jhbernqawjrzqwrmqrih.supabase.co/functions/v1/kintai-self';
   var PUBLISHABLE = 'sb_publishable_D8mWQenb7E8q7q6On45HaQ_GKxAE_zI';   // su-auth.js と同じ公開用の鍵（これだけでは何も読めない）
   var KEY_LS = 'kintai_self_key', TAB_LS = 'kintai_self_tab';
-  var TABS = ['days', 'leave', 'req'];
+  var TABS = ['days', 'leave', 'req', 'slip'];   /* 'slip' は給与明細（kintai-self-slip.js・統合 0145・2026-11-28） */
   var S = window.KintaiSelfCalc, C = window.KintaiCalc, L = window.KintaiLeave;
   var $ = function (id) { return document.getElementById(id); };
 
@@ -74,7 +74,8 @@
     $('who').textContent = '';
     $('f-req').reset(); msg('rq-msg', ''); msg('app-msg', '');
     $('in-pin').value = '';
-    if (window.KintaiSelfBoard) window.KintaiSelfBoard.reset();   /* 段B（統合 0130）: お知らせと補助項目の申請の中身も捨てる */
+    if (window.KintaiSelfBoard) window.KintaiSelfBoard.reset();
+    if (window.KintaiSelfSlip) window.KintaiSelfSlip.reset();   /* 給与明細の中身も捨てる（2026-11-28） */   /* 段B（統合 0130）: お知らせと補助項目の申請の中身も捨てる */
     msg('pin-msg', text || '', text ? 'warn' : null);
     if (key) show('pin'); else showEnroll();
   }
@@ -148,6 +149,7 @@
     loadNotices();
     /* 段B（統合 0130・kintai-self-board.js）: お知らせと補助項目の申請。鍵と開いている印はここで足して渡す（部品には持たせない） */
     if (window.KintaiSelfBoard) window.KintaiSelfBoard.start(function (op, p) { var b = { key: key, open: open }, k; for (k in p) b[k] = p[k]; return call(op, b); }, handleAuth);
+    if (window.KintaiSelfSlip) window.KintaiSelfSlip.start(function (op, p) { var b = { key: key, open: open }, k; for (k in p) b[k] = p[k]; return call(op, b); }, handleAuth);
   }
   $('f-pin').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -182,6 +184,7 @@
     msg('app-msg', '');
     if (t === 'days') loadDays(viewYm);
     else if (t === 'leave') loadLeave();
+    else if (t === 'slip') { if (window.KintaiSelfSlip) window.KintaiSelfSlip.load(); }
     else loadReqs();
   }
   TABS.forEach(function (x) { $('t-' + x).addEventListener('click', function () { setTab(x); }); });
