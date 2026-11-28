@@ -218,6 +218,11 @@ body.sur-has-fab .foot{padding-right:150px}
   body.su-print-letter #h-print{display:block; font-size:var(--hl-fs,15px)}
   #h-print .hl-box{min-height:44em}   /* 見本の手紙と同じく、枠が紙の約3分の2を占める（2026-11-28 見本との突き合わせ） */
   #h-print .hl-sheet{padding:0 2px}   /* 枠の右の罫線が紙の端の丸めで欠けないよう、わずかに内へ */
+  /* ブラウザが紙の余白を自分で決めた時（@page の 14mm より狭い）も紙の中央に置く（本人指示 2026-11-28）。
+     su-print が固定する html の幅（印字幅の px）だけを外し、body（手紙・182mm＝A4 − 左右 14mm のまま）を左右中央に寄せる。
+     body の幅は変えないので、余白が 14mm より広い時は今までどおりブラウザが紙ごと縮めて1枚に収める */
+  :root:has(body.su-print-letter){width:auto !important}
+  :root body.su-print-letter{margin:0 auto !important}
 }
 </style>
 <link rel="stylesheet" href="su-print.css?v=2026-11-13">
