@@ -1082,7 +1082,7 @@
     return null;
   }
   function bonusDirty() { return bDirty || bCfgDirty; }
-  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; bYtdPending = null; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; bYtdPending = null; bBulk = { mode: 'flat', v: '', over: false }; }
   /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
   function bonusNorm(r) {
     r = obj(r);
@@ -1824,6 +1824,63 @@
       (x.pm ? '<select id="b-ps-' + i + '" data-bsid="' + esc(sid) + '" data-bk="psrc" aria-label="' + esc(p.name) + ' さんの前月の給与の出どころ">' + PSRC.map(function (s) { return '<option value="' + s[0] + '"' + ((x.psrc || 'freee') === s[0] ? ' selected' : '') + '>' + s[1] + '</option>'; }).join('') + '</select>' : '') + '</div>';
   }
   /* 賞与の入れる表の探す欄（payroll-list.js・氏名・従業員番号の一部・メモリだけ） */
+  /* まとめて入れる（表示中の人だけ・2026-11-28）: 同じ額・月給の基本給×倍率（円未満切り捨て）・空にする。入っている欄は印がある時だけ書き換える */
+  function bonusBulk() {
+    if (!bb || !bb.run || bonusFrozen()) return;
+    var mode = v('b-bulk-mode'), raw = v('b-bulk-v'), over = on('b-bulk-over'), list = bonusShown();
+    bBulk = { mode: mode, v: raw, over: over };   /* 描き直しても選んだ方式・値を残す（メモリだけ） */
+    var amt = null, k1000 = null;
+    if (mode === 'flat') { amt = bonusAmt(raw); if (amt === null || amt !== amt) { say('まとめて入れる額を半角の数字で書いてください（例 100000）。'); return; } }
+    else if (mode === 'mult') {
+      var r = han(raw).replace(/\s/g, '');
+      if (!/^\d{1,2}(\.\d{1,3})?$/.test(r) || !(Number(r) > 0) || Number(r) > 20) { say('倍率は 0 より大きく 20 までの数で書いてください（例 1.5）。'); return; }
+      k1000 = Math.round(Number(r) * 1000);
+    } else if (mode !== 'clear') return;
+    var go = mode === 'clear' ? ask('表示中の ' + list.length + ' 人の賞与額を空にしますか？') : Promise.resolve(true);
+    go.then(function (ok) {
+      if (!ok || !bb || bonusFrozen()) return;
+      var n = 0, skipFilled = 0, skipType = 0;
+      list.forEach(function (p) {
+        var sid = p.staff_id, x = bIn[sid] = bIn[sid] || { amt: '', pm: '', pP: '', psrc: 'freee' };
+        if (mode === 'clear') { if (x.amt !== '') { x.amt = ''; n++; } return; }
+        if (x.amt !== '' && !over) { skipFilled++; return; }
+        var val = amt;
+        if (mode === 'mult') {
+          var d = obj(p.data), base = Number(d.base);
+          if (d.pay_type !== 'monthly' || !(base > 0) || Math.floor(base) !== base) { skipType++; return; }
+          val = Math.floor(base * k1000 / 1000);   /* 基本給は円の整数・倍率は 1000 倍の整数にして浮動小数の誤差を出さない */
+        }
+        x.amt = String(val); n++;
+      });
+      if (n) bDirty = true;
+      paint();
+      toast(n + '人に入れました' + (skipFilled ? '・入っていた ' + skipFilled + '人はそのまま' : '') + (skipType ? '・月給でない ' + skipType + '人には入れていません' : '') + (mode === 'clear' || !n ? '' : '。「計算する」を押してください'));
+    });
+  }
+  /* 1人だけ計算し直す（2026-11-28）: 計算した結果があればその人の行だけ差し替える。まだ計算していなければ全員を計算する */
+  function bonusComputeRow(sid) {
+    if (!bb || !bb.run || bonusFrozen()) return;
+    if (!bCalc) { if (bonusCompute(true)) toast('まだ計算していなかったので、全員を計算しました。確かめてから「下書き保存」を押してください。'); return; }
+    if (!window.PayrollCalc || typeof window.PayrollCalc.computeBonus !== 'function') { toast('計算の部品を読み込めませんでした。ページを読み込み直してください。'); return; }
+    if (bCfgDirty) { say('回の設定（他所で払った標準賞与額・回の数・算定期間）を先に保存してください。'); return; }
+    var p = bonusProf(sid); if (!p) return;
+    var x = bIn[sid], a = x ? bonusAmt(x.amt) : null;
+    if (a !== a) { say('数の形が違う欄があります：' + p.name + '（半角の数字で書いてください）'); return; }
+    var k0 = bonusPrevOf(bb.prev, sid, null, bonusYtdP(sid)).kind;
+    if (a !== null && x.pm === 'P' && k0 !== 'db' && k0 !== 'ytd' && !bonusManual(sid)) { say('数の形が違う欄があります：' + p.name + '（前月の給与）（半角の数字で書いてください）'); return; }
+    var items = bCalc.items.filter(function (it) { return it.staff_id !== sid; });
+    if (a !== null) {
+      var r = bonusComputeOne(p, a, bonusManual(sid)), row = Object.assign({}, r.out, { staff_id: sid, name: p.name, prev_kind: r.pv.prev_kind, prev_src: r.pv.src, prev_P: r.pv.P, prev_manual: r.pv.send, _pv: r.pv, bank_last4: p.bank_last4 });
+      /* 並びは給与の設定の並び（全員の計算と同じ） */
+      var order = {}; bb.profiles.forEach(function (q, i) { order[q.staff_id] = i; });
+      items.push(row); items.sort(function (m, n2) { return order[m.staff_id] - order[n2.staff_id]; });
+    }
+    bCalc = { items: items, fp: bCalc.fp, rev: bCalc.rev };
+    bDirty = true; bNotice = null;
+    paint();
+    toast(p.name + ' さんを' + (a === null ? '結果から外しました（賞与額が空）' : '計算し直しました') + '。確かめてから「下書き保存」を押してください。');
+  }
+  var bBulk = { mode: 'flat', v: '', over: false };
   function bonusShown() {
     var P = PLI(); if (!P || !P.bonusQuery) return bb.profiles;
     var q = P.bonusQuery(bb.run ? bb.run.bonus_id : null); if (!q) return bb.profiles;
@@ -1855,9 +1912,14 @@
     } else if (isAdmin()) h += '<button type="button" class="btn ng" data-act="b-unconfirm">確定を取り消す（管理者）</button>';
     h += '</div></div>';
     /* 入れる表（下書きの時だけ入力欄） */
-    h += '<div class="cd"><h2>1人ずつの賞与額と前月の給与</h2>' + (fz ? '' : '<p class="help">賞与額を入れた人だけを計算・保存します。前月の給与は、給与の記録（確定した明細）・年末調整の記録が無い人だけ入れてください（社会保険料等を引いた後の額）。</p>') +
+    h += '<div class="cd"><h2>1人ずつの賞与額と前月の給与</h2>' + (fz ? '' : '<p class="help">賞与額を入れた人だけを計算・保存します。前月の給与は、給与の記録（確定した明細）・年末調整の記録が無い人だけ入れてください（社会保険料等を引いた後の額）。</p>' +
+      /* まとめて入れる（2026-11-28・表示中の人だけ・入れた値はメモリだけ） */
+      '<div class="row" id="b-bulk"><label for="b-bulk-mode">まとめて入れる</label><select id="b-bulk-mode">' + [['flat', '同じ額'], ['mult', '月給の基本給×倍率'], ['clear', '空にする']].map(function (o) { return '<option value="' + o[0] + '"' + (bBulk.mode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+      '<input id="b-bulk-v" inputmode="decimal" aria-label="まとめて入れる額か倍率" placeholder="額か倍率" value="' + esc(bBulk.v) + '" style="max-width:9em;text-align:right" autocomplete="off">' +
+      '<label><input type="checkbox" id="b-bulk-over"' + (bBulk.over ? ' checked' : '') + '> 入っている欄も書き換える</label><button type="button" class="btn" data-act="b-bulk">表示中の人に入れる</button></div>' +
+      '<p class="help">「同じ額」は円、「月給の基本給×倍率」は 1.5 のように入れます（円未満は切り捨て・月給でない人には入れません）。探す欄で絞った時は、表示中の人だけに入れます。入れた後は「計算する」を押してください。</p>') +
       '@@BTOOL@@' +
-      '<div class="tw"><table class="pl-btab"><thead><tr><th>氏名</th>' + (PLI() ? '<th class="pl-pc">従業員番号</th><th class="pl-pc">事業所</th>' : '') + '<th class="num">賞与額（円）</th>' + (PLI() ? '<th class="num pl-pc">差引支給額</th><th class="num pl-pc">総支給額</th><th class="num pl-pc">総控除額</th><th class="pl-pc">ステータス</th>' : '') + '<th>前月の給与</th></tr></thead><tbody>';
+      '<div class="tw"><table class="pl-btab"><thead><tr><th>氏名</th>' + (PLI() ? '<th class="pl-pc">従業員番号</th><th class="pl-pc">事業所</th>' : '') + '<th class="num">賞与額（円）</th>' + (PLI() ? '<th class="num pl-pc">差引支給額</th><th class="num pl-pc">総支給額</th><th class="num pl-pc">総控除額</th><th class="pl-pc">ステータス</th>' : '') + '<th>前月の給与</th>' + (fz ? '' : '<th>この人だけ</th>') + '</tr></thead><tbody>';
     var bRes = {}; if (PLI()) bonusItems().forEach(function (y) { bRes[y.staff_id] = y; });
     var bShow = {}; bonusShown().forEach(function (p) { bShow[p.staff_id] = 1; });
     var bAll = 0, bN = 0;
@@ -1874,7 +1936,8 @@
         '<td class="num">' + (fz ? esc(yen(it.gross)) : '<input id="b-amt-' + i + '" data-bsid="' + esc(p.staff_id) + '" data-bk="amt" inputmode="numeric" aria-label="' + esc(p.name) + ' さんの賞与額（円）" value="' + esc(x.amt || '') + '" style="max-width:10em;text-align:right" autocomplete="off">') + '</td>' +
         (PLI() ? '<td class="num pl-pc"><b>' + esc(rs ? yen(rs.net) : '') + '</b></td><td class="num pl-pc">' + esc(rs ? yen(rs.gross) : '') + '</td><td class="num pl-pc">' + esc(rs ? yen(rs.deduct) : '') + '</td><td class="pl-pc">' +
           (rs ? '<span class="tag pl-st' + (fz ? ' ok' : '') + '">' + (fz ? '確定済み' : bCalc ? '計算完了' : '保存済み') + '</span>' + (rw.length ? '<span class="tag warn">⚠ ' + esc(rw.length) + '</span>' : '') : '') + '</td>' : '') +
-        '<td>' + bonusPrevCell(p, i, fz) + '</td></tr>';
+        '<td>' + bonusPrevCell(p, i, fz) + '</td>' +
+        (fz ? '' : '<td><button type="button" class="btn" data-act="b-one" data-bsid="' + esc(p.staff_id) + '"' + (c && !bCfgDirty ? '' : ' disabled') + ' aria-label="' + esc(p.name) + ' さんだけ計算し直す">計算し直す</button></td>') + '</tr>';
     });
     h += '</tbody></table></div></div>';
     h = h.replace('@@BTOOL@@', PLI() ? PLI().bonusTool(bAll, bN, run.bonus_id) : '');
@@ -1938,6 +2001,8 @@
     else if (a === 'b-open') bonusOpen(b.getAttribute('data-bid'));
     else if (a === 'b-list') { if (bonusDirty()) { ask('保存していない賞与の入力があります。捨てて一覧へ戻りますか？').then(function (ok) { if (ok) { bSel = null; bonusClear(); bonusLoad(false); } }); return; } bSel = null; bonusClear(); bonusLoad(false); }
     else if (a === 'b-compute') bonusCompute(false);
+    else if (a === 'b-bulk') bonusBulk();
+    else if (a === 'b-one') bonusComputeRow(b.getAttribute('data-bsid'));
     else if (a === 'b-save') bonusSave(b);
     else if (a === 'b-confirm') bonusOpenConfirm();
     else if (a === 'b-confirm-go') bonusConfirmGo(b);
