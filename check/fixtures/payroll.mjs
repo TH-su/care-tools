@@ -111,6 +111,15 @@ export function profileOk(d, sid) {
     } else if (k === 'resident_tax') {
       if (!isObj(v) || Object.keys(v).length > 24) return false;
       for (const [k2, v2] of Object.entries(v)) if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(k2) || !yenOk(v2, 0)) return false;
+    } else if (k === 'resident_city') {   /* 統合 0143: 住民税の納め先 {name 1〜40字, code 6桁・任意}・空も可 */
+      if (!nul(v)) {
+        if (!isObj(v) || !('name' in v)) return false;
+        for (const [k2, v2] of Object.entries(v)) {
+          if (k2 === 'name') { if (!txtOk(v2, 40, 1)) return false; }
+          else if (k2 === 'code') { if (!(nul(v2) || (typeof v2 === 'string' && /^[0-9]{6}$/.test(v2)))) return false; }
+          else return false;
+        }
+      }
     } else if (k === 'no_attendance' || k === 'exclude') { if (typeof v !== 'boolean') return false; }
     else if (k === 'freee_emp_num') { if (!(nul(v) || txtOk(v, 20) || yenOk(v, 0))) return false; }
     else if (k === 'staff_id') { if (v !== sid) return false; }
