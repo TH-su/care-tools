@@ -1082,7 +1082,7 @@
     return null;
   }
   function bonusDirty() { return bDirty || bCfgDirty; }
-  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bCmp = null; bYtdPut = null; bYtdPending = null; bBulk = { mode: 'flat', v: '', over: false }; }
+  function bonusClear() { bb = null; bCalc = null; bIn = {}; bCfgIn = null; bDirty = false; bCfgDirty = false; bPrint = null; bYtd = null; bNotice = null; bSlipSid = null; bYtdWait = false; bCfgBase = null; bCfgConflict = false; bBulk = { mode: 'flat', v: '', over: false }; bCmp = null; bYtdPut = null; bYtdPending = null; }
   /* 受け取った形を確かめる（壊れた値で画面を止めない）。形は統合 0121 の payroll_bonus_bootstrap */
   function bonusNorm(r) {
     r = obj(r);
@@ -2075,8 +2075,10 @@
   /* ── 従業員の項目を選んで書き出す（PayrollExport.empCsv・2026-11-28）。選んだ項目はメモリだけ（端末に残さない・開いていたタブだけを残す決まり） ── */
   var empSel = null;
   var EMP_DEF = ['code', 'name', 'pay_type', 'base', 'health_std', 'pension_std'];
-  function empCols() { var x = X(); return x && typeof x.empColumns === 'function' ? x.empColumns(bs.allowances) : []; }
+  function empCols() { var x = X(); return x && typeof x.empColumns === 'function' ? x.empColumns(bs.allowances, bs.profiles) : []; }
   function openEmpCsv() {
+    /* 書き出したことは月分の給与の回に記録するので、回の無い月分では先に知らせる（反証レビュー 2026-11-28・仮置き） */
+    if (!bs.run) { say(ymText(ym) + 'の給与の回がまだ無いので、書き出したことを記録できません。「今月の給与」で一度計算して保存してから押してください（前の月分に切り替えても書き出せます）。'); return; }
     var cols = empCols(); if (!cols.length) { say('書き出しの部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     var sel = empSel || EMP_DEF, groups = [], byG = {};
     cols.forEach(function (c) { if (!byG[c.group]) { byG[c.group] = []; groups.push(c.group); } byG[c.group].push(c); });
@@ -2088,7 +2090,7 @@
         return '<label class="chk"><input type="checkbox" data-empcol="' + esc(c.key) + '"' + (sel.indexOf(c.key) >= 0 ? ' checked' : '') + '> ' + esc(c.label) + '</label>';
       }).join(' ') + '</div></fieldset>';
     });
-    h += '<p class="help">' + esc(ymText(ym)) + 'の画面の設定（その月分の期間の初日に効く版）を書き出します。住民税は' + esc(ymText(ym)) + 'の額です。CSV には氏名と金額が入ります。使い終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。書き出したことは記録に残ります。</p>';
+    h += '<p class="help">' + esc(ymText(ym)) + 'の画面の設定（その月分の期間の初日に効く版）を書き出します。住民税はこの月分の給与で引く額（支給日の月の額）です。回数・時間で額が変わる手当は単価を出します。CSV には氏名と金額が入ります。使い終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。書き出したことは記録に残ります。</p>';
     openDlg('項目を選んで書き出す', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="empcsv-go">書き出す</button>');
   }
   function empChecks() { return Array.prototype.slice.call(document.querySelectorAll('#p-dlg input[data-empcol]')); }
@@ -2099,12 +2101,16 @@
     if (!keys.length) { if (msg) { msg.hidden = false; msg.textContent = '書き出す項目を1つ以上選んでください。'; } return; }
     if (msg) msg.hidden = true;
     empSel = keys;
-    var res = x.empCsv({ ym: ym, profiles: bs.profiles, staffInfo: bs.staff_info, defs: bs.allowances, keys: keys });
+    /* 住民税は計算と同じく支給日の月の額・事業所は名前で（反証レビュー 2026-11-28） */
+    var pd = payDate(), oc = plCtx([]);
+    var res = x.empCsv({ ym: ym, taxYm: isDate(pd) ? pd.slice(0, 7) : ym, profiles: bs.profiles, staffInfo: bs.staff_info, defs: bs.allowances, keys: keys,
+      officeName: function (code) { try { return (oc && oc.officeName(code)) || code; } catch (e) { return code; } } });
     if (!res || res.ok === false) { say('書き出す項目を1つ以上選んでください。'); return; }
-    var done = hold(btn, '作っています…'), my = ym;
+    var done = hold(btn, '作っています…'), my = ym, mg = maskGen, pg = pinGen;
     rpc('payroll_export_log', { p_ym: ym, p_kind: 'csv' }).then(function (r) {
       done();
-      if (my !== ym || masked) return;   /* 待つ間に月分を変えた・金額を隠した時は書き出さない */
+      /* 待つ間に月分を変えた・金額を隠した・鍵の画面や覆いに変わった時は書き出さない（反証レビュー 2026-11-28） */
+      if (my !== ym || masked || view !== 'app' || mg !== maskGen || pg !== pinGen) { res = null; return; }
       if (r && r.ok === false && r.error === 'norun') { say(ymText(ym) + 'の給与の回がまだ無いので、書き出したことを記録できません。「今月の給与」で一度計算して保存してから押してください。'); return; }
       okOr(r);
       download(res); res = null;
@@ -2123,7 +2129,7 @@
   var NUMA = ' inputmode="numeric"';
   function openProfile(sid) {
     var p = profOf(sid); if (!p) return;
-    var d = p.data, ins = obj(d.ins), tx = obj(d.tax), cm = obj(d.commute), rt = obj(d.resident_tax), p0 = period();
+    var d = p.data, ins = obj(d.ins), tx = obj(d.tax), cm = obj(d.commute), rt = obj(d.resident_tax), rc = obj(d.resident_city), p0 = period();
     var froms = p0 ? [p0.from, addDay(p0.to, 1)] : [];
     var h = '<p>' + esc(p.name) + ' さん（今の版: ' + esc(p.effective_from ? md(p.effective_from) + 'から' : 'まだありません') + '）</p>';
     h += '<fieldset><legend>いつから</legend><div class="kv">' + sel('f-from', '設定を変える日（期間の初日）', froms[0], froms.map(function (f, i) { return [f, jdate(f) + (i === 0 ? '（この月分から）' : '（次の月分から）')]; })) + '</div></fieldset>';
@@ -2149,7 +2155,9 @@
     h += '<fieldset><legend>社会保険・雇用保険</legend><div class="row">' + chk('f-h-on', '健康保険に入る', obj(ins.health).on) + chk('f-p-on', '厚生年金に入る', obj(ins.pension).on) + chk('f-e-on', '雇用保険に入る', obj(ins.emp).on) + chk('f-care-ex', '介護保険の対象外', ins.care_exempt === true) + '</div>' +
       '<div class="kv">' + inp('f-h-std', '健保の標準報酬月額（円）', obj(ins.health).std, NUMA) + inp('f-p-std', '厚年の標準報酬月額（円）', obj(ins.pension).std, NUMA) + '</div></fieldset>';
     h += '<fieldset><legend>税</legend><div class="kv">' + sel('f-col', '源泉の区分', tx.col, [['', '（選ぶ）'], ['kou', '甲欄'], ['otsu', '乙欄'], ['none', '対象外']]) + inp('f-deps', '扶養親族等の数', tx.dependents, NUMA) + '</div>' + chk('f-depok', '甲乙・扶養の数を確かめた（freee の画面か本人の申告書で）', tx.dependents_checked === true) +
-      '<p class="help">住民税（特別徴収・月の額）</p><div class="kv">' + fiscalMonths().map(function (m, i) { return inp('f-rt' + i, (+m.slice(5)) + '月（' + m.slice(0, 4) + '年）', rt[m], NUMA); }).join('') + '</div></fieldset>';
+      '<p class="help">住民税（特別徴収・月の額）</p><div class="kv">' + fiscalMonths().map(function (m, i) { return inp('f-rt' + i, (+m.slice(5)) + '月（' + m.slice(0, 4) + '年）', rt[m], NUMA); }).join('') + '</div>' +
+      '<div class="kv">' + inp('f-rc-name', '住民税の納め先（市町村の名前）', rc.name, ' maxlength="40"') + inp('f-rc-code', '納め先の団体コード（6桁・任意）', rc.code, ' inputmode="numeric" maxlength="6" spellcheck="false"') + '</div>' +
+      '<p class="help">納め先は、今月の給与の「住民税の振込」で市町村ごとに合計を出すのに使います（住民税の決定通知書の市町村）。</p></fieldset>';
     h += '<fieldset><legend>そのほか</legend><div class="row">' + chk('f-noatt', '勤怠を使わない（役員・固定給）', d.no_attendance === true) + chk('f-excl', '計算から外す（休職・支給なし）', d.exclude === true) + '</div></fieldset>';
     h += '<div class="kv"><label for="f-reason">直す理由（必ず書く）</label><input id="f-reason" maxlength="200" autocomplete="off"></div>';
     var hist = p.versions;
@@ -2205,6 +2213,13 @@
     var rtMin = shiftYm(c.months[0], -12), rtMax = c.months[c.months.length - 1];
     Object.keys(rt).forEach(function (m) { if (!isYm(m) || m < rtMin || m > rtMax) delete rt[m]; });
     d.resident_tax = rt;
+    /* 住民税の納め先（統合 0143・2026-11-28）: 名前だけ・名前と団体コード6桁。空なら、前に値があった時だけ空に戻す */
+    var rcN = v('f-rc-name'), rcC = v('f-rc-code').replace(/[０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });
+    if (rcC && !/^[0-9]{6}$/.test(rcC)) bad.push('納め先の団体コード（6桁）');
+    if (rcN.length > 40) bad.push('住民税の納め先（40字まで）');
+    if (rcN) d.resident_city = rcC ? { name: rcN, code: rcC } : { name: rcN };
+    else if (rcC) { say('住民税の納め先は、市町村の名前を入れてから団体コードを入れてください。'); return; }
+    else if ('resident_city' in obj(p.data)) d.resident_city = null;
     d.no_attendance = on('f-noatt'); d.exclude = on('f-excl');
     /* 従業員番号（freee の番号・20字まで）。空なら、前に値があった時だけ空に戻す（空の人に鍵を足さない） */
     var empIn = v('f-emp');

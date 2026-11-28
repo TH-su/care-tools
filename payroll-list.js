@@ -30,8 +30,9 @@
     return y + '-' + (m < 10 ? '0' : '') + m + '-10';
   }
   /* 住民税・所得税の合計（控除の行の code で数える）。所得税は精算の行も足す */
-  function taxSums(list) {
-    var o = { resident: 0, residentN: 0, income: 0, incomeN: 0, gross: 0, n: 0 };
+  /* cityOf(staff_id) → {name, code} か null（給与の設定の住民税の納め先・統合 0143）。byCity は納め先ごとの人数と税額（未設定は鍵 ''） */
+  function taxSums(list, cityOf) {
+    var o = { resident: 0, residentN: 0, income: 0, incomeN: 0, gross: 0, n: 0, byCity: {} };
     arr(list).forEach(function (it) {
       var r = 0, t = 0;
       arr(it && it.lines).forEach(function (l) {
@@ -40,6 +41,11 @@
         else if (l.code === 'income_tax' || l.code === 'tax_adjust') t += num(l.amount);
       });
       o.resident += r; if (r) o.residentN++;
+      if (r) {
+        var cy = typeof cityOf === 'function' ? cityOf(it.staff_id) : null, key = cy && cy.name ? String(cy.name) + '\u0000' + String(cy.code || '') : '';
+        var b = o.byCity[key] || (o.byCity[key] = { name: cy && cy.name ? String(cy.name) : '', code: cy && cy.code ? String(cy.code) : '', n: 0, amount: 0 });
+        b.n++; b.amount += r;
+      }
       o.income += t; if (t) o.incomeN++;
       o.gross += num(it && it.gross); o.n++;
     });
@@ -89,12 +95,17 @@
   /* 確定の後だけ: 書き出しの案内と「確定後の手続き」 */
   function afterHtml(c) {
     if (!c.frozen) return '';
-    var x = c.canExport, ts = taxSums(c.list), due = dueDate(c.payDate());
+    var x = c.canExport, ts = taxSums(c.list, function (sid) { var p = c.profOf(sid); return p && p.data && p.data.resident_city && typeof p.data.resident_city === 'object' ? p.data.resident_city : null; }), due = dueDate(c.payDate());
+    var cities = Object.keys(ts.byCity).sort(function (a, b) { return a === '' ? 1 : b === '' ? -1 : a < b ? -1 : 1; }).map(function (k) { return ts.byCity[k]; });
     var h = '<div class="pl-pc"><div class="pl-info" role="note"><span class="pl-i" aria-hidden="true">i</span><span>賃金台帳（<button type="button" class="pl-lk" data-act="exp" data-k="ledger"' + (x ? '' : ' disabled') + '>CSV</button>）と給与明細一覧表（<button type="button" class="pl-lk" data-act="exp" data-k="list"' + (x ? '' : ' disabled') + '>CSV</button>）がダウンロードできます。全員分の明細の印刷は「<button type="button" class="pl-lk" data-tab="slip">給与明細</button>」からできます。</span></div>';
     h += '<h3 class="pl-sub">確定後の手続き</h3><div class="pl-proc">';
     h += '<button type="button" class="pl-card" data-tab="export"><span class="pl-ci" aria-hidden="true">🏛</span><b>給与の振込</b><span class="pl-cd">振込データ・総額の照合・仕訳の CSV を書き出します。</span><span class="pl-go" aria-hidden="true">›</span></button>';
     h += '<details class="pl-card" data-plo="res"' + (st.open.res ? ' open' : '') + '><summary><span class="pl-ci" aria-hidden="true">▣</span><b>住民税の振込</b><span class="pl-cd">従業員から徴収した住民税額を確かめます。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
-      '<div class="pl-cb"><table><tbody><tr><th>住民税を引いた人</th><td class="num">' + esc(ts.residentN) + ' 人</td></tr><tr><th>住民税の合計</th><td class="num">' + esc(yen(ts.resident)) + ' 円</td></tr></tbody></table><p class="help">市町村ごとの内訳と振込の依頼のファイルは、この画面にはまだありません。</p></div></details>';
+      '<div class="pl-cb"><table><thead><tr><th>納め先の市町村</th><th>団体コード</th><th class="num">人数</th><th class="num">税額</th></tr></thead><tbody>' +
+      cities.map(function (b) { return '<tr><td>' + (b.name ? esc(b.name) : '<span class="tag warn">納め先が未設定</span>') + '</td><td>' + esc(b.code || '—') + '</td><td class="num">' + esc(b.n) + ' 人</td><td class="num">' + esc(yen(b.amount)) + ' 円</td></tr>'; }).join('') +
+      '<tr><th>合計</th><td></td><td class="num">' + esc(ts.residentN) + ' 人</td><td class="num"><b>' + esc(yen(ts.resident)) + ' 円</b></td></tr></tbody></table>' +
+      (ts.byCity[''] ? '<p class="help">納め先が未設定の人は、「職員の給与設定」の「税」の欄で住民税の納め先（市町村の名前）を入れてください。</p>' : '') +
+      '<p class="help">市町村へ納める時の振込の依頼のファイル（地方税の共通納税）は、この画面にはまだありません。</p></div></details>';
     h += '<details class="pl-card" data-plo="tax"' + (st.open.tax ? ' open' : '') + '><summary><span class="pl-ci" aria-hidden="true">▤</span><b>所得税徴収高計算書</b><span class="pl-cd">従業員から徴収した所得税額を確かめて納付します。</span>' + (due ? '<span class="pl-due">' + esc((+due.slice(5, 7)) + '月' + (+due.slice(8)) + '日まで') + '</span>' : '') + '<span class="pl-go" aria-hidden="true">›</span></summary>' +
       '<div class="pl-cb"><table><tbody><tr><th>支給年月日</th><td>' + esc(jd(c.payDate())) + '</td></tr><tr><th>人員</th><td class="num">' + esc(ts.n) + ' 人</td></tr><tr><th>支給額（総支給の合計）</th><td class="num">' + esc(yen(ts.gross)) + ' 円</td></tr><tr><th>税額（所得税と精算）</th><td class="num">' + esc(yen(ts.income)) + ' 円</td></tr></tbody></table>' +
       '<p class="help">納付の期限は支給日の翌月10日で見ています（納期の特例の時は違います）。</p></div></details>';
