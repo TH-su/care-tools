@@ -441,6 +441,13 @@
     c.repaint = function () { if (view === 'app' && !busy && !printAll && (tab === 'cert' || tab === 'home')) paint(); };
     return c;
   }
+  /* ── 今日の人員配置（kintai-staffing.js・2026-11-28・代表者の決定 2026-11-28）: 部品が無い・設定の staffCheck が切の時は何もしない ── */
+  var STF = window.KintaiStaffingUI || null;
+  function stfCtx() {
+    var c = ctCtx();
+    c.month = function () { return month; }; c.schedule = function () { return data && Array.isArray(data.schedule) ? data.schedule : null; }; c.period = function () { return data ? per() : null; }; c.officeFilter = function () { return officeFilter; };
+    return c;
+  }
   var RED = { no_punch: 1, missing_in: 1, missing_out: 1 };
   /* 印の札。勤務中は青（赤にしない）・確認済みの塊の要確認の印は線で消して残す */
   function flagTags(flags, checked) {
@@ -655,7 +662,7 @@
         if (!inP) { out.push(boxHtml({ key: 'today', title: '今日', count: 0, level: 'ok', rows: [] }, 'data-act="day-today"', '<span class="hl">今日（' + esc(md(td)) + '）はこの月分に入っていません。押すと今日の月分を開きます。</span>')); return; }
         var c = b.counts;
         var tbx = ntWrap(boxHtml(b, 'data-tab="day" data-date="' + esc(td) + '"', '<span class="hl">出勤予定 ' + c.scheduled + '・出勤済み ' + c.clockedIn + '・勤務中 ' + c.working + '・まだ出勤していない ' + c.notInYet + '</span>'), noticeHtml('not_in'));
-        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + '</div>' : tbx);   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（予定・勤務の1つごとに1行）。部品が無い時は今の箱だけ */
+        out.push((typeof TDY !== 'undefined' && TDY) ? '<div class="tdw">' + tbx + todayBoardHtml(td) + ((typeof STF !== 'undefined' && STF) ? STF.homeHtml(stfCtx()) : '') + '</div>' : tbx);   /* 2026-11-28: その下に今日の人員配置（入れた時だけ） */   /* 2026-11-27: 箱のすぐ下に今日の出勤状況（予定・勤務の1つごとに1行）。部品が無い時は今の箱だけ */
         return;
       }
       if (b.key === 'a36') {
@@ -1507,6 +1514,7 @@
     if (typeof window !== 'undefined' && window.KintaiBoard) h += window.KintaiBoard.settingsHtml(rawCfg(), isAdmin());   /* 段B（統合 0130）: 職員のスマホの画面のお知らせと補助項目の申請の入り切り */
     h += shSetHtml();   /* 社保の知らせ（部品が無い時は出さない） */
     if ((typeof CT !== 'undefined' && CT)) h += CT.setHtml(rawCfg());   /* 資格の期限の知らせの入り切り（既定は切） */
+    if ((typeof STF !== 'undefined' && STF)) h += STF.setHtml(rawCfg(), isAdmin(), officeName);   /* 今日の人員配置の入り切りと決まり（既定は切・2026-11-28） */
     h += '</form>' + a36Form() + '<div class="row"><button type="button" class="btn pri" data-act="save-set"' + (isAdmin() ? '' : ' disabled') + '>設定を保存する</button></div>' +
       '<p class="help">休憩の時間（日勤 ' + esc(c.breakH) + ' 時間・夜勤 ' + esc(c.nightBreakH) + ' 時間・拘束が ' + esc(c.breakThresholdH) + ' 時間を超えたら引く）はシフトアプリの設定を取り込んで使います（ここでは変えません）。丸めの決まり: 予定より早い出勤は予定の開始から、予定より遅い退勤は予定の終わりまで数えます。始業前・終業後に実際に働いた時は、その日を「直す」で早出・残業を認めてください（認めないまま切り捨てると賃金の未払いになります）。</p></div>';
     /* v5 1-5: 勤怠の管理者の名簿（管理者だけに出す・画面だけで印刷しない） */
@@ -3160,12 +3168,14 @@
     if (exs && exs.bad.length) { alert('補助項目の欄を入れ直してください: ' + exs.bad.join('、')); return; }
     var vws = typeof VW !== 'undefined' && VW ? VW.readSet(rawCfg()) : null;   /* 年別・事業所別・休日のタブの入り切り（欄が無い時は今の設定のまま） */
     var cts = (typeof CT !== 'undefined' && CT) ? CT.readSet(rawCfg()) : null;   /* 資格の期限の知らせの入り切り（欄が無い時は今の設定のまま） */
+    var stfs = (typeof STF !== 'undefined' && STF) ? STF.readSet(rawCfg()) : null;   /* 今日の人員配置の入り切りと決まり（欄が無い時は今の設定のまま・2026-11-28） */
+    if (stfs && stfs.bad.length) { alert('人員配置の決まりを入れ直してください: ' + stfs.bad.join('、')); return; }
     /* 保存済みの項目の形を変える時は、ほかの月分の前の形の行が合計と CSV に数えられなくなることを確かめる（反証レビュー 2026-11-25） */
     var kc = exs ? exKindChanged(exs.items) : [];
     if (kc.length && !confirm('補助項目の形を変えます（' + kc.join('・') + '）。ほかの月分に前の形で入れた行があると、その行は合計と CSV に数えられなくなります（画面と書き出しで知らせます）。変えてよいですか？\n（安全なのは、今の項目を止めて、新しいコードで足すことです）')) return;
     /* この画面の欄が持たない今の設定の鍵（agreement36 など）は、そのまま残して送る（DB の kintai_settings_put は送った中身で丸ごと置き換えるため・v5 段3）。
        欄が持つ鍵は今までどおり欄の値だけ（空にした欄は送らず既定に戻す） */
-    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []);
+    var outCfg = {}, cur = rawCfg(), formKeys = SET_FIELDS.map(function (f) { return f[0]; }).concat(['close_day', 'variableMonth', 'monthRound30', 'csvTime', 'legal_holiday']).concat(lvs ? LV_SET_KEYS : []).concat(exs ? ['extraItems'] : []).concat(vws ? vws.keys : []).concat(shs ? ['shaho'] : []).concat(cts ? cts.keys : []).concat(stfs ? stfs.keys : []);
     for (k in cur) if (formKeys.indexOf(k) < 0) outCfg[k] = cur[k];
     for (k in cfg) outCfg[k] = cfg[k];
     if (a36.obj) outCfg.agreement36 = a36.obj;
@@ -3174,6 +3184,7 @@
     if (typeof window !== 'undefined' && window.KintaiBoard) window.KintaiBoard.readSettings(outCfg);   /* 段B（統合 0130）: 鍵 selfAnnounce・selfExtraReq（欄が無い時は今の設定のまま） */
     if (vws) for (k in vws.vals) outCfg[k] = vws.vals[k];
     if (cts) for (k in cts.vals) outCfg[k] = cts.vals[k];
+    if (stfs) for (k in stfs.vals) outCfg[k] = stfs.vals[k];
     if (shs && ('shaho' in cur || JSON.stringify(shs.vals) !== JSON.stringify(KS.fillConfig({})))) outCfg.shaho = shs.vals;   /* 触っていない・既定のままなら鍵を作らない（履歴に載せない） */
     busy = true; var restore = pressBusy(btn, '保存しています…');
     rpc('kintai_settings_put', { p_config: outCfg, p_rev: (data.settings && data.settings.rev) || 0 }).then(okOr).then(function () { busy = false; sync('設定を保存しました'); toast('設定を保存しました'); return load(false); })['catch'](function (e) { busy = false; restore(); note('設定の保存', e); alert(msgOf(e)); });
@@ -3772,6 +3783,7 @@
       if (a === 'tdof') { var o0 = b.getAttribute('data-o') || ''; officeFilter = ['facility', 'visit', 'day'].indexOf(o0) >= 0 ? o0 : ''; paint(); return; }   /* ホームの今日の出勤状況の事業所（日ごとの絞り込みと同じ・2026-11-27） */
       if (a.indexOf('vw-') === 0) { if (typeof VW !== 'undefined' && VW) VW.act(a, b, vwCtx()); return; }   /* 年別・事業所別・休日（2026-11-25） */
       if (a.indexOf('ct-') === 0) { if ((typeof CT !== 'undefined' && CT)) CT.act(a, b, ctCtx()); return; }   /* 資格の期限（2026-11-25） */
+      if (a.indexOf('sf-') === 0) { if ((typeof STF !== 'undefined' && STF)) STF.act(a, b, stfCtx()); return; }   /* 今日の人員配置（2026-11-28） */
       if (a === 'nt-add') { ntAdd(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.getAttribute('data-kind'), b); return; }   /* v6: 打刻漏れの知らせ */
       if (a === 'nt-void') { ntVoid(b.getAttribute('data-id'), b.getAttribute('data-sid'), b); return; }
       if (a === 'edit') openEdit(b.getAttribute('data-sid'), b.getAttribute('data-date'), b.hasAttribute('data-bi') ? +b.getAttribute('data-bi') : null, b.getAttribute('data-rv'));
@@ -3907,7 +3919,7 @@
     $('g-next').addEventListener('click', function () { if (settingsLeaveOk()) setYm(C.nextYm(ym)); });
     $('g-import').addEventListener('click', function () { if (isLocked()) alert('締めた月は取り込めません。'); else if (settingsLeaveOk()) { dropMonthCaches(); load(true); } });
     /* v5 段5: 上の「読み直す」は申請の一覧と数も捨てて読み直す（反証レビュー 2026-11-21）。月を読み直す受けより先に足し、読み込みの最初の描き直しで新しく読むようにする */
-    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); if ((typeof CT !== 'undefined' && CT)) CT.drop(); });
+    $('g-reload').addEventListener('click', function () { reqReset(); reqSumReset(); if (typeof VW !== 'undefined' && VW) VW.drop(); if ((typeof CT !== 'undefined' && CT)) CT.drop(); if ((typeof STF !== 'undefined' && STF)) STF.drop(); });
     $('g-reload').addEventListener('click', function () { if (settingsLeaveOk()) { dropMonthCaches(); load(false); } });
     /* 保存中（busy）は Esc でも閉じない（審査の指摘1） */
     $('g-dlg').addEventListener('cancel', function (e) { if (busy) { e.preventDefault(); return; } if (dirty() && !confirm('保存していない直しがあります。閉じますか？')) e.preventDefault(); else { dlgCtx = null; wipeEnroll(); } });   /* v5 段5: Esc の時はその場で QR と番号を消す（close の知らせは後から届くため） */
