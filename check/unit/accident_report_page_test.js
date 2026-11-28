@@ -112,6 +112,9 @@ t('不具合を報告（su-report.js）を </body> の直前に置く', /<script
 t('見た目の共通の型（su-theme.css）を当てる', /<html lang="ja" data-su-theme>/.test(H) && /su-theme\.css\?v=/.test(H));
 t('保存していない変更は離れる前に確かめる（beforeunload・別の方・一覧へ・新しい報告）', /window\.addEventListener\('beforeunload'/.test(JS) && (JS.match(/保存していない書きかけがあります/g) || []).length >= 3);
 t('innerHTML へ入れる値は esc を通す（紙は計算の部品の中で esc）', !/innerHTML=[^;]*\+\s*r\.(name|room|resident_name)\b/.test(JS));
+t('事業所のチップの名前は保存した時の写しがあれば写し（紙と同じ officeLabels・反証レビュー 2026-11-28）', /nm=g==='offices'\?C\.officeLabels\(draft&&draft\.data,f\)/.test(JS) && /lb=nm\[C\.OFFICE_KINDS\.indexOf\(o\.id\)\]/.test(JS));
+t('入居者マスタから入れ直した時はチップの名前も今の写しに合わせる', /fromResident\(draft\.data,master,fac_\(\),today_\(\)\)\); touched=\{\};\s*relabelOffices_\(\)/.test(JS) && /function relabelOffices_\(\)\{[\s\S]*?C\.officeLabels\(draft&&draft\.data,fac_\(\)\)[\s\S]*?textContent=/.test(JS));
+t('施設情報は section の accidentReport と一緒に calc へ渡す', /C\.facOf\(F\?F\.get\(\):null,\(F&&typeof F\.section==='function'\)\?F\.section\('accidentReport'\):null\)/.test(JS));
 
 console.log('\n────────── 合計: ' + pass + ' 件成功 / ' + fail + ' 件失敗 ──────────');
 if (fail) process.exitCode = 1;

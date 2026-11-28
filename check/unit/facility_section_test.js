@@ -80,6 +80,14 @@ const flush = () => new Promise(r => setTimeout(r, 0));
     t('控えから起動しても mealTimes・mealForms が残る', (second.F.section('mealTimes') || {}).lunch === '11:45' && ((second.F.section('mealForms') || {}).main || {}).normal === '見本の主食'); }
   { const { F } = load(prof(p => { p.daycareNotes = { x: '見本の文' }; })); t('daycareNotes（便10）を最上位から読む', (F.section('daycareNotes') || {}).x === '見本の文'); }
   { const { F } = load(prof(() => {})); t('daycareNotes は書いていなければ null', F.section('daycareNotes') === null); }
+  { const { F } = load(prof(p => { p.accidentReport = { officeNames: { 施設: '見本ホーム事業所' } }; })); t('accidentReport（事故報告書・2026-11-28）を最上位から読む', ((F.section('accidentReport') || {}).officeNames || {})['施設'] === '見本ホーム事業所'); }
+  { const { F } = load(prof(() => {})); t('accidentReport は書いていなければ null', F.section('accidentReport') === null); }
+  { /* 事故報告書の画面（fac_）と同じつなぎ方: get() と section('accidentReport') を calc の facOf に渡す */
+    const AC = require(path.join(ROOT, 'accident-report-calc.js'));
+    const { F } = load(prof(p => { p.offices = p.offices.filter(o => o.kind !== '通所'); p.accidentReport = { officeNames: { 施設: '見本ホーム事業所', 通所: '見本デイ事業所' }, officeAddresses: { 訪問: '見本町１－２－３' } }; }));
+    const f = AC.facOf(F.get(), F.section('accidentReport'));
+    t('事故報告書のつなぎ: 施設の名前と訪問の所在地は様式の書き方・訪問の名前は formalName のまま', f.offices['施設'].name === '見本ホーム事業所' && f.offices['訪問'].address === '見本町１－２－３' && f.offices['訪問'].name === F.get().offices[1].formalName, f.offices);
+    t('事故報告書のつなぎ: get() が空で埋めた通所には様式の名前を当てない', f.offices['通所'].name === '', f.offices['通所']); }
   { const { F } = load(prof(p => { p.mealTimes = '08:00'; })); t('文字の mealTimes は null', F.section('mealTimes') === null); }
   /* 貼り薬カレンダーの薬の名前と貼る場所（代表者の決定 2026-11-13）。形の確かめは画面（check/unit/patch_config_test.js） */
   { const { F } = load(prof(p => { p.patchCalendar = { drug: '見本テープ', sites: [{ name: '見本の左' }, { name: '見本の右' }] }; }));
