@@ -1,8 +1,10 @@
 //@ 写し元: haiben-record/haiben-record.html（排便記録アプリ）
-//@ コミット: ce3653404aac62e658be7b57404a4a9f7d52fea9
-//@ 行: 4436〜4515（function elH から lastR の終わりまで。一字一句そのまま）
+//@ コミット: 8d695a4ad81d3006e3aacbf07db85f5f0fa6e503
+//@ 行: 5694〜5775（function elH から lastR の終わりまで。一字一句そのまま）
 //@ 用途: check/unit/msk_excretion_test.js が vm で評価し、moushiokuri-viewer.html の写し（excStoolResetSeries〜excStoolLevel）と同じ入力で比べる
 //@ 写し元が手元にある時は、写し元の同じ範囲がこのファイルと一致するかも確かめる（食い違えば写しの見直しが要る）
+//@ 2026-11-28 の写し元の変更（fmtEl の「受け取り中」・lastR の受け取り中の null）は、排便記録アプリが過去の記録を受け取っている間（hbHistPartial_）だけ効く。
+//@   ビューアと試験の vm には hbHistPartial_ が無いので答えは前と同じ。ビューアは読み込んだ範囲の切れ目を excConfirmed（確定点）で別に扱うため、この2か所は写さない
 //@----
 function elH(dt,rid){
   if(!dt)return null;
@@ -37,7 +39,7 @@ function _freezeIfHosp(rid){
   }
   return now;
 }
-function fmtEl(h){if(h===null)return'未記録';if(h<1)return Math.round(h*60)+'分前';
+function fmtEl(h){if(h===null)return(typeof hbHistPartial_==='function'&&hbHistPartial_())?'受け取り中':'未記録';if(h<1)return Math.round(h*60)+'分前';
   const d=Math.floor(h/24),hr=Math.floor(h%24),mn=Math.round((h%1)*60);
   if(d===0)return hr+'時間'+(mn>0?mn+'分':'')+'前';return d+'日'+(hr>0?hr+'時間':'')+'前'}
 function resCfg(rid){var r=rid?D.residents.find(function(x){return x.id===rid}):null;var c=(r&&r.cfg)?r.cfg:{};
@@ -82,5 +84,7 @@ function lastR(rid,t){
   // arr は recsByRes（datetime 昇順済みインデックス）から順序を保って抽出済みのため
   // 再ソート不要（重複ソートを排除し描画コストを削減）。
   var ser=stoolResetSeries(arr);
+  /* 過去の記録を受け取っている間（2026-11-28）は、窓の中の記録だけで決められない時に null（＝赤・「受け取り中」）。軽く見せない側に倒す */
+  if(typeof hbHistPartial_==='function'&&hbHistPartial_()&&ser.length&&!hbStoolAnchored_(arr,ser))return null;
   return ser.length?ser[ser.length-1]:null;
 }
