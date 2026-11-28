@@ -49,7 +49,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
 .msg.ng { background: var(--ng-l); color: var(--ng); font-weight: 700; }
 .msg.ok { background: var(--ok-l); color: var(--ok); font-weight: 700; }
 .msg.warn { background: var(--warn-l); color: var(--warn); font-weight: 700; }
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 0 12px; }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 12px; }   /* 給与明細を足して4つ（2026-11-28） */
 .tab { min-height: 48px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--tx); font: inherit; font-weight: 700; cursor: pointer; }
 .tab[aria-selected="true"] { background: var(--pri); color: var(--pri-tx); border-color: var(--pri); }
 .seg { display: flex; gap: 8px; margin: 0 0 10px; }
@@ -119,3 +119,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .btn:focus-vi
   body * { display: none !important; }
   body::before { content: "この画面は印刷しません。"; display: block; }
 }
+
+/* 給与明細（kintai-self-slip.js・統合 0145・2026-11-28）: 一覧は押せる行・明細は名前と額の2列（字は今の大きさ・押す所 48px） */
+.slip-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.slip-row { width: 100%; min-height: 48px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--tx); font: inherit; cursor: pointer; }
+.slip-row .slip-ym { font-weight: 700; }
+.slip-row .slip-pay { color: var(--mut); font-size: 0.9375rem; }
+.slip-row .slip-net { margin-left: auto; white-space: nowrap; }
+.slip-who { margin: 4px 0 8px; font-weight: 700; }
+.slip-sec h3 { font-size: 1rem; margin: 14px 0 4px; }
+.slip-dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; }
+.slip-dl dt { color: var(--tx); }
+.slip-dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.slip-tot { padding: 10px 12px; margin: 8px 0; border-radius: 10px; background: var(--pri-l); }
+.slip-tot dt:last-of-type, .slip-tot dd:last-of-type { font-weight: 700; }
+#slip-box .empty { color: var(--mut); text-align: center; padding: 12px 0; margin: 4px 0; }
