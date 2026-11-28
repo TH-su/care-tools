@@ -232,6 +232,13 @@ console.log('従業員の項目を選んで書き出す（empCsv・2026-11-28）
   eq('1人目の値', L[1], 'T01,架空 一,時給,1200,,5000,20000,車・自転車,4.5,はい,180000,,乙欄,7000,はい,女,12');
   eq('役員は基本給を空にし、式に読まれる名前は無害化', L[2], ",'=cmd|架空,役員報酬,,400000,,,,,,,,,,,,");
   t('給与の設定が無い人は出さない（2人・最後は空行）', r.count === 2 && L.length === 4 && L[3] === '', [r.count, L.length]);
+  /* 反証レビュー 2026-11-28 */
+  const defs3 = [{ code: 'n', name: '夜勤手当', sec: 'pay', calc: 'night_shift' }, { code: 'h', name: '隠した手当', sec: 'pay', hidden: true }];
+  const pr3 = [{ staff_id: 'a', name: '架空 一', data: { allowances: [{ code: 'n', amount: 5000 }, { code: 'h', amount: 3000 }], resident_tax: { '2027-07': 7000, '2027-08': 8000 } } }];
+  const r3 = X.empCsv({ ym: '2027-07', taxYm: '2027-08', defs: defs3, profiles: pr3, staffInfo: { a: { office: 'facility' } }, officeName: (c) => (c === 'facility' ? '施設の見本' : ''), keys: ['al:n', 'al:h', 'office', 'resident_tax'] });
+  eq('回数の手当は「（単価）」・額を持つ人がいる隠した手当は列に出る', r3.text.split('\r\n')[0], '手当：夜勤手当（単価）,手当：隠した手当,事業所,住民税（この月分）');
+  eq('事業所は名前・住民税は支給日の月（taxYm）の額', r3.text.split('\r\n')[1], '5000,3000,施設の見本,8000');
+  t('額を持つ人のいない隠した手当は列に出ない', !X.empColumns([{ code: 'h', name: 'x', sec: 'pay', hidden: true }], [{ data: { allowances: [] } }]).some((c) => c.key === 'al:h'));
   eq('列を1つも選ばない時は断る', X.empCsv({ ym: '2027-04', defs, profiles, keys: [] }).error, 'nocols');
 }
 

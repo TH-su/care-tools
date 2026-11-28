@@ -321,7 +321,10 @@
   function yn(b) { return b === true ? 'はい' : ''; }
   function o_(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function blank(v) { return v === null || v === undefined ? '' : v; }
-  function empColumns(defs) {
+  function empColumns(defs, profiles) {
+    /* 隠した手当も、額を持つ人がいれば列に出す（隠しても払っているため・反証レビュー 2026-11-28） */
+    var used = {};
+    (Array.isArray(profiles) ? profiles : []).forEach(function (p) { var d = o_(p && p.data); ['allowances', 'deductions'].forEach(function (k) { (Array.isArray(d[k]) ? d[k] : []).forEach(function (a) { if (a && a.code && a.amount !== null && a.amount !== undefined && a.amount !== '') used[a.code] = 1; }); }); });
     var c = [
       { key: 'code', label: '社員番号', group: '基本' }, { key: 'name', label: '氏名', group: '基本' }, { key: 'office', label: '事業所', group: '基本' },
       { key: 'freee_emp_num', label: '従業員番号（freee）', group: '基本' }, { key: 'birth_date', label: '生年月日', group: '基本' }, { key: 'gender', label: '性別', group: '基本' },
@@ -330,8 +333,10 @@
       { key: 'avg_month_hours', label: '月平均所定労働時間', group: '給与' }, { key: 'avg_month_days', label: '月平均所定労働日数', group: '給与' }, { key: 'day_hours', label: '1日の所定時間', group: '給与' }
     ];
     (Array.isArray(defs) ? defs : []).forEach(function (a) {
-      if (!a || !a.code || a.hidden) return;
-      if (a.sec === 'pay') c.push({ key: 'al:' + a.code, label: (a.name || a.code), group: '手当' });
+      if (!a || !a.code || (a.hidden && !used[a.code])) return;
+      /* 回数・時間・日数で額が変わる手当（calc が fixed 以外）の額は単価（payroll-calc.js の手当の計算） */
+      var unit = a.calc && a.calc !== 'fixed' ? '（単価）' : '';
+      if (a.sec === 'pay') c.push({ key: 'al:' + a.code, label: (a.name || a.code) + unit, group: '手当' });
       else if (a.sec === 'deduct') c.push({ key: 'de:' + a.code, label: (a.name || a.code), group: '固定の控除' });
     });
     c.push({ key: 'commute', label: '通勤手当（月）', group: '通勤' }, { key: 'commute_means', label: '通勤の手段', group: '通勤' }, { key: 'commute_km', label: '片道の距離（km）', group: '通勤' }, { key: 'commute_parking', label: '駐車場の料金（月）', group: '通勤' },
@@ -341,7 +346,8 @@
       { key: 'no_attendance', label: '勤怠を使わない', group: 'そのほか' }, { key: 'exclude', label: '計算から外す', group: 'そのほか' });
     return c;
   }
-  function empValue(key, p, si, ym) {
+  function empValue(key, p, si, ym, opt) {
+    opt = opt || {};
     var d = o_(p.data), ins = o_(d.ins), cm = o_(d.commute), tx = o_(d.tax);
     function amt(list, code) { var x = (Array.isArray(list) ? list : []).filter(function (a) { return a && a.code === code; })[0]; return x && x.amount !== null && x.amount !== undefined && x.amount !== '' ? Number(x.amount) : ''; }
     if (/^al:/.test(key)) return amt(d.allowances, key.slice(3));
@@ -349,7 +355,7 @@
     switch (key) {
       case 'code': return si.emp_code || '';
       case 'name': return p.name || '';
-      case 'office': return si.office || '';
+      case 'office': return si.office ? (typeof opt.officeName === 'function' ? (opt.officeName(si.office) || si.office) : si.office) : '';
       case 'freee_emp_num': return blank(d.freee_emp_num);
       case 'birth_date': return blank(d.birth_date);
       case 'gender': return genderLabel(d.gender);
@@ -374,7 +380,7 @@
       case 'care_exempt': return yn(ins.care_exempt);
       case 'tax_col': return COL_JA[tx.col] || '';
       case 'dependents': return blank(tx.dependents);
-      case 'resident_tax': return blank(o_(d.resident_tax)[ym]);
+      case 'resident_tax': return blank(o_(d.resident_tax)[opt.taxYm || ym]);
       case 'no_attendance': return yn(d.no_attendance);
       case 'exclude': return yn(d.exclude);
     }
@@ -382,7 +388,7 @@
   }
   function empCsv(o) {
     o = o || {};
-    var cols = empColumns(o.defs), by = {};
+    var cols = empColumns(o.defs, o.profiles), by = {};
     cols.forEach(function (c) { by[c.key] = c; });
     var keys = (Array.isArray(o.keys) ? o.keys : []).filter(function (k, i, a) { return by[k] && a.indexOf(k) === i; });
     if (!keys.length) return { ok: false, error: 'nocols' };
@@ -390,7 +396,7 @@
     (Array.isArray(o.profiles) ? o.profiles : []).forEach(function (p) {
       if (!p || !p.staff_id || p.none) return;
       n++;
-      rows.push(keys.map(function (k) { return empValue(k, p, o_(si[p.staff_id]), o.ym); }));
+      rows.push(keys.map(function (k) { return empValue(k, p, o_(si[p.staff_id]), o.ym, o); }));
     });
     return { ok: true, name: fileName('staff', o.ym, 'csv'), text: csvJoin(rows), count: n };
   }

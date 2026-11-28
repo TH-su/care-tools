@@ -2010,8 +2010,10 @@
   /* ── 従業員の項目を選んで書き出す（PayrollExport.empCsv・2026-11-28）。選んだ項目はメモリだけ（端末に残さない・開いていたタブだけを残す決まり） ── */
   var empSel = null;
   var EMP_DEF = ['code', 'name', 'pay_type', 'base', 'health_std', 'pension_std'];
-  function empCols() { var x = X(); return x && typeof x.empColumns === 'function' ? x.empColumns(bs.allowances) : []; }
+  function empCols() { var x = X(); return x && typeof x.empColumns === 'function' ? x.empColumns(bs.allowances, bs.profiles) : []; }
   function openEmpCsv() {
+    /* 書き出したことは月分の給与の回に記録するので、回の無い月分では先に知らせる（反証レビュー 2026-11-28・仮置き） */
+    if (!bs.run) { say(ymText(ym) + 'の給与の回がまだ無いので、書き出したことを記録できません。「今月の給与」で一度計算して保存してから押してください（前の月分に切り替えても書き出せます）。'); return; }
     var cols = empCols(); if (!cols.length) { say('書き出しの部品を読み込めませんでした。ページを読み込み直してください。'); return; }
     var sel = empSel || EMP_DEF, groups = [], byG = {};
     cols.forEach(function (c) { if (!byG[c.group]) { byG[c.group] = []; groups.push(c.group); } byG[c.group].push(c); });
@@ -2023,7 +2025,7 @@
         return '<label class="chk"><input type="checkbox" data-empcol="' + esc(c.key) + '"' + (sel.indexOf(c.key) >= 0 ? ' checked' : '') + '> ' + esc(c.label) + '</label>';
       }).join(' ') + '</div></fieldset>';
     });
-    h += '<p class="help">' + esc(ymText(ym)) + 'の画面の設定（その月分の期間の初日に効く版）を書き出します。住民税は' + esc(ymText(ym)) + 'の額です。CSV には氏名と金額が入ります。使い終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。書き出したことは記録に残ります。</p>';
+    h += '<p class="help">' + esc(ymText(ym)) + 'の画面の設定（その月分の期間の初日に効く版）を書き出します。住民税はこの月分の給与で引く額（支給日の月の額）です。回数・時間で額が変わる手当は単価を出します。CSV には氏名と金額が入ります。使い終えたら、Finder の「ダウンロード」でそのファイルを選び、ごみ箱へ入れて「ごみ箱を空にする」まで行ってください。書き出したことは記録に残ります。</p>';
     openDlg('項目を選んで書き出す', h, '<button type="button" class="btn" data-act="dlg-close">やめる</button><button type="button" class="btn pri" data-act="empcsv-go">書き出す</button>');
   }
   function empChecks() { return Array.prototype.slice.call(document.querySelectorAll('#p-dlg input[data-empcol]')); }
@@ -2034,12 +2036,16 @@
     if (!keys.length) { if (msg) { msg.hidden = false; msg.textContent = '書き出す項目を1つ以上選んでください。'; } return; }
     if (msg) msg.hidden = true;
     empSel = keys;
-    var res = x.empCsv({ ym: ym, profiles: bs.profiles, staffInfo: bs.staff_info, defs: bs.allowances, keys: keys });
+    /* 住民税は計算と同じく支給日の月の額・事業所は名前で（反証レビュー 2026-11-28） */
+    var pd = payDate(), oc = plCtx([]);
+    var res = x.empCsv({ ym: ym, taxYm: isDate(pd) ? pd.slice(0, 7) : ym, profiles: bs.profiles, staffInfo: bs.staff_info, defs: bs.allowances, keys: keys,
+      officeName: function (code) { try { return (oc && oc.officeName(code)) || code; } catch (e) { return code; } } });
     if (!res || res.ok === false) { say('書き出す項目を1つ以上選んでください。'); return; }
-    var done = hold(btn, '作っています…'), my = ym;
+    var done = hold(btn, '作っています…'), my = ym, mg = maskGen, pg = pinGen;
     rpc('payroll_export_log', { p_ym: ym, p_kind: 'csv' }).then(function (r) {
       done();
-      if (my !== ym || masked) return;   /* 待つ間に月分を変えた・金額を隠した時は書き出さない */
+      /* 待つ間に月分を変えた・金額を隠した・鍵の画面や覆いに変わった時は書き出さない（反証レビュー 2026-11-28） */
+      if (my !== ym || masked || view !== 'app' || mg !== maskGen || pg !== pinGen) { res = null; return; }
       if (r && r.ok === false && r.error === 'norun') { say(ymText(ym) + 'の給与の回がまだ無いので、書き出したことを記録できません。「今月の給与」で一度計算して保存してから押してください。'); return; }
       okOr(r);
       download(res); res = null;
