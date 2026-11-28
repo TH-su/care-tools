@@ -722,7 +722,7 @@
     else if (tab === 'profile') h = profileHtml();
     else if (tab === 'yearend') h = YEU() ? YEU().html(yeCtx()) : '<div class="band ng" role="alert">計算の部品が読み込めていません。ページを読み込み直してください。</div>';
     else h = isAdmin() ? settingsHtml() : '';
-    put($('p-main'), (tab === 'bonus' ? '' : bandsHtml()) + h);
+    put($('p-main'), pinMissHtml() + (tab === 'bonus' ? '' : bandsHtml()) + h);
   }
 
   /* 手順の段階（2026-11-26・見せるだけ。計算・保存・確定の動きは変えない）: 勤怠の締め → 計算 → 下書き保存 → 確定。
@@ -2587,6 +2587,11 @@
      画面はさわった時に1分ごとに延ばす。番号は画面の入力欄にだけあり、端末にも記録にも残さない。
      データベースに暗証番号の関数がまだ無い時（0110 の前）は、今までどおり開く（pinOn=false） */
   var pinOn = false, pinSt = null, pinMsg = '', lastTouch = 0, pinGen = 0, PIN_RE = /^[0-9]{4,6}$/;
+  /* 開けた時に、前に開けてから違えられた回数（統合 0144 の missed・2026-11-28 代表者の決定）。1以上の整数の時だけ帯に出し、鍵の画面に戻ったら消す。
+     missed の無い古い DB・形の違う値では 0（何も出さない）。数はメモリだけ（端末に残さない） */
+  var pinMissN = 0;
+  function pinMissOf(r) { var m = r && r.missed; return typeof m === 'number' && isFinite(m) && m >= 1 && Math.floor(m) === m ? m : 0; }
+  function pinMissHtml() { return pinMissN ? '<div class="band warn" role="status">' + esc('前に開けてから ' + pinMissN + ' 回、暗証番号が違えられていました。心当たりがなければ管理者に知らせてください。') + '</div>' : ''; }
   /* 同じブラウザのタブどうしで「鍵をかけた」を知らせ合う（同じログインは開いた時刻を分け合うため。番号・中身は送らない） */
   var pinCh = null; try { if (window.BroadcastChannel) pinCh = new window.BroadcastChannel('su-payroll-pin'); } catch (_) { pinCh = null; }
   var PIN_NG = {
@@ -2633,7 +2638,7 @@
     view = 'lock'; pinGen++; masked = false; maskGen++; closeDlg(); bs = null; kinBand = null; importRows = null; printList = null; audit = null; members = null;
     bb = null; bGen++; bLoading = false; bPrint = null;   /* 賞与の読んだ物も捨てる（入れた賞与額はメモリに残す・2026-11-23） */
     yePrint = null; yeReset();   /* 年末調整の物も捨てる（2026-11-23） */
-    pinMsg = msg || '';
+    pinMsg = msg || ''; pinMissN = 0;   /* 0144: 違えられた回数の帯は鍵の画面に戻ったら消す */
     $('p-app').hidden = true; put($('p-main'), ''); put($('p-print'), '');
     var st = pinSt || {}, g = $('p-gate'); g.hidden = false;
     var pinIn = function (id, label) {
@@ -2685,6 +2690,7 @@
     rpc('payroll_pin_unlock', { p_pin: a }).then(function (r) {
       done();
       if (!r || r.ok !== true) { pinSay(pinErr(r)); return null; }
+      pinMissN = pinMissOf(r);   /* 0144: 前に開けてから違えられた回数（帯は描き直しのたびに出す） */
       return pinOpened();
     }, function (e) { done(); pinFail(e); });
   }
