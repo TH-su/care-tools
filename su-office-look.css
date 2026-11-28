@@ -81,6 +81,72 @@
     --field: var(--card);
   }
 }
+/* 勤怠管理（kintai.html の <html data-sul-palette="blue">）だけは、元の青と白を基調とした色に戻す（本人指示 2026-11-28「勤怠管理アプリの配色のみは元の青と白に・給与は一旦そのまま」）。
+   値は 2026-11-28 にグレージュ＋ピンクへ変える前（bd13b60 の前）の勤怠の画面で測った値。並び・詰めは変えない */
+@media screen {
+  html:root[data-su-theme][data-sul-palette="blue"]:not([data-su-theme~="keep-hdr"]) {
+    --bg: #fff;
+    --card: #fff;
+    --sul-band: #e8f0fc;
+    --sul-side: #f5f7fb;
+    --sul-sel: #dce7fa;
+    --sul-hover: #eaf0f9;
+    --sul-sideline: #dde3ec;
+    --sul-th: #f2f4f7;
+    --sul-rule: #e2e6ec;
+    --sul-rule-faint: #eef1f5;
+    --sul-btnline: #c3ccd8;
+    --sul-guide: #eef3fa;
+    --line: #c9d2de;
+    --tag: #eef2f7;
+    --ink: #14213d;
+    --sub: #3d4a5c;
+    --muted: #414b5a;
+    --sul-icon: #3a5687;
+    --sul-blue: #1946a8;
+    --sul-accent: #1946a8;
+    --pri-tx: #fff;
+    --sul-fill: #1946a8;
+    --sul-fill-tx: #fff;
+    --sul-gk: var(--sul-gk-w);
+    --sul-gp: var(--sul-gp-w);
+    --focus: #1946a8;
+    --th: #eef2f7;
+    --field: #fff;
+  }
+}
+@media screen and (prefers-color-scheme: dark) {
+  html:root[data-su-theme][data-sul-palette="blue"]:not([data-su-theme~="keep-hdr"]):not([data-ds="ops"]) {
+    --bg: #10151d;
+    --card: #1a212c;
+    --sul-band: #172338;
+    --sul-side: #121a27;
+    --sul-sel: #22355a;
+    --sul-hover: #1b2840;
+    --sul-sideline: #2a3850;
+    --sul-th: #1c2533;
+    --sul-rule: #2c3647;
+    --sul-rule-faint: #222b38;
+    --sul-btnline: #3e4a5e;
+    --sul-guide: #151f30;
+    --line: #3a4556;
+    --tag: #26303e;
+    --ink: #e8ecf3;
+    --sub: #b8c2d0;
+    --muted: #aab4c3;
+    --sul-icon: #9fb4d8;
+    --sul-blue: #9dbaff;
+    --sul-accent: #9dbaff;
+    --pri-tx: #0d1320;
+    --sul-fill: #9dbaff;
+    --sul-fill-tx: #0d1320;
+    --sul-gk: var(--sul-gk-d);
+    --sul-gp: var(--sul-gp-d);
+    --focus: #9dbaff;
+    --th: #222b38;
+    --field: #141a23;
+  }
+}
 
 @media screen {
   /* ── 見出しの帯（全部の幅）: 淡い青の地・字は濃い紺。中のボタンは枠の無い文字のボタン（押す所の高さ 44px はそのまま） ── */
