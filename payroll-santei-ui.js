@@ -36,8 +36,8 @@
     var s = ST(); if (!s) return [];
     if (S.mode === 'teiji') { var y = yearOf(ctx); return [y + '-03', y + '-04', y + '-05', y + '-06', y + '-07']; }
     var b = baseOf(ctx); if (!b) return [];
-    /* 随時改定: 表示中の月分までの9か月分（変わった月分の前の月分と、その後の3か月の支給を見るため） */
-    if (S.mode === 'zuiji') { var z = []; for (var i = -8; i <= 0; i++) z.push(s.ymAdd(b, i)); return z; }
+    /* 随時改定: 表示中の月分までの9か月分（変わった月分の前の月分と、その後の3か月の支給を見るため）と、その先の3か月分（改定の前の額・もう変えたかを版で見るため） */
+    if (S.mode === 'zuiji') { var z = []; for (var i = -8; i <= 3; i++) z.push(s.ymAdd(b, i)); return z; }
     return [s.ymAdd(b, -4), s.ymAdd(b, -3), s.ymAdd(b, -2), s.ymAdd(b, -1), b];
   }
   function key(ctx) { return S.mode + ':' + (S.mode === 'teiji' ? yearOf(ctx) : baseOf(ctx)); }
@@ -79,7 +79,7 @@
     var s = ST(); if (!s || !S.data) return null;
     if (S.mode === 'zuiji') {
       var z = ZJ(); if (!z) return null;
-      var bz = baseOf(ctx), zr = z.judge({ boots: S.data.boots, opts: { special: S.special }, overrides: S.ov, fromYm: bz ? s.ymAdd(bz, -7) : null });
+      var bz = baseOf(ctx), zr = z.judge({ boots: S.data.boots, opts: { special: S.special, siMonth: siMonth(ctx) }, overrides: S.ov, fromYm: bz ? s.ymAdd(bz, -7) : null, toYm: bz });
       zr.mode = 'zuiji'; zr.base = bz;
       return zr;
     }
@@ -197,16 +197,17 @@
   }
 
   /* ── 随時改定（payroll-zuiji.js）の一覧と、1人ずつ等級を変える ── */
-  var ZTAG = { hit: '<span class="tag warn">随時改定</span>', wait: '<span class="tag">待ち</span>', no: '<span class="tag">対象外</span>', review: '<span class="tag warn">要確認</span>' };
+  var ZTAG = { hit: '<span class="tag warn">随時改定</span>', wait: '<span class="tag">待ち</span>', no: '<span class="tag">対象外</span>', review: '<span class="tag warn">要確認</span>', done: '<span class="tag ok">変えた</span>' };
   function chgTxt(ctx, c) {
-    function v(x) { return x === null || x === undefined ? 'なし' : (typeof x === 'number' && x >= 1000 ? ctx.yen(x) : String(x)); }
+    function v(x) { return x === null || x === undefined ? 'なし' : typeof x === 'number' ? (c.unit === '円' ? ctx.yen(x) + '円' : String(x) + (c.unit || '')) : String(x); }
+    if (c.unit === '' && typeof c.from !== 'string' && typeof c.to !== 'string') return ctx.esc(c.label + ' ' + (c.from === null ? '新しく付いた' : '無くなった'));
     return ctx.esc(c.label + ' ' + v(c.from) + '→' + v(c.to));
   }
   function zjHtml(ctx, res) {
     var esc = ctx.esc, yen = ctx.yen, c = res.counts;
     var h = '<div class="cd"><h2>随時改定（' + esc(ymJa(res.base)) + '分までの9か月分）</h2>';
     h += '<div class="sumbar"><div>固定的賃金が変わった<b>' + esc(c.all) + ' 件</b></div><div>随時改定<b>' + esc(c.hit || 0) + ' 件</b></div><div>要確認<b>' + esc(c.review || 0) + ' 件</b></div>' +
-      '<div>3か月の給与を待つ<b>' + esc(c.wait || 0) + ' 件</b></div><div>対象外<b>' + esc(c.no || 0) + ' 件</b></div></div>';
+      '<div>3か月の給与を待つ<b>' + esc(c.wait || 0) + ' 件</b></div><div>対象外<b>' + esc(c.no || 0) + ' 件</b></div><div>変えた<b>' + esc(c.done || 0) + ' 件</b></div></div>';
     arr(res.warns).forEach(function (w) { h += '<div class="band warn" role="status">' + esc(w.msg) + '</div>'; });
     if (c.review) h += '<div class="band warn">要確認の行があります。理由を読み、遡及の差額があれば「直す」で額を入れてください。上がった物と下がった物が同時の時・給与の形が変わった時・等級表の端の時は、年金事務所の案内で確かめてから「職員の給与設定」で直してください。</div>';
     if (S.applied) h += '<div class="band ' + (S.applied.ng ? 'warn' : 'ok') + '" role="status">' + esc(S.applied.msg) + '</div>';
@@ -225,10 +226,10 @@
         '<td>' + stdTxt(ctx, p.cur.health) + '<br>→ ' + stdTxt(ctx, nx.health) + (p.diffH !== null ? '<br><span class="help">' + esc((p.diffH > 0 ? '+' : '') + p.diffH) + '等級</span>' : '') + '</td>' +
         '<td>' + stdTxt(ctx, p.cur.pension) + '<br>→ ' + stdTxt(ctx, nx.pension) + (p.diffP !== null ? '<br><span class="help">' + esc((p.diffP > 0 ? '+' : '') + p.diffP) + '等級</span>' : '') + '</td>' +
         '<td>' + esc(ymJa(p.applyYm)) + '分から</td>' +
-        '<td><button type="button" class="btn" data-act="st-edit" data-sid="' + esc(p.staff_id) + '" aria-label="' + esc(p.name) + ' さんの日数・遡及を直す">直す</button>' +
+        '<td><button type="button" class="btn" data-act="st-edit" data-sid="' + esc(p.staff_id) + '" data-ym="' + esc(p.changeYm) + '" aria-label="' + esc(p.name) + ' さんの日数・遡及を直す">直す</button>' +
         (p.status === 'hit' ? '<br><button type="button" class="btn pri" data-act="st-zj-apply" data-sid="' + esc(p.staff_id) + '" data-ym="' + esc(p.changeYm) + '"' + (S.busy ? ' disabled' : '') + ' aria-label="' + esc(p.name) + ' さんの等級を変える">等級を変える…</button>' : '') + '</td>' +
         '<td class="why">' + (ZTAG[p.status] || '') + (p.reason ? '<br><span class="help">' + esc(p.reason) + '</span>' : '') +
-        p.warns.filter(function (w) { return w.code === 'teiji_skip'; }).map(function (w) { return '<br><span class="help">' + esc(w.msg) + '</span>'; }).join('') + '</td></tr>';
+        p.warns.filter(function (w) { return w.msg !== p.reason; }).map(function (w) { return '<br><span class="help">' + esc(w.msg) + '</span>'; }).join('') + '</td></tr>';
     });
     h += '</tbody></table></div>';
     h += '<p class="help">報酬は定時決定と同じ数え方です（社会保険の対象の支給・賞与は入らない）。支払基礎日数は3か月とも17日以上（特定適用事業所の短時間労働者は11日以上）が要ります。固定的賃金が上がったのに等級が下がった時（その逆も）は対象外です。' +
@@ -334,19 +335,22 @@
   }
 
   /* ── 人ごとの手直し（保存しない） ── */
-  function openEdit(ctx, sid) {
+  function openEdit(ctx, sid, cym) {
     var res = result(ctx); if (!res) return;
-    var p = res.people.filter(function (x) { return x.staff_id === sid; })[0]; if (!p) return;
+    var zj = res.mode === 'zuiji';
+    /* 随時改定は同じ人に2件の変動があり得るので、変わった月分（data-ym）でも引く */
+    var p = res.people.filter(function (x) { return x.staff_id === sid && (!zj || !cym || x.changeYm === cym); })[0]; if (!p) return;
     var esc = ctx.esc, yen = ctx.yen, o = obj(S.ov[sid]), mo = obj(o.months);
     var body = '<p>' + esc(p.code + ' ' + p.name) + ' さん（この画面の中だけ・保存しません）</p>';
     if (S.special) body += '<label><input type="checkbox" id="st-e-short"' + (o.short ? ' checked' : '') + '> 短時間労働者（4分の3未満で加入・支払基礎日数11日以上の月で数える）</label>';
-    body += '<div class="tw"><table><thead><tr><th>支給の月</th><th>報酬</th><th>支払基礎日数</th><th>遡及の額（3月以前の分）</th><th>外す</th></tr></thead><tbody>';
+    /* 随時改定は3か月とも要るので「外す」を出さない・遡及は昇給の差額 */
+    body += '<div class="tw"><table><thead><tr><th>支給の月</th><th>報酬</th><th>支払基礎日数</th><th>' + (zj ? '遡及の差額（前の月の分）' : '遡及の額（3月以前の分）') + '</th>' + (zj ? '' : '<th>外す</th>') + '</tr></thead><tbody>';
     p.months.forEach(function (m, i) {
       var x = obj(mo[m.ym]);
       body += '<tr><td>' + esc(ymJa(m.ym)) + (m.daysNote ? '<br><span class="help">' + esc(m.daysNote) + '</span>' : '') + '</td><td class="num">' + esc(m.why === '支給なし' ? '—' : yen(m.pay)) + '</td>' +
         '<td><input id="st-e-d' + i + '" type="number" inputmode="numeric" min="0" max="31" value="' + esc(num(x.days) !== null ? x.days : (m.days === null || m.days === undefined ? '' : m.days)) + '" aria-label="' + esc(mj(m.ym)) + 'の支払基礎日数" style="width:5em"></td>' +
         '<td><input id="st-e-r' + i + '" type="number" inputmode="numeric" min="0" value="' + esc(num(x.retro) !== null ? x.retro : '') + '" aria-label="' + esc(mj(m.ym)) + 'の遡及の額" style="width:8em"></td>' +
-        '<td><input type="checkbox" id="st-e-x' + i + '"' + (x.excluded ? ' checked' : '') + ' aria-label="' + esc(mj(m.ym)) + 'を平均から外す"></td></tr>';
+        (zj ? '' : '<td><input type="checkbox" id="st-e-x' + i + '"' + (x.excluded ? ' checked' : '') + ' aria-label="' + esc(mj(m.ym)) + 'を平均から外す"></td>') + '</tr>';
     });
     body += '</tbody></table></div>';
     if (p.warns.length) body += '<ul>' + p.warns.map(function (w) { return '<li>' + esc(w.msg) + '</li>'; }).join('') + '</ul>';
@@ -384,7 +388,7 @@
     var sid = b && b.getAttribute ? b.getAttribute('data-sid') : null;
     if (act === 'st-reload') reload(ctx);
     else if (act === 'st-csv') doCsv(ctx);
-    else if (act === 'st-edit') { if (sid) openEdit(ctx, sid); }
+    else if (act === 'st-edit') { if (sid) openEdit(ctx, sid, b.getAttribute('data-ym')); }
     else if (act === 'st-edit-go') editGo(ctx, false);
     else if (act === 'st-edit-clear') editGo(ctx, true);
     else if (act === 'st-apply') openApply(ctx);

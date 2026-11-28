@@ -53,7 +53,7 @@ eq('起算の月・3か月・4か月目の分から', [r.start, r.months.map(fun
 eq('平均・健保 18→20（250,000〜270,000 未満は 20等級 260,000）', [r.avg, r.cur.health.grade, r.next.health.grade, r.next.health.std, r.diffH], [260000, 18, 20, 260000, 2]);
 eq('随時改定・上がる', [r.status, r.dir], ['hit', 'up']);
 t('7月分から改定は算定基礎届が要らない知らせ', r.warns.some(function (w) { return w.code === 'teiji_skip' && /7月分/.test(w.msg); }), r.warns);
-eq('変わった物の一覧', r.changes, [{ label: '基本給', from: 220000, to: 260000 }]);
+eq('変わった物の一覧', r.changes, [{ label: '基本給', from: 220000, to: 260000, unit: '円' }]);
 
 console.log('2. 1等級だけ・3か月そろわない・日数が足りない');
 boots = [
@@ -79,7 +79,7 @@ boots = [
   boot('2027-06', 'confirmed', [['h', item([['basic', 260000, 1500]], { workDays: 20 })]], [H1])
 ];
 r = one(Z.judge({ boots: boots }), 'h')[0];
-eq('時給の単価の変更を見つける', [r.changeYm, r.changes], ['2027-04', [{ label: '時給', from: 1100, to: 1500 }]]);
+eq('時給の単価の変更を見つける', [r.changeYm, r.changes], ['2027-04', [{ label: '時給', from: 1100, to: 1500, unit: '円' }]]);
 eq('16日の月があれば対象外（15日の救済は随時改定に無い）', [r.status, /16日|17日未満/.test(r.reason)], ['no', true]);
 r = one(Z.judge({ boots: boots, opts: { special: true }, overrides: { h: { short: true } } }), 'h')[0];
 eq('特定適用事業所の短時間労働者は11日以上で数える', [r.rule, r.status], [11, 'hit']);
@@ -150,7 +150,7 @@ boots = [
   boot('2027-04', 'draft', [], [prof('h', { pay_type: 'hourly', base: 1500, day_hours: 6.5 })])
 ];
 r = one(Z.judge({ boots: boots }), 'h')[0];
-eq('時給の人の1日の所定時間の変更も変動（下がる）', [r.changes, r.dir], [[{ label: '1日の所定時間', from: 8, to: 6.5 }], 'down']);
+eq('時給の人の1日の所定時間の変更も変動（下がる）', [r.changes, r.dir], [[{ label: '1日の所定時間', from: 8, to: 6.5, unit: '時間' }], 'down']);
 boots = [
   boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
   boot('2027-04', 'confirmed', [['a', item([['basic', 220000], ['fpos', 30000]])]], [P0])
@@ -179,6 +179,83 @@ let res = Z.judge({ boots: boots, fromYm: '2027-03' });
 eq('fromYm より前の変動は出さない', res.people.map(function (x) { return x.changeYm; }), ['2027-04']);
 eq('数', [res.counts.all, res.counts.wait], [1, 1]);
 eq('月分が1つだけなら比べられない', Z.judge({ boots: boots.slice(0, 1) }).warns.map(function (w) { return w.code; }), ['no_data']);
+
+console.log('7. 反証レビューの直し（2026-11-28）');
+function withStd(p, h, pe) { const q = JSON.parse(JSON.stringify(p)); q.data.ins.health.std = h; q.data.ins.pension.std = pe === undefined ? h : pe; return q; }
+/* 7月分に昇給（220,000 → 240,000）・定時決定で 10月分の版から 200,000 に下がっていた・翌月徴収で改定は 10月分（月分 10 の版が改定の前の額） */
+boots = ['2027-06', '2027-07', '2027-08', '2027-09', '2027-10'].map((ym, i) => boot(ym, 'confirmed', [['a', item([['basic', i === 0 ? 220000 : 240000]])]], [withStd(prof('a', { base: i === 0 ? 220000 : 240000 }), i === 4 ? 200000 : 220000)]));
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('定時決定の後の額（200,000＝17等級）と比べて2等級差＝随時改定', [r.applyYm, r.cur.health.grade, r.next.health.grade, r.status], ['2027-10', 17, 19, 'hit']);
+t('その後の額と比べた知らせ', r.warns.some((w) => w.code === 'std_after'), r.warns);
+r = one(Z.judge({ boots: boots, opts: { siMonth: 'current' } }), 'a')[0];
+eq('当月徴収なら月分 9 の版（220,000＝18等級）と比べる＝1等級で対象外', [r.cur.health.grade, r.status, r.runYm], [18, 'no', '2027-10']);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 240000], ['adj:0', 1000]])]], [prof('a', { base: 240000 })]),
+  boot('2027-05', 'confirmed', [['a', item([['basic', 240000]])]], [prof('a', { base: 240000 })]),
+  boot('2027-06', 'confirmed', [['a', item([['basic', 240000]])]], [prof('a', { base: 240000 })])
+];
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('1等級の差でも調整の行があれば要確認（黙って対象外にしない）', [r.diffH, r.status], [1, 'review']);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [withStd(P0, 123456)]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 240000]])]], [withStd(prof('a', { base: 240000 }), 123456)]),
+  boot('2027-05', 'confirmed', [['a', item([['basic', 240000]])]], [withStd(prof('a', { base: 240000 }), 123456)]),
+  boot('2027-06', 'confirmed', [['a', item([['basic', 240000]])]], [withStd(prof('a', { base: 240000 }), 123456)])
+];
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('今の標準報酬が等級表に無い＝要確認', r.status, 'review');
+const defs2 = defs.concat([{ code: 'cert', def: { name: '資格手当', sec: 'pay', calc: 'fixed', attrs: {} } }]);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 220000], ['fcert', 60000]])]], [P0])
+];
+boots.forEach((b) => { b.allowances = defs2; });
+eq('印の無い定額の手当は給与の計算と同じく固定的賃金（足したのを見つける）', one(Z.judge({ boots: boots }), 'a').map((x) => [x.dir, x.changes[0].label]), [['up', '資格手当']]);
+boots = [
+  boot('2027-03', 'draft', [], [prof('h', { pay_type: 'hourly', base: 1500 })]),
+  boot('2027-04', 'draft', [], [prof('h', { pay_type: 'hourly', base: 1500, day_hours: 8 })])
+];
+eq('1日の所定時間を初めて入れただけは変動に数えない', Z.judge({ boots: boots }).people.length, 0);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 260000]], { workDays: 0 })]], [P1]),
+  boot('2027-05', 'confirmed', [['a', item([['basic', 260000]])]], [P1]),
+  boot('2027-06', 'confirmed', [['a', item([['basic', 260000]])]], [P1])
+];
+boots[1].items[0].item.lines.push({ sec: 'pay', code: 'absence', name: 'absence', amount: -200000, unit: 0 }, { sec: 'att', code: 'absentDays', name: 'a', qty: 20, amount: 0 });
+r = one(Z.judge({ boots: boots, overrides: { a: { months: { '2027-04': { days: 5 } } } } }), 'a')[0];
+eq('起算の月が17日未満（休職中に昇給など）は要確認', r.status, 'review');
+t('理由に「通常の給与に戻った月から3か月」', /通常の給与に戻った月から3か月/.test(r.reason), r.reason);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 260000]])]], [P1]),
+  boot('2027-05', 'confirmed', [['a', item([['basic', 260000]])]], [P1]),
+  boot('2027-06', 'confirmed', [['a', item([['basic', 260000]])]], [P1]),
+  boot('2027-07', 'confirmed', [['a', item([['basic', 260000]])]], [P1]),
+  boot('2027-08', 'draft', [], [withStd(P1, 260000)])
+];
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('8月分の版がもう新しい額なら「変えた」', [r.status, r.runYm], ['done', '2027-08']);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', null, [], [P1])
+];
+boots[0].run.pay_date = '2027-04-25'; boots[0].items[0].frozen.pay_date = '2027-04-25';
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('回の無い月分の支給の月は、ほかの月分のずれ（翌月払い）で置く', [r.start, r.applyYm], ['2027-05', '2027-08']);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [P0]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 220000], ['fbon', 30000]])]], [P0])
+];
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('固定的賃金でない手当の新設は要確認の行として出す', [r.dir, r.changes[0].label, r.warns.some((w) => w.code === 'nf')], ['nf', '業績の手当', true]);
+boots = [
+  boot('2027-03', 'confirmed', [['a', item([['basic', 220000]])]], [prof('a', { base: 220000, ins: { health: { on: false }, pension: { on: false } } })]),
+  boot('2027-04', 'confirmed', [['a', item([['basic', 260000]])]], [prof('a', { base: 260000, ins: { health: { on: false }, pension: { on: false } } })])
+];
+r = one(Z.judge({ boots: boots }), 'a')[0];
+eq('健保に入っていない人も月の欄は3つ（表の列をずらさない）', [r.status, r.months.length], ['no', 3]);
 
 console.log('\n' + pass + ' 件合格・' + fail + ' 件不合格');
 process.exit(fail ? 1 : 0);
